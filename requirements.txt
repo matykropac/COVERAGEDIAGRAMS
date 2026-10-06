@@ -1,0 +1,10 @@
+streamlit==1.65.0
+streamlit-folium==0.27.4
+folium==0.20.0
+numpy==2.3.5
+matplotlib==3.10.8
+rasterio==1.5.2
+pyproj==3.8.0
+shapely==2.1.2
+Pillow==12.3.0
+pandas==2.2.3
