@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feature/ssr-validated]
+    branches: [main, feature/ssr-validated, feature/ssr-measured-pattern]
 jobs:
   test:
     runs-on: ubuntu-latest
