@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - run: pip install -r requirements.txt pytest
+      - run: pip install -r requirements.txt pytest customtkinter
       - name: Compile source
         run: python -m compileall -q streamlit_app.py radar_core.py COVERAGEDIAGRAMS.py web_support.py
       - name: Run radar and UI regression tests
