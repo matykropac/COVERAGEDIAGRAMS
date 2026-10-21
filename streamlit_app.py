@@ -19,6 +19,21 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 import radar_core as core
+# Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
+_REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
+_missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
+if _missing_core_api:
+    import importlib
+    importlib.invalidate_caches()
+    core = importlib.reload(core)
+    _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
+    if _missing_core_api:
+        raise RuntimeError(
+            "Radar core and Streamlit app are from different revisions. "
+            f"Missing: {', '.join(_missing_core_api)}. "
+            f"Loaded radar_core from: {getattr(core, '__file__', '?')}. "
+            "Reboot the Streamlit Cloud app to deploy all files from the same commit."
+        )
 from web_support import EXPORTS, HoverDetail, clicked_point, coverage_geojson, export_bytes
 
 st.set_page_config(page_title='ELDIS · Radar Coverage', page_icon='📡', layout='wide')
