@@ -19,6 +19,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 import radar_core as core
+from ssr_custom import load_measured_ssr
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -50,9 +51,9 @@ def plot_lock():
 
 
 @st.cache_resource
-def antenna(mode):
+def antenna(mode, ssr_pattern='Measured SSR.txt'):
     if mode == 'SSR':
-        return core.generic_ssr_pattern()
+        return load_measured_ssr() if ssr_pattern == 'Measured SSR.txt' else core.generic_ssr_pattern()
     return core.builtin_par_pattern() if mode == 'PAR-NG' else core.rl2000_dual_beam_pattern()
 
 
@@ -78,6 +79,7 @@ with settings:
         radar = {'PSR': 'RL-2000', 'PAR': 'PAR-NG', 'SSR': 'SSR'}[radar_label]
         ssr = radar == 'SSR'
         par = radar == 'PAR-NG'
+        ssr_pattern = st.selectbox('SSR antenna diagram', ['Measured SSR.txt', 'Generic Gaussian'], disabled=not ssr, key='ssr_pattern')
         lat = st.number_input('Zeměpisná šířka [°]', -80., 80., 50.034, format='%.6f', key='lat')
         lon = st.number_input('Zeměpisná délka [°]', -180., 180., 15.781, format='%.6f', key='lon')
         agl = st.number_input('Anténa [m AGL]', .1, 5000., 20.)
@@ -139,7 +141,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
         st.subheader('Vyzařovací diagram')
         try:
             c.validate()
-            figure(core.technical_plot, config=c, pattern=antenna(radar))
+            figure(core.technical_plot, config=c, pattern=antenna(radar, ssr_pattern))
             st.caption('Náhled obálky před výpočtem používá orientační výšku terénu 200 m AMSL.')
         except ValueError as exc:
             st.warning(str(exc))
@@ -172,7 +174,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                         path = core.download(c, api_key, dataset, report)
                         terrain, ground = core.sample(path, c, report)
                         provenance = 'OpenTopography · ' + dataset
-                    new_result = core.solve(c, terrain, ground, antenna(radar))
+                    new_result = core.solve(c, terrain, ground, antenna(radar, ssr_pattern))
                     new_result.update(source=provenance, completed_at=datetime.now(timezone.utc).isoformat(),
                                       duration_s=round(time.perf_counter()-start, 3))
                     st.session_state.result = new_result
