@@ -110,8 +110,15 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
             dataset = st.selectbox('Výškový model', ('COP90', 'SRTMGL3') if ssr else core.DATASETS, key='dataset_'+radar)
             if ssr:
                 st.caption('Pro oblast 256 NM používáme 90m DEM kvůli limitu velikosti OpenTopography.')
-            api_key = st.text_input('OpenTopography API klíč', type='password', key='opentopo_key')
-            st.caption('Klíč patří pouze této relaci. Do exportů se neukládá.')
+            import os
+            api_key = os.environ.get('OPENTOPOGRAPHY_API_KEY', '').strip()
+            if not api_key:
+                api_key = str(st.secrets.get('OPENTOPOGRAPHY_API_KEY', '')).strip()
+            if api_key:
+                st.caption('OpenTopography API klíč je automaticky načten ze zabezpečeného nastavení aplikace.')
+            else:
+                api_key = st.text_input('OpenTopography API klíč', type='password', key='opentopo_key')
+                st.caption('Pro trvalé automatické načítání nastav OPENTOPOGRAPHY_API_KEY v Streamlit Cloud Secrets.')
         else:
             st.caption('Demo používá umělý terén, nikoli skutečné okolí stanoviště.')
     with parameters:
