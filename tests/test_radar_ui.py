@@ -8,7 +8,7 @@ class RadarUITests(unittest.TestCase):
     def test_web_radar_presets_and_ssr_calculation(self):
         app = AppTest.from_file(str(Path(__file__).parents[1]/'streamlit_app.py'), default_timeout=40).run()
         self.assertFalse(app.exception)
-        self.assertEqual(app.selectbox(key='radar').options, ['PSR', 'PAR', 'SSR'])
+        self.assertEqual(app.selectbox(key='radar').options, ['PSR', 'PAR', 'SSR', '3D LRR PSR'])
         self.assertEqual(app.number_input(key='min_elev').value, -1.)
         for nm in (60, 80, 100):
             app.selectbox(key='psr_range_nm').set_value(nm).run()
@@ -37,3 +37,24 @@ class RadarUITests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertFalse(app.error)
         self.assertAlmostEqual(app.session_state['result']['config'].range_km, 185.2)
+
+    def test_3d_long_range_web_modes(self):
+        from psr3d import load_3d_psr_cut
+        app = AppTest.from_file(str(Path(__file__).parents[1]/'streamlit_app.py'), default_timeout=60).run()
+        app.selectbox(key='radar').set_value('3D LRR PSR').run()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.selectbox(key='lrr_range_nm').value, 200)
+        self.assertEqual(app.selectbox(key='lrr_channel').value, 'Long range')
+        app.button(key='calculate').click().run()
+        self.assertFalse(app.exception)
+        self.assertFalse(app.error)
+        result = app.session_state['result']
+        self.assertAlmostEqual(result['config'].range_km, 370.4)
+        self.assertLess(result['terrain'].size, 250001)
+        self.assertIn('3D LRR PSR', result['source'])
+        self.assertEqual(result['antenna_pattern'].name, load_3d_psr_cut().name)
+        app.selectbox(key='lrr_channel').set_value('Short range').run()
+        self.assertFalse(app.exception)
+        app.button(key='calculate').click().run()
+        self.assertFalse(app.error)
+        self.assertIn('Short range', app.session_state['result']['antenna_pattern'].name)
