@@ -18,14 +18,14 @@ class Config:
     step_m: float = 250.0
     az_step: float = 1.0
     k: float = 4 / 3
-    min_elev: float = 0.0
+    min_elev: float = -1.0
     max_elev: float = 45.0
     target_m: float = 1000.0
     reference: str = 'AMSL'
     csc_enabled: bool = False
     csc_ref_deg: float = 8.0
     csc_range_km: float = 150.0
-    antenna_tilt_deg: float = 0.0
+    antenna_tilt_deg: float = -1.0
     beam_mode: str = 'COMBINED'
     radar_mode: str = 'RL-2000'
     bearing_deg: float = 0.0
