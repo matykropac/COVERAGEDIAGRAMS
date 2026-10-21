@@ -20,6 +20,7 @@ from streamlit_folium import st_folium
 
 import radar_core as core
 from ssr_custom import load_measured_ssr
+from psr3d import load_3d_psr_cut
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -52,9 +53,11 @@ def plot_lock():
 
 # Antenna patterns must not be cached across Streamlit hot-reloads:
 # stale class instances can outlive updates to radar_core / ssr_custom.
-def antenna(mode, ssr_pattern='Measured SSR.txt'):
+def antenna(mode, ssr_pattern='Measured SSR.txt', lrr_channel='Long range'):
     if mode == 'SSR':
         return load_measured_ssr() if ssr_pattern == 'Measured SSR.txt' else core.generic_ssr_pattern()
+    if mode == '3D LRR PSR':
+        return load_3d_psr_cut(lrr_channel)
     return core.builtin_par_pattern() if mode == 'PAR-NG' else core.rl2000_dual_beam_pattern()
 
 
@@ -69,18 +72,20 @@ def figure(draw, **kwargs):
 
 
 st.title('ELDIS · RADAR COVERAGE')
-st.caption('PSR / PAR / SSR · terénní analýza a radarové krytí')
+st.caption('PSR / PAR / SSR / 3D LRR PSR · terénní analýza a radarové krytí')
 settings, analysis, raw = st.tabs(['NASTAVENÍ', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
 
 with settings:
     location, parameters, preview = st.columns([25, 25, 50])
     with location:
         st.subheader('Radar a stanoviště')
-        radar_label = st.selectbox('Radar', ['PSR', 'PAR', 'SSR'], key='radar')
-        radar = {'PSR': 'RL-2000', 'PAR': 'PAR-NG', 'SSR': 'SSR'}[radar_label]
+        radar_label = st.selectbox('Radar', ['PSR', 'PAR', 'SSR', '3D LRR PSR'], key='radar')
+        radar = {'PSR': 'RL-2000', 'PAR': 'PAR-NG', 'SSR': 'SSR', '3D LRR PSR': 'RL-2000'}[radar_label]
+        is_lrr = radar_label == '3D LRR PSR'
         ssr = radar == 'SSR'
         par = radar == 'PAR-NG'
         ssr_pattern = st.selectbox('SSR antenna diagram', ['Measured SSR.txt', 'Generic Gaussian'], disabled=not ssr, key='ssr_pattern')
+        lrr_channel = st.selectbox('3D LRR PSR · measured 3 GHz cut', ['Long range', 'Short range'], disabled=not is_lrr, key='lrr_channel')
         lat = st.number_input('Zeměpisná šířka [°]', -80., 80., 50.034, format='%.6f', key='lat')
         lon = st.number_input('Zeměpisná délka [°]', -180., 180., 15.781, format='%.6f', key='lon')
         agl = st.number_input('Anténa [m AGL]', .1, 5000., 20.)
@@ -99,6 +104,8 @@ Anténa letadla 0 dBi; každý spoj má ztráty 3 dB a rezervu 6 dB.
 
 **Ilustrační předpoklady, nikoli parametry konkrétního radaru.**
 Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti detekce.''')
+        elif is_lrr:
+            st.caption('3D LRR PSR · measured vertical UEL sweep at 3 GHz. Long and short cuts are separately selectable; no 3D azimuth coverage is inferred.')
         else:
             st.caption('PSR: RL-2000 · 360° · vestavěný LOW / HIGH diagram')
         source = st.selectbox('Zdroj terénu', ['Syntetické demo', 'Nahrát DEM', 'OpenTopography'], key='source')
@@ -108,7 +115,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
         if source == 'Nahrát DEM':
             uploaded = st.file_uploader('GeoTIFF / DTED / SRTM', type=['tif', 'tiff', 'dt0', 'dt1', 'dt2', 'hgt'])
         elif source == 'OpenTopography':
-            dataset = st.selectbox('Výškový model', ('COP90', 'SRTMGL3') if ssr else core.DATASETS, key='dataset_'+radar)
+            dataset = st.selectbox('Výškový model', ('COP90', 'SRTMGL3') if (ssr or is_lrr) else core.DATASETS, key='dataset_'+radar)
             if ssr:
                 st.caption('Pro oblast 256 NM používáme 90m DEM kvůli limitu velikosti OpenTopography.')
             import os
@@ -127,32 +134,34 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
             st.caption('Demo používá umělý terén, nikoli skutečné okolí stanoviště.')
     with parameters:
         st.subheader('Parametry výpočtu')
-        if radar == 'RL-2000':
+        if is_lrr:
+            lrr_nm = st.selectbox('3D LRR · reference range [NM] (planning assumption)', [100, 150, 200, 250], index=2, key='lrr_range_nm')
+        if radar == 'RL-2000' and not is_lrr:
             psr_nm = st.selectbox('Dosah PSR [NM]', core.PSR_RANGES_NM, index=2, key='psr_range_nm')
         else:
             psr_nm = 100
-        radius_input = range_ref_input = core.radar_preset(radar, psr_nm)
+        radius_input = range_ref_input = (lrr_nm * core.NM_TO_KM if is_lrr else core.radar_preset(radar, psr_nm))
         st.caption(f'Dosah: {radius_input:g} km · stejný limit referenční šikmé dálky')
         step = st.select_slider('Radiální krok [m]', [25, 50, 100, 250, 500, 1000, 2000],
-                               value=1000 if ssr else (250 if par else 500), key='step_'+radar)
+                               value=2000 if is_lrr else (1000 if ssr else (250 if par else 500)), key='step_'+radar_label)
         azstep = st.select_slider('Krok azimutu [°]', [.25, .5, 1., 2., 2.5, 5.], value=1.)
         k = st.number_input('Efektivní poloměr Země · k', .5, 3., 4/3, format='%.4f')
         min_elev = st.number_input('Minimální elevace [°]', -5., 88., -1.0, key='min_elev')
         max_elev = st.number_input('Maximální elevace [°]', -4., 89., 45., key='max_elev')
         tilt = st.number_input('Tilt antény [°]', -15., 15., -1.0)
-        beam = st.selectbox('Svazek', ['COMBINED', 'LOW', 'HIGH'], disabled=par or ssr)
+        beam = st.selectbox('Svazek', ['COMBINED', 'LOW', 'HIGH'], disabled=par or ssr or is_lrr)
         target = st.number_input('Výška cíle [m]', -500., 30000., 1000.)
         reference = st.selectbox('Reference cíle', ['AMSL', 'AGL'])
     c = core.Config(lat=lat, lon=lon, antenna_agl=agl, radar_mode=radar, bearing_deg=bearing,
                     range_km=40. if par else radius_input, csc_range_km=40. if par else range_ref_input,
                     step_m=float(step), az_step=float(azstep), k=k, min_elev=min_elev, max_elev=max_elev,
-                    antenna_tilt_deg=tilt, beam_mode='COMBINED' if par or ssr else beam,
+                    antenna_tilt_deg=tilt, beam_mode='COMBINED' if par or ssr or is_lrr else beam,
                     target_m=target, reference=reference, csc_enabled=True)
     with preview:
         st.subheader('Vyzařovací diagram')
         try:
             c.validate()
-            figure(core.technical_plot, config=c, pattern=antenna(radar, ssr_pattern))
+            figure(core.technical_plot, config=c, pattern=antenna(radar_label if is_lrr else radar, ssr_pattern, lrr_channel))
             st.caption('Náhled obálky před výpočtem používá orientační výšku terénu 200 m AMSL.')
         except ValueError as exc:
             st.warning(str(exc))
@@ -185,7 +194,9 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                         path = core.download(c, api_key, dataset, report)
                         terrain, ground = core.sample(path, c, report)
                         provenance = 'OpenTopography · ' + dataset
-                    new_result = core.solve(c, terrain, ground, antenna(radar, ssr_pattern))
+                    new_result = core.solve(c, terrain, ground, antenna(radar_label if is_lrr else radar, ssr_pattern, lrr_channel))
+                    if is_lrr:
+                        provenance += f' · 3D LRR PSR {lrr_channel} / {lrr_nm} NM reference'
                     new_result.update(source=provenance, completed_at=datetime.now(timezone.utc).isoformat(),
                                       duration_s=round(time.perf_counter()-start, 3))
                     st.session_state.result = new_result
