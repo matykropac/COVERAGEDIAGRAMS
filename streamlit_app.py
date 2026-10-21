@@ -36,6 +36,8 @@ def plot_lock():
 
 @st.cache_resource
 def antenna(mode):
+    if mode == 'SSR':
+        return core.generic_ssr_pattern()
     return core.builtin_par_pattern() if mode == 'PAR-NG' else core.rl2000_dual_beam_pattern()
 
 
@@ -50,14 +52,16 @@ def figure(draw, **kwargs):
 
 
 st.title('ELDIS · RADAR COVERAGE')
-st.caption('RL-2000 / PAR-NG · terénní analýza a geometrické krytí')
+st.caption('PSR / PAR / SSR · terénní analýza a radarové krytí')
 settings, analysis, raw = st.tabs(['NASTAVENÍ', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
 
 with settings:
     location, parameters, preview = st.columns([25, 25, 50])
     with location:
         st.subheader('Radar a stanoviště')
-        radar = st.selectbox('Radar', ['RL-2000', 'PAR-NG'], key='radar')
+        radar_label = st.selectbox('Radar', ['PSR', 'PAR', 'SSR'], key='radar')
+        radar = {'PSR': 'RL-2000', 'PAR': 'PAR-NG', 'SSR': 'SSR'}[radar_label]
+        ssr = radar == 'SSR'
         par = radar == 'PAR-NG'
         lat = st.number_input('Zeměpisná šířka [°]', -80., 80., 50.034, format='%.6f', key='lat')
         lon = st.number_input('Zeměpisná délka [°]', -180., 180., 15.781, format='%.6f', key='lon')
@@ -65,6 +69,20 @@ with settings:
         bearing = st.number_input('Azimut osy [°]', 0., 359.99, 0., disabled=not par)
         if par:
             st.caption('PAR-NG: ±20° od osy · 40 km · vestavěný diagram')
+        elif ssr:
+            st.caption('SSR: 360° · pevný limit 256 NM · obecný orientační model')
+            with st.expander('Předpoklady SSR modelu'):
+                st.markdown('''Dotaz **1030 MHz** a odpověď **1090 MHz** se posuzují samostatně.
+Krytí omezuje slabší spoj, šikmá dálka 256 NM a viditelnost nad terénem.
+
+Idealizovaná anténa: zisk 27 dBi, maximum 8° před tiltem, šířka 20° při −3 dB.
+Dotazovač 1 kW / transpondér přibližně 126 W; prahy −74 / −82 dBm.
+Anténa letadla 0 dBi; každý spoj má ztráty 3 dB a rezervu 6 dB.
+
+**Ilustrační předpoklady, nikoli parametry konkrétního radaru.**
+Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti detekce.''')
+        else:
+            st.caption('PSR: RL-2000 · 360° · vestavěný LOW / HIGH diagram')
         source = st.selectbox('Zdroj terénu', ['Syntetické demo', 'Nahrát DEM', 'OpenTopography'], key='source')
         uploaded = None
         api_key = ''
@@ -72,28 +90,35 @@ with settings:
         if source == 'Nahrát DEM':
             uploaded = st.file_uploader('GeoTIFF / DTED / SRTM', type=['tif', 'tiff', 'dt0', 'dt1', 'dt2', 'hgt'])
         elif source == 'OpenTopography':
-            dataset = st.selectbox('Výškový model', core.DATASETS)
+            dataset = st.selectbox('Výškový model', ('COP90', 'SRTMGL3') if ssr else core.DATASETS, key='dataset_'+radar)
+            if ssr:
+                st.caption('Pro oblast 256 NM používáme 90m DEM kvůli limitu velikosti OpenTopography.')
             api_key = st.text_input('OpenTopography API klíč', type='password', key='opentopo_key')
             st.caption('Klíč patří pouze této relaci. Do exportů se neukládá.')
         else:
             st.caption('Demo používá umělý terén, nikoli skutečné okolí stanoviště.')
     with parameters:
         st.subheader('Parametry výpočtu')
-        radius_input = st.number_input('Dosah [km]', 1., 500., 40. if par else 100., disabled=par)
-        range_ref_input = st.number_input('Referenční šikmý dosah [km]', 1., 1000., 40. if par else 150., disabled=par)
-        step = st.select_slider('Radiální krok [m]', [25, 50, 100, 250, 500, 1000, 2000], value=250)
+        if radar == 'RL-2000':
+            psr_nm = st.selectbox('Dosah PSR [NM]', core.PSR_RANGES_NM, index=2, key='psr_range_nm')
+        else:
+            psr_nm = 100
+        radius_input = range_ref_input = core.radar_preset(radar, psr_nm)
+        st.caption(f'Dosah: {radius_input:g} km · stejný limit referenční šikmé dálky')
+        step = st.select_slider('Radiální krok [m]', [25, 50, 100, 250, 500, 1000, 2000],
+                               value=1000 if ssr else (250 if par else 500), key='step_'+radar)
         azstep = st.select_slider('Krok azimutu [°]', [.25, .5, 1., 2., 2.5, 5.], value=1.)
         k = st.number_input('Efektivní poloměr Země · k', .5, 3., 4/3, format='%.4f')
-        min_elev = st.number_input('Minimální elevace [°]', -5., 88., 0., key='min_elev')
+        min_elev = st.number_input('Minimální elevace [°]', -5., 88., -1.0, key='min_elev')
         max_elev = st.number_input('Maximální elevace [°]', -4., 89., 45., key='max_elev')
-        tilt = st.number_input('Tilt antény [°]', -15., 15., 0.)
-        beam = st.selectbox('Svazek', ['COMBINED', 'LOW', 'HIGH'], disabled=par)
+        tilt = st.number_input('Tilt antény [°]', -15., 15., -1.0)
+        beam = st.selectbox('Svazek', ['COMBINED', 'LOW', 'HIGH'], disabled=par or ssr)
         target = st.number_input('Výška cíle [m]', -500., 30000., 1000.)
         reference = st.selectbox('Reference cíle', ['AMSL', 'AGL'])
     c = core.Config(lat=lat, lon=lon, antenna_agl=agl, radar_mode=radar, bearing_deg=bearing,
                     range_km=40. if par else radius_input, csc_range_km=40. if par else range_ref_input,
                     step_m=float(step), az_step=float(azstep), k=k, min_elev=min_elev, max_elev=max_elev,
-                    antenna_tilt_deg=tilt, beam_mode='COMBINED' if par else beam,
+                    antenna_tilt_deg=tilt, beam_mode='COMBINED' if par or ssr else beam,
                     target_m=target, reference=reference, csc_enabled=True)
     with preview:
         st.subheader('Vyzařovací diagram')
