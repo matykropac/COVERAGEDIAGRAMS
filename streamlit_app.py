@@ -50,7 +50,8 @@ def plot_lock():
     return threading.RLock()
 
 
-@st.cache_resource
+# Antenna patterns must not be cached across Streamlit hot-reloads:
+# stale class instances can outlive updates to radar_core / ssr_custom.
 def antenna(mode, ssr_pattern='Measured SSR.txt'):
     if mode == 'SSR':
         return load_measured_ssr() if ssr_pattern == 'Measured SSR.txt' else core.generic_ssr_pattern()
