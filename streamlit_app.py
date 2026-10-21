@@ -113,7 +113,10 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
             import os
             api_key = os.environ.get('OPENTOPOGRAPHY_API_KEY', '').strip()
             if not api_key:
-                api_key = str(st.secrets.get('OPENTOPOGRAPHY_API_KEY', '')).strip()
+                try:
+                    api_key = str(st.secrets.get('OPENTOPOGRAPHY_API_KEY', '')).strip()
+                except (FileNotFoundError, KeyError):
+                    api_key = ''
             if api_key:
                 st.caption('OpenTopography API klíč je automaticky načten ze zabezpečeného nastavení aplikace.')
             else:
