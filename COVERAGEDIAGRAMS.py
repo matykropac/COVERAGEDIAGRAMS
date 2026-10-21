@@ -132,32 +132,6 @@ import numpy as np
 
 EARTH_RADIUS = 6371008.8
 
-NM_TO_KM = 1.852
-PSR_RANGES_NM = (60, 80, 100)
-SSR_RANGE_KM = 256 * NM_TO_KM
-RADAR_LABELS = {'RL-2000': 'PSR', 'PAR-NG': 'PAR', 'SSR': 'SSR'}
-# Illustrative engineering assumptions, NOT specifications of an actual radar.
-SSR_ASSUMPTIONS = dict(
-    interrogator_power_dbm=60.0, transponder_power_dbm=51.0,
-    ground_peak_gain_dbi=27.0, aircraft_gain_dbi=0.0,
-    transponder_threshold_dbm=-74.0, ground_threshold_dbm=-82.0,
-    losses_per_link_db=3.0, margin_per_link_db=6.0,
-    uplink_mhz=1030.0, downlink_mhz=1090.0,
-    beam_peak_deg=8.0, vertical_hpbw_deg=20.0)
-
-
-def radar_preset(mode, psr_nm=100):
-    """Surface grid extent and reference slant range, in km."""
-    if mode == 'PAR-NG':
-        return 40.0
-    if mode == 'SSR':
-        return SSR_RANGE_KM
-    if mode != 'RL-2000' or psr_nm not in PSR_RANGES_NM:
-        raise ValueError('PSR podporuje dosahy 60, 80 nebo 100 NM.')
-    return psr_nm * NM_TO_KM
-
-
-
 @dataclass(frozen=True)
 class Config:
     lat: float = 50.034
@@ -167,14 +141,14 @@ class Config:
     step_m: float = 250.0
     az_step: float = 1.0
     k: float = 4 / 3
-    min_elev: float = -1.0
+    min_elev: float = 0.0
     max_elev: float = 45.0
     target_m: float = 1000.0
     reference: str = 'AMSL'
     csc_enabled: bool = False
     csc_ref_deg: float = 8.0
     csc_range_km: float = 150.0
-    antenna_tilt_deg: float = -1.0
+    antenna_tilt_deg: float = 0.0
     beam_mode: str = 'COMBINED'
     radar_mode: str = 'RL-2000'
     bearing_deg: float = 0.0
@@ -203,14 +177,12 @@ class Config:
             raise ValueError('Tilt antény musí být −15 až +15°.')
         if self.beam_mode not in ('COMBINED', 'LOW', 'HIGH'):
             raise ValueError('Režim svazku musí být COMBINED, LOW nebo HIGH.')
-        if self.radar_mode not in ('RL-2000', 'PAR-NG', 'SSR'):
+        if self.radar_mode not in ('RL-2000', 'PAR-NG'):
             raise ValueError('Neznámý režim radaru.')
         if not 0 <= self.bearing_deg < 360:
             raise ValueError('Azimut osy musí být 0 až méně než 360° (sever = 0°, východ = 90°).')
         if self.radar_mode == 'PAR-NG' and (self.range_km != 40 or self.csc_range_km != 40):
             raise ValueError('PAR-NG používá dosah i referenční šikmý dosah 40 km.')
-        if self.radar_mode == 'SSR' and (self.range_km != SSR_RANGE_KM or self.csc_range_km != SSR_RANGE_KM):
-            raise ValueError('SSR používá pevný dosah 256 NM (474,112 km).')
         angular_count = (np.ceil(40 / self.az_step) + 1 if self.radar_mode == 'PAR-NG' else np.ceil(360 / self.az_step))
         if angular_count * np.ceil(self.range_km * 1000 / self.step_m) > 2_000_000:
             raise ValueError('Příliš jemná síť: zvol větší krok (limit 2 miliony bodů).')
@@ -295,41 +267,6 @@ class AntennaPattern:
         # Single-beam monostatic Tx/Rx: R ∝ (Gtx*Grx)^1/4 = sqrt(G).
         return np.power(10.0, self.gain_db(elevation_rad, tilt_deg) / 20.0)
 
-
-
-@dataclass
-class GenericSSRPattern(AntennaPattern):
-    """Ideal Gaussian SUM pattern and two independent free-space Friis links.
-
-    No monostatic RCS/two-way echo equation is used for a transponder.
-    Fixed loss/margin budgets, isotropic aircraft antenna, no multipath,
-    diffraction, interference, garbling, sidelobe suppression or Pd model.
-    """
-    def gain_db(self, elevation_rad, tilt_deg=0.0):
-        a = SSR_ASSUMPTIONS
-        offset = np.rad2deg(np.asarray(elevation_rad)) - tilt_deg - a['beam_peak_deg']
-        return np.maximum(-80.0, -12.0 * (offset / a['vertical_hpbw_deg'])**2)
-
-    def link_ranges_km(self, elevation_rad, tilt_deg=0.0):
-        a = SSR_ASSUMPTIONS
-        gains = a['ground_peak_gain_dbi'] + a['aircraft_gain_dbi'] + self.gain_db(elevation_rad, tilt_deg)
-        losses = a['losses_per_link_db'] + a['margin_per_link_db']
-        def distance(power, threshold, frequency):
-            wavelength = 299792458.0 / (frequency * 1e6)
-            return wavelength / (4*np.pi) * 10**((power + gains - losses - threshold)/20) / 1000
-        return (distance(a['interrogator_power_dbm'], a['transponder_threshold_dbm'], a['uplink_mhz']),
-                distance(a['transponder_power_dbm'], a['ground_threshold_dbm'], a['downlink_mhz']))
-
-    def range_factor(self, elevation_rad, tilt_deg=0.0):
-        uplink, downlink = self.link_ranges_km(elevation_rad, tilt_deg)
-        return np.minimum(SSR_RANGE_KM, np.minimum(uplink, downlink)) / SSR_RANGE_KM
-
-
-def generic_ssr_pattern():
-    angles = np.linspace(-90, 90, 721)
-    pattern = GenericSSRPattern('SSR · obecný orientační model · 256 NM', angles, np.zeros_like(angles))
-    pattern.gains_db = pattern.gain_db(np.deg2rad(angles))
-    return pattern
 
 
 @dataclass
@@ -655,8 +592,6 @@ def solve(c, terrain, site_height, antenna_pattern=None):
     az, distance = axes(c)
     if c.radar_mode == 'PAR-NG' and (not c.csc_enabled or not isinstance(antenna_pattern, ParScanPattern)):
         raise ValueError('PAR-NG vyžaduje zapnutý diagram a načtený 3D PAR diagram.')
-    if c.radar_mode == 'SSR' and (not c.csc_enabled or not isinstance(antenna_pattern, GenericSSRPattern)):
-        raise ValueError('SSR vyžaduje zapnutý obecný SSR model.')
     terrain = np.asarray(terrain, dtype=float)
     if terrain.shape != (len(az), len(distance)) or not np.isfinite(site_height):
         raise ValueError('Chybí výška stanoviště nebo rozměry terénu nesouhlasí.')
@@ -1129,12 +1064,7 @@ def calculation_metadata(result):
                           else 'single beam'),
         low_peak_dbi=(pattern.low_peak_dbi if isinstance(pattern, AntennaPatternPair) else None),
         high_peak_dbi=(pattern.high_peak_dbi if isinstance(pattern, AntennaPatternPair) else None),
-        ssr_model=(dict(range_limit_nm=256, range_limit_type='slant range',
-            assumptions=dict(SSR_ASSUMPTIONS),
-            method='min(Friis uplink, Friis downlink, 256 NM); effective Earth geometry and terrain LOS',
-            limitations='illustrative Gaussian antenna; no measured pattern, multipath, diffraction, interference, garbling, SLS or Pd/Pfa')
-            if c.radar_mode == 'SSR' else None),
-        model='effective spherical Earth; geometric visibility and antenna envelope, not Pd/Pfa',
+        model='effective spherical Earth; geometric visibility, not Pd/Pfa',
         vector_method='0.5 contour in native polar sampling grid; no raster resampling or cosmetic smoothing')
 
 
@@ -1730,25 +1660,13 @@ def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None):
     envelope_ax.plot(distance / 1000, bottom / FT_TO_M, color=UI_ACCENT, lw=1)
     for ft in levels_ft:
         envelope_ax.axhline(ft, color=level_color(ft), lw=0.9, alpha=0.85)
-    if isinstance(pattern, GenericSSRPattern):
-        for angle in (0, 1, 2, 5, 10, 20):
-            ray = height_at_angle(distance, np.deg2rad(angle), antenna, c.k) / FT_TO_M
-            envelope_ax.plot(distance / 1000, ray, color=UI_MUTED, lw=.55, ls=':', alpha=.6)
-            visible_ray = np.flatnonzero((ray >= 0) & (ray <= 66000))
-            if visible_ray.size:
-                j = visible_ray[-1]
-                envelope_ax.text(distance[j]/1000, ray[j], f'{angle}°', fontsize=6, color=UI_MUTED,
-                                 ha='right', va='bottom')
-    envelope_ax.set(title=('SSR · Blakeův diagram · bez terénu' if isinstance(pattern, GenericSSRPattern)
-                           else 'Použitá anténní obálka bez terénu'),
+    envelope_ax.set(title='Použitá anténní obálka bez terénu',
                     xlabel='Povrchová vzdálenost [km]', ylabel='Výška [ft AMSL]',
                     xlim=(0, c.range_km), ylim=(0, 70000))
     envelope_ax.grid(alpha=0.2)
     if pair:
         model_note = ('RL-2000 dual beam: LOW Tx/Rx + HIGH Rx-only · '
                       f'výpočet {c.beam_mode}')
-    elif isinstance(pattern, GenericSSRPattern):
-        model_note = 'Obecný SSR · 1030/1090 MHz · limit 256 NM\nIdealizované předpoklady; bez multipath / Pd'
     elif pattern is not None:
         model_note = 'Načtený single-beam diagram · maximum 0 dB'
     else:
@@ -2098,27 +2016,18 @@ class App(ctk.CTk):
                      font=ctk.CTkFont(size=11), text_color=TEXT_SECONDARY).pack(fill='x', pady=(4, 0))
 
         par_card = card(sidebar, 'Radar')
-        self.radar_label = tk.StringVar(value='PSR')
-        ctk.CTkComboBox(par_card, variable=self.radar_label, values=['PSR', 'PAR', 'SSR'],
-                        state='readonly', command=self.select_radar).pack(fill='x', pady=3)
-        self.psr_range_nm = tk.StringVar(value='100')
-        ctk.CTkLabel(par_card, text='Dosah PSR [NM]', anchor='w').pack(fill='x')
-        self.psr_range_selector = ctk.CTkComboBox(par_card, variable=self.psr_range_nm,
-                        values=['60', '80', '100'], state='readonly', command=self.psr_range_changed)
-        self.psr_range_selector.pack(fill='x', pady=3)
-        self.radar_note = tk.StringVar(value='PSR · RL-2000 · 60 / 80 / 100 NM')
-        ctk.CTkLabel(par_card, textvariable=self.radar_note, anchor='w', justify='left',
-                    wraplength=400).pack(fill='x', pady=3)
+        ctk.CTkComboBox(par_card, variable=self.radar_mode, values=['RL-2000', 'PAR-NG'],
+                        state='readonly', command=self.radar_mode_changed).pack(fill='x', pady=3)
 
         geometry_card = card(sidebar, 'Radar & geometrie', 'Základní parametry stanoviště a výpočetní sítě')
         fields = [('lat', 'Šířka WGS84 [°]', '50.034'), ('lon', 'Délka WGS84 [°]', '15.781'),
-                  ('antenna_agl', 'Anténa nad DEM [m]', '20'), ('range_km', 'Povrchový dosah [km]', '185.2'),
-                  ('min_elev', 'Min. elevace [°]', '-1.0'), ('max_elev', 'Max. elevace [°]', '45'),
+                  ('antenna_agl', 'Anténa nad DEM [m]', '20'), ('range_km', 'Povrchový dosah [km]', '100'),
+                  ('min_elev', 'Min. elevace [°]', '0'), ('max_elev', 'Max. elevace [°]', '45'),
                   ('k', 'Refrakční faktor k', '1.3333333333'), ('target_m', 'Výška cíle [m]', '1000'),
-                  ('step_m', 'Radiální krok [m]', '500'), ('az_step', 'Krok azimutu [°]', '1'),
+                  ('step_m', 'Radiální krok [m]', '250'), ('az_step', 'Krok azimutu [°]', '1'),
                   ('csc_ref_deg', 'Kosekanta: ref. elevace [°]', '8'),
-                  ('csc_range_km', 'Anténa: referenční dosah [km]', '185.2'),
-                  ('antenna_tilt_deg', 'Tilt antény [°]', '-1.0'),
+                  ('csc_range_km', 'Anténa: referenční dosah [km]', '150'),
+                  ('antenna_tilt_deg', 'Tilt antény [°]', '0'),
                   ('bearing_deg', 'PAR: azimut osy [°]', '0')]
         self.param_labels = {name: label for name, label, _default in fields}
         geometry_card.grid_columnconfigure(0, weight=1)
@@ -2133,8 +2042,6 @@ class App(ctk.CTk):
                                  corner_radius=9, text_color=TEXT_PRIMARY)
             entry.grid(row=row_index, column=1, sticky='e', pady=2)
             self.param_entries[name] = entry
-            if name in ('range_km', 'csc_range_km'):
-                entry.configure(state='disabled')
             if name in ('lat', 'lon'):
                 # Některá rozložení klávesnice / Tk backendy mají problém s mínusem
                 # v CustomTkinter Entry. Vložíme ASCII '-' explicitně.
@@ -2163,10 +2070,9 @@ class App(ctk.CTk):
                         fg_color=UI_FIELD, button_color=CARD_BG_ALT, button_hover_color=CARD_HOVER,
                         border_color=BORDER, corner_radius=9, height=28, state='readonly').pack(fill='x', pady=(0, 4))
         self.dataset = tk.StringVar(value='COP30')
-        self.dataset_selector = ctk.CTkComboBox(terrain_card, variable=self.dataset, values=list(DATASETS),
+        ctk.CTkComboBox(terrain_card, variable=self.dataset, values=list(DATASETS),
                         fg_color=UI_FIELD, button_color=CARD_BG_ALT, button_hover_color=CARD_HOVER,
-                        border_color=BORDER, corner_radius=9, height=28, state='readonly')
-        self.dataset_selector.pack(fill='x', pady=(0, 4))
+                        border_color=BORDER, corner_radius=9, height=28, state='readonly').pack(fill='x', pady=(0, 4))
         ctk.CTkLabel(terrain_card, height=22, text='OpenTopography API key', anchor='w',
                      text_color=TEXT_SECONDARY, font=ctk.CTkFont(size=10)).pack(fill='x', pady=(0, 4))
         self.key = tk.StringVar(value=os.environ.get('OPENTOPOGRAPHY_API_KEY', ''))
@@ -2993,53 +2899,23 @@ class App(ctk.CTk):
         except Exception:
             messagebox.showwarning('API klíč', 'Systémové úložiště není dostupné. Klíč zůstává jen v paměti této relace.')
 
-    def select_radar(self, label):
-        self.radar_mode.set({'PSR': 'RL-2000', 'PAR': 'PAR-NG', 'SSR': 'SSR'}[label])
-        self.radar_mode_changed()
-
-    def psr_range_changed(self, _value=None):
-        if self.busy or self.radar_mode.get() != 'RL-2000':
-            self.psr_range_nm.set(str(round(float(self.vars['range_km'].get()) / NM_TO_KM)))
-            return
-        radius = radar_preset('RL-2000', int(self.psr_range_nm.get()))
-        for key in ('range_km', 'csc_range_km'):
-            self.vars[key].set(f'{radius:g}')
-        self.status.set('Dosah PSR změněn. Spusť nový výpočet.')
-        self.schedule_draw()
-
     def radar_mode_changed(self, _value=None):
         mode = self.radar_mode.get()
         if self.busy:
             self.radar_mode.set(self._active_radar_mode)
-            if hasattr(self, 'radar_label'):
-                self.radar_label.set(RADAR_LABELS[self._active_radar_mode])
             self.status.set('Počkej na dokončení běžící operace.'); return
         if mode == self._active_radar_mode:
             return
-        if hasattr(self, 'dataset_selector'):
-            if mode == 'SSR':
-                self._pre_ssr_dataset = self.dataset.get()
-                self.dataset_selector.configure(values=['COP90', 'SRTMGL3'])
-                if self.dataset.get() not in ('COP90', 'SRTMGL3'):
-                    self.dataset.set('COP90')
-            else:
-                self.dataset_selector.configure(values=list(DATASETS))
-                if self._active_radar_mode == 'SSR':
-                    self.dataset.set(self._pre_ssr_dataset)
-        if self._active_radar_mode == 'RL-2000':
-            self._rl_settings = {k:self.vars[k].get() for k in ('range_km','csc_range_km','az_step','step_m') if k in self.vars}
+        if mode == 'PAR-NG':
+            self._rl_settings = {k:self.vars[k].get() for k in ('range_km','csc_range_km','az_step')}
             self._rl_pattern = self.antenna_pattern
             self._rl_csc = self.csc_enabled.get()
-        if mode in ('PAR-NG', 'SSR'):
-            radius = radar_preset(mode)
-            self.vars['range_km'].set(f'{radius:g}')
-            self.vars['csc_range_km'].set(f'{radius:g}')
-            self.vars['az_step'].set('0.5' if mode == 'PAR-NG' else '1')
-            if 'step_m' in self.vars:
-                self.vars['step_m'].set('250' if mode == 'PAR-NG' else '1000')
+            self.vars['range_km'].set('40')
+            self.vars['csc_range_km'].set('40')
+            self.vars['az_step'].set('0.5')
             self.csc_enabled.set(True)
-            self.antenna_pattern = self.par_pattern if mode == 'PAR-NG' else generic_ssr_pattern()
-            self.antenna_name.set(self.antenna_pattern.name if self.antenna_pattern else 'PAR-NG · načti 3D diagram')
+            self.antenna_pattern = self.par_pattern
+            self.antenna_name.set('PAR-NG · '+self.par_pattern.name if self.par_pattern else 'PAR-NG · načti 3D diagram')
         else:
             for key,value in self._rl_settings.items():
                 self.vars[key].set(value)
@@ -3048,21 +2924,8 @@ class App(ctk.CTk):
             self.antenna_name.set(self.antenna_pattern.name if self.antenna_pattern else 'Idealizovaná csc²')
         self._active_radar_mode = mode
         for key in ('range_km','csc_range_km'):
-            self.param_entries[key].configure(state='disabled')
-        if hasattr(self, 'radar_label'):
-            self.radar_label.set(RADAR_LABELS[mode])
-            self.psr_range_selector.configure(state='readonly' if mode == 'RL-2000' else 'disabled')
-            self.radar_note.set({
-                'RL-2000': 'PSR · RL-2000 · 60 / 80 / 100 NM',
-                'PAR-NG': 'PAR · ±20° od osy · 40 km',
-                'SSR': 'SSR · 256 NM · obecný orientační model\n'
-                       'OpenTopography: 90m DEM kvůli velikosti oblasti\n'
-                       '1030/1090 MHz; 1 kW / 126 W; zisk 27 dBi\n'
-                       'Prahy −74 / −82 dBm; ztráty 3 dB + rezerva 6 dB\n'
-                       'Idealizovaná anténa: maximum 8°, šířka 20°\n'
-                       'Bez multipath, rušení, SLS a Pd; předpoklady v RAW exportu'
-            }[mode])
-        self.status.set(f'Režim {RADAR_LABELS[mode]}. Spusť nový výpočet; zobrazený výsledek patří původnímu výpočtu.')
+            self.param_entries[key].configure(state='disabled' if mode == 'PAR-NG' else 'normal')
+        self.status.set(f'Režim {mode}. Spusť nový výpočet; zobrazený výsledek patří původnímu výpočtu.')
         self.schedule_draw()
 
     def use_builtin_par_antenna(self):
@@ -4294,7 +4157,7 @@ class GeometryTests(unittest.TestCase):
         self.flat = np.full((len(az), len(d)), 200.0)
 
     def test_flat_zero_elevation_exact(self):
-        r = solve(replace(self.c, min_elev=0), self.flat, 200)
+        r = solve(self.c, self.flat, 200)
         radius = self.c.k * EARTH_RADIUS
         expected = (radius + 220) / np.cos(r['distance'] / radius) - radius
         np.testing.assert_allclose(r['lower'][0], expected, atol=1e-6)
@@ -4448,7 +4311,7 @@ class GeometryTests(unittest.TestCase):
             self.assertFalse(list(Path(tmp).rglob('*.tif')))
 
     def test_cosecant_normalized_gain(self):
-        c = replace(self.c, csc_ref_deg=10, antenna_tilt_deg=0)
+        c = replace(self.c, csc_ref_deg=10)
         values = csc_gain(np.deg2rad([-2, 0, 10, 30]), c)
         np.testing.assert_allclose(values[:3], 1)
         self.assertAlmostEqual(values[-1], (np.sin(np.deg2rad(10)) / 0.5)**2)

@@ -1,8 +1,8 @@
 # ELDIS · Radar Coverage
 
 Desktopová a webová aplikace pro terénní analýzu geometrického radarového krytí.
-PSR (RL-2000), PAR (PAR-NG) a obecný SSR model s integrovanými diagramy. PAR: azimut osy ±20°,
-dosah 40 km. Web a desktop sdílejí stejné modely a předvolby.
+RL-2000 a PAR-NG s integrovanými vyzařovacími diagramy. PAR-NG: azimut osy ±20°,
+dosah 40 km. Parametry a výpočetní model odpovídají původní desktopové verzi.
 
 ## Nasazení přes web (bez Gitu v počítači)
 
@@ -58,8 +58,7 @@ potřeba systémový Tkinter a `python -m pip install customtkinter keyring`.
 
 ## Fyzikální meze modelu
 
-Jde o geometrickou viditelnost nad efektivní kulovou Zemí; SSR navíc používá
-orientační výkonovou bilanci. Nejde o simulaci Pd/Pfa.
+Jde o geometrickou viditelnost nad efektivní kulovou Zemí, nikoli simulaci Pd/Pfa.
 PAR-NG využívá ideální azimutální rozmítání a vertikální řez v ose diagramu;
 nepočítá elevační skenování, čas osvitu ani ztráty při vychýlení svazku.
 Výšková reference je datum zdrojového DEM, bez převodu geoidu.
@@ -81,69 +80,3 @@ Poslední příkaz potřebuje desktopové závislosti. Testy webu ověřují sho
 extrahovaných funkcí s originálem, headless import, PAR přes sever, neznámá data,
 exporty a Streamlit ovládání. Reálné stažení DEM vyžaduje vlastní API klíč;
 externí mapové dlaždice a jejich dostupnost nejsou součástí automatických testů.
-
-## PSR / PAR / SSR
-
-Výběr **PSR / PAR / SSR** je společný pro desktop i web:
-
-| Volba | Vestavěný model | Dosah |
-|---|---|---|
-| PSR | RL-2000, původní LOW / HIGH | 60, 80 nebo 100 NM (výchozí 100 NM) |
-| PAR | PAR-NG, původní 3D diagram | 40 km, sektor ±20° |
-| SSR | Obecný orientační model | pevně 256 NM = 474,112 km, 360° |
-
-1 NM = 1,852 km. Předvolba určuje povrchový výřez mapy i maximální
-referenční **šikmý** dosah; tyto vzdálenosti nejsou totožné. U PSR je
-referenční dosah omezen původním normalizovaným anténním diagramem.
-Minimální elevace a tilt mají výchozí hodnotu −1,0°. Web má výchozí radiální
-krok 500 m pro PSR, 250 m pro PAR a 1000 m pro SSR, aby se běžný výpočet
-vešel do limitu 250 000 bodů. Jemnější krok lze zvolit s odpovídajícím
-krokem azimutu. Pro SSR nabízí OpenTopography 90m modely COP90 (výchozí)
-a SRTMGL3, protože oblast 256 NM překračuje limit 30m datasetů. Výběr radaru sám nespouští výpočet; klikni na Vypočítat krytí.
-
-### Obecný SSR model a Blakeův diagram
-
-SSR používá **dva jednosměrné Friisovy spoje**, nikoli monostatickou
-radarovou rovnici pro odraz od RCS. Pro každou elevaci se samostatně určí
-dosah dotazu (1030 MHz) a odpovědi (1090 MHz):
-
-```
-R_link [m] = wavelength / (4*pi) * 10^((P_tx + G_ground + G_air - L - M - P_min)/20)
-R_max(elevation) = min(R_uplink, R_downlink, 256 NM)
-```
-
-Výkony a prahy jsou v dBm, zisky v dBi, ztráty a rezerva v dB. `G_ground`
-zahrnuje následující normalizovaný idealizovaný vertikální diagram:
-`G_rel(e) = max(-80, -12*((e - tilt - 8)/20)^2)` dB.
-
-**Všechny číselné parametry níže jsou ilustrační předpoklady tohoto modelu,
-nikoli požadavky ICAO ani specifikace MSSR-1 nebo jiného výrobku.**
-
-| Parametr | Předpoklad |
-|---|---|
-| Výkon dotazovače / transpondéru | 60 / 51 dBm (1 kW / přibližně 126 W) |
-| Špičkový zisk pozemní / palubní antény | 27 / 0 dBi |
-| Práh příjmu transpondéru / pozemního přijímače | −74 / −82 dBm |
-| Ztráty v každém spoji | 3 dB |
-| Rezerva v každém spoji | 6 dB |
-| Maximum vertikálního diagramu před tiltem | 8° |
-| Vertikální šířka při −3 dB | 20° |
-
-Anténní obálka se převádí na vzdálenost/výšku s efektivním poloměrem Země
-(výchozí k = 4/3). Náhled **Blakeova diagramu** přidává čáry konstantní
-počáteční elevace; náhled bez terénu před výpočtem používá orientační výšku
-stanoviště 200 m AMSL. Výsledná mapa a radiální profil používají skutečné
-vzorky DEM, výšku antény a terénní horizont. Chybějící DEM zůstává neznámé,
-nikoli automaticky viditelné. 256 NM je horní limit, nikoli záruka krytí.
-
-Model nepočítá multipath, difrakci, proměnlivou atmosféru, rušení/FRUIT,
-garbling, SLS, palubní stínění ani pravděpodobnost detekce. Nenahrazuje
-validaci konkrétního radaru a stanoviště. Parametry a omezení jsou uloženy
-v metadatech JSON, NPZ a vektorového GPKG.
-
-Metodické zdroje (číselné předpoklady výše jsou naše volba):
-- [MathWorks: Blake chart – range/angle/height geometry](https://www.mathworks.com/help/radar/ref/blakechart.html)
-- [MSSR Coverage—Determinant Factors: uplink/downlink and antenna coverage](https://www.mdpi.com/1424-8220/21/12/4198)
-
-Ověření změny: `python -m pytest -q` (navíc nainstaluj pytest) a
-`python COVERAGEDIAGRAMS.py --self-test` (vyžaduje desktopové závislosti).
