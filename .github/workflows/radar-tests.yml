@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/ssr-validated]
+    branches: [main, feature/ssr-validated]
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,6 +17,8 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install -r requirements.txt pytest customtkinter
+      - name: Check deployed module contract
+        run: python -c "import radar_core as c; assert c.PSR_RANGES_NM == (60,80,100); assert c.SSR_RANGE_KM == 256*1.852; assert callable(c.generic_ssr_pattern)"
       - name: Compile source
         run: python -m compileall -q streamlit_app.py radar_core.py COVERAGEDIAGRAMS.py web_support.py
       - name: Run radar and UI regression tests
