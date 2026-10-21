@@ -18,6 +18,15 @@ class MeasuredSSRTests(unittest.TestCase):
         self.assertAlmostEqual(float(p.gain_db(np.deg2rad(7.9), 1.0)), 0)
         self.assertLess(float(p.gain_db(np.deg2rad(-6))), -30)
 
+    def test_technical_preview(self):
+        from matplotlib.figure import Figure
+        c = core.Config(radar_mode='SSR', range_km=core.SSR_RANGE_KM,
+                        csc_range_km=core.SSR_RANGE_KM, csc_enabled=True,
+                        antenna_tilt_deg=-1)
+        fig = Figure()
+        core.technical_plot(fig, config=c, pattern=load_measured_ssr())
+        self.assertEqual(len(fig.axes), 2)
+
     def test_ssr_links_and_terrain(self):
         p = load_measured_ssr()
         c = core.Config(radar_mode='SSR', range_km=core.SSR_RANGE_KM,
