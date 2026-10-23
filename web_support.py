@@ -2,6 +2,10 @@
 import json
 from pathlib import Path
 import tempfile
+from zipfile import ZipFile, ZIP_STORED
+from io import BytesIO
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -12,7 +16,7 @@ from branca.element import MacroElement, Template
 import radar_core as core
 from obstacles import obstacle_polygon
 
-EXPORTS = ('KML · všechny vrstvy (polygony)', 'GeoPackage · vektory', 'GeoTIFF · rastr', 'RAW · NPZ',
+EXPORTS = ('QuickReport · ZIP (600 DPI)', 'KML · všechny vrstvy (polygony)', 'GeoPackage · vektory', 'GeoTIFF · rastr', 'RAW · NPZ',
            'Profil · CSV', 'Metadata · JSON', 'Obrázek · PNG')
 
 
@@ -166,9 +170,76 @@ def export_kml(result, levels):
             _kml_polygon(pm, [ring])
     return ET.tostring(root, encoding='utf-8', xml_declaration=True)
 
+
+def export_quickreport(result, *, flight_levels=None):
+    """Create a single ZIP containing the antenna plot, terrain and every flight level at 600 DPI.
+
+    All images use the application's print renderer. Images are rendered one at a time;
+    the raw matrices are not recalculated and the archive has one directory per section.
+    """
+    c = result['config']
+    all_levels = tuple(core.flight_levels_for(c.radar_mode))
+    requested = all_levels if flight_levels is None else tuple(dict.fromkeys(flight_levels))
+    if any(level not in all_levels for level in requested):
+        raise ValueError('Nepodporovaná letová hladina pro zvolený radar.')
+
+    manifest = {
+        'format': 'COVERAGEDIAGRAMS_QUICKREPORT',
+        'radar': c.radar_mode,
+        'source': result.get('source'),
+        'completed_at': result.get('completed_at'),
+        'image_dpi': 600,
+        'flight_levels_ft_amsl': list(requested),
+        'terrain': '01_Teren/terrain_600dpi.png',
+        'antenna_diagram': '02_Vyzarovaci_diagram/antenna_diagram_600dpi.png',
+        'flight_level_directory': '03_Letove_hladiny/',
+        'note': 'Vypočtené geometrické krytí; rozlišení zdrojového DEM se zvýšením DPI nemění.',
+    }
+    with tempfile.TemporaryDirectory(prefix='radar_quickreport_') as directory:
+        root = Path(directory)
+        png = root / 'page.png'
+        # PNG files are already compressed. Store entries directly without further CPU-heavy ZIP deflation.
+        archive_bytes = BytesIO()
+        with ZipFile(archive_bytes, 'w', compression=ZIP_STORED, allowZip64=True) as archive:
+            core.export_map_image(png, result, 'Terén', dpi=600, alpha=1.0)
+            archive.write(png, manifest['terrain'])
+
+            fig = Figure(figsize=(13, 9), dpi=600, facecolor=core.PLOT_BG)
+            FigureCanvasAgg(fig)
+            try:
+                core.technical_plot(fig, result=result)
+                fig.text(.07, .975, 'ELDIS · ANTENNA DIAGRAM',
+                         color=core.UI_TEXT, fontsize=18, weight='bold', va='top')
+                fig.savefig(png, dpi=600, format='png', facecolor=fig.get_facecolor())
+            finally:
+                fig.clear()
+            archive.write(png, manifest['antenna_diagram'])
+
+            for level in requested:
+                # One altitude per page keeps the established print layout and readable legend.
+                core.export_map_image(png, result, 'Vybrané výšky',
+                                      levels_ft=(level,), alpha=0.74, dpi=600)
+                archive.write(png, f'03_Letove_hladiny/{int(level):05d}ft_AMSL_600dpi.png')
+            archive.writestr('report_manifest.json',
+                             json.dumps(manifest, ensure_ascii=False, indent=2))
+            archive.writestr(
+                'README.txt',
+                'COVERAGEDIAGRAMS / QuickReport\\n'
+                f'Radar: {c.radar_mode}\\n'
+                '01_Teren: terénní model\\n'
+                '02_Vyzarovaci_diagram: diagram antény a technická obálka\\n'
+                f'03_Letove_hladiny: {len(requested)} jednotlivých hladin ft AMSL\\n'
+                'Každá grafika 600 DPI; obrázky nejsou mapová ortofota.\\n'
+                'Vyšší tiskové DPI nezvyšuje přesnost zdrojových dat DEM.\\n'
+            )
+        return archive_bytes.getvalue()
+
+
 def export_bytes(kind, result, levels, index, dpi, alpha, level_alphas=None):
     with tempfile.TemporaryDirectory(prefix='radar_export_') as directory:
         root = Path(directory)
+        if kind == 'QuickReport · ZIP (600 DPI)':
+            return export_quickreport(result), 'COVERAGEDIAGRAMS_QuickReport_600dpi.zip', 'application/zip'
         if kind == 'KML · všechny vrstvy (polygony)':
             return export_kml(result, levels), 'coverage_all_layers.kml', 'application/vnd.google-earth.kml+xml'
         if kind == 'GeoPackage · vektory':
