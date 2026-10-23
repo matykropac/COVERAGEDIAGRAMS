@@ -178,7 +178,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
             entry = str(message)
             if not log_messages or log_messages[-1][1] != entry:
                 log_messages.append((stamp, entry))
-            log_view.code('\\n'.join(f'[{t}] {m}' for t, m in log_messages[-16:]), language=None)
+            log_view.code('\n'.join(f'[{t}] {m}' for t, m in log_messages[-16:]), language=None)
         if not calculate and st.session_state.get('last_compute_log'):
             log_view.code(st.session_state['last_compute_log'], language=None)
         if calculate:
@@ -234,7 +234,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                 log('CHYBA: ' + message)
                 st.error('Výpočet se nepodařil: ' + message)
             finally:
-                st.session_state['last_compute_log'] = '\\n'.join(f'[{t}] {m}' for t, m in log_messages[-30:])
+                st.session_state['last_compute_log'] = '\n'.join(f'[{t}] {m}' for t, m in log_messages[-30:])
                 progress.empty()
 
 
