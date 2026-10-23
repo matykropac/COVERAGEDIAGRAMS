@@ -566,10 +566,20 @@ else:
         left, right = st.columns([1,2])
         with left:
             kind = st.selectbox('Formát exportu', EXPORTS)
-            dpi = st.selectbox('Rozlišení PNG [DPI]', [300,600])
-            export_levels = st.multiselect('Exportované hladiny [ft AMSL]', core.flight_levels_for(radar),
-                                          default=levels, format_func=core.level_label)
-            if st.button('Připravit export', key='prepare_export'):
+            quickreport = kind.startswith('QuickReport')
+            if quickreport:
+                st.info('QuickReport: ZIP s vyzařovacím diagramem, terénem a všemi '
+                        'letovými hladinami pro vypočtený radar. '
+                        'Každá stránka je samostatné PNG při 600 DPI. '
+                        'Příprava většího balíku může být výpočetně náročná.')
+            dpi = st.selectbox('Rozlišení PNG [DPI]', [300,600],
+                               index=1 if quickreport else 0, disabled=quickreport)
+            export_levels = st.multiselect('Exportované hladiny [ft AMSL]',
+                                          core.flight_levels_for(rc.radar_mode),
+                                          default=[v for v in levels if v in core.flight_levels_for(rc.radar_mode)],
+                                          format_func=core.level_label, disabled=quickreport)
+            if st.button('Vygenerovat QuickReport ZIP' if quickreport else 'Připravit export',
+                         key='prepare_export', type='primary' if quickreport else 'secondary'):
                 try:
                     with st.spinner('Připravuji soubor…'), plot_lock():
                         blob, filename, mime = export_bytes(kind, result,
@@ -586,7 +596,7 @@ else:
             if export and export[3] == signature:
                 st.download_button('Stáhnout '+export[1], export[0], export[1], export[2])
         with right:
-            st.markdown('''**KML:** všechny vybrané výpočetní hladiny a krytí cíle jako samostatné polygonové složky v Google Earth; také půdorysy překážek.
+            st.markdown('''**QuickReport:** ZIP s diagramem antény, mapou terénu a jednotlivými výškovými řezy všech dostupných FL v PNG 600 DPI. Každá hladina má vlastní obrázek.\n\n**KML:** všechny vybrané výpočetní hladiny a krytí cíle jako samostatné polygonové složky v Google Earth; také půdorysy překážek.
 
 **GeoPackage:** vektorové plochy a hraniční křivky pro QGIS, bez převodu na pixely.
 
