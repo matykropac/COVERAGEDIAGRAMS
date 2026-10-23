@@ -21,9 +21,10 @@ from streamlit_folium import st_folium
 
 import radar_core as core
 from ssr_custom import load_measured_ssr
-from obstacles import apply_obstacles, square_corners
+from obstacles import apply_obstacles, obstacle_polygon, obstacle_signature
 from project_file import save_project, load_project
 from project_widgets import restored_widget_values
+from obstacle_ui import render_obstacle_editor
 from site_picker import coordinates_from_map_click
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
@@ -388,7 +389,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                     new_result = core.solve(c, terrain, ground, antenna(radar, ssr_pattern))
                     log(f"Započítávám překážky: {len(st.session_state.get('obstacles', []))}")
                     apply_obstacles(new_result, st.session_state.get('obstacles', []))
-                    new_result['obstacles_signature'] = tuple((o['lat'], o['lon'], o['height_m']) for o in st.session_state.get('obstacles', []))
+                    new_result['obstacles_signature'] = obstacle_signature(st.session_state.get('obstacles', []))
                     new_result.update(source=provenance, completed_at=datetime.now(timezone.utc).isoformat(),
                                       duration_s=round(time.perf_counter()-start, 3))
                     st.session_state.result = new_result
@@ -425,62 +426,9 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                    'Přihlašovací klíče se neukládají.')
     
 
-# Obstacles are stored per browser session. Placement is independent of the
-# coverage sampling grid, so a 10 m object is not lost in a 500 m grid cell.
+# The obstacle editor manages both 10 × 10 m point objects and clockwise arcs.
 with obstacles_tab:
-    st.subheader('OBSTACLES / Překážky v blízkosti radaru')
-    st.caption('Přibliž mapu a kliknutím vlož překážku 10 × 10 m. Výška je nad místním terénem. '
-               'Po úpravě spusť znovu Vypočítat krytí v NASTAVENÍ.')
-    if 'obstacles' not in st.session_state:
-        st.session_state.obstacles = []
-    height_input, count_col = st.columns([1, 2])
-    with height_input:
-        obstacle_height = st.number_input('Výška nové překážky [m AGL]', min_value=0.1,
-                                          max_value=1000.0, value=20.0, step=1.0)
-    with count_col:
-        st.caption(f"Počet překážek: {len(st.session_state.obstacles)} / 100")
-    om = folium.Map(location=[lat, lon], zoom_start=17, tiles=None, control_scale=True)
-    for name, provider in core.BASEMAP_PROVIDERS.items():
-        folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
-                         max_zoom=provider['max_zoom'], overlay=False,
-                         show=name=='OpenStreetMap').add_to(om)
-    folium.Marker([lat, lon], tooltip='Radar', icon=folium.Icon(color='orange', icon='signal')).add_to(om)
-    for i, item in enumerate(st.session_state.obstacles):
-        folium.Polygon(square_corners(item['lat'], item['lon']),
-                       color='#ff7043', weight=2, fill=True, fill_opacity=.5,
-                       tooltip=f"#{i+1}: 10 × 10 m, {item['height_m']:g} m AGL").add_to(om)
-    folium.LayerControl().add_to(om)
-    Fullscreen().add_to(om)
-    oe = st_folium(om, height=465, use_container_width=True, key='obstacle_map',
-                   returned_objects=['last_clicked'])
-    oc = (oe or {}).get('last_clicked')
-    if oc and oc != st.session_state.get('obstacle_last_click'):
-        st.session_state.obstacle_last_click = oc
-        if len(st.session_state.obstacles) < 100:
-            st.session_state.obstacles.append(dict(lat=float(oc['lat']), lon=float(oc['lng']),
-                                                    height_m=float(obstacle_height)))
-            st.rerun()
-        else:
-            st.warning('Maximum je 100 překážek.')
-    if st.session_state.obstacles:
-        names = [f"#{i+1} · {o['height_m']:g} m · {o['lat']:.6f}, {o['lon']:.6f}"
-                 for i,o in enumerate(st.session_state.obstacles)]
-        edit_col, h_col, delete_col = st.columns([3, 1, 1])
-        with edit_col:
-            selected = st.selectbox('Upravit překážku', range(len(names)),
-                                    format_func=lambda idx: names[idx])
-        with h_col:
-            new_height = st.number_input('Výška [m]', min_value=.1, max_value=1000.,
-                                          value=float(st.session_state.obstacles[selected]['height_m']),
-                                          key=f"height_edit_{selected}")
-            if abs(new_height-st.session_state.obstacles[selected]['height_m']) > 1e-8:
-                st.session_state.obstacles[selected]['height_m'] = new_height
-                st.rerun()
-        with delete_col:
-            if st.button('Odstranit', key='remove_obstacle'):
-                st.session_state.obstacles.pop(selected)
-                st.session_state.pop('obstacle_last_click', None)
-                st.rerun()
+    render_obstacle_editor(lat, lon)
 
 result = st.session_state.get('result')
 if result is None:
@@ -493,7 +441,7 @@ else:
     source_signature = (source, dataset, uploaded.file_id if uploaded is not None else None)
     with analysis:
         if (asdict(c) != asdict(rc) or (not st.session_state.get('loaded_project') and source_signature != st.session_state.source_signature)
-                or result.get('obstacles_signature') != tuple((o['lat'], o['lon'], o['height_m']) for o in st.session_state.obstacles)):
+                or result.get('obstacles_signature') != obstacle_signature(st.session_state.obstacles)):
             st.warning('Nastavení se změnilo. Mapa a exporty stále patří k poslednímu úspěšnému výpočtu.')
         if result['source'] == 'SYNTHETIC DEMO':
             st.warning('SYNTETICKÝ TERÉN — NEJDE O SKUTEČNÉ KRYTÍ STANOVIŠTĚ.')
@@ -551,7 +499,7 @@ else:
                             dict(color=color, weight=1.5, fillColor=color, fillOpacity=opacity),
                         tooltip=folium.GeoJsonTooltip(fields=['hladina'], labels=False)).add_to(m)
             for obs in result.get('obstacles', []):
-                folium.Polygon(square_corners(obs['lat'], obs['lon']), color='#ff7043',
+                folium.Polygon(obstacle_polygon(obs, rc.lat, rc.lon), color='#ff7043',
                                weight=1, fill=True, fill_opacity=.65,
                                tooltip=f"Překážka {obs['height_m']:g} m AGL").add_to(m)
             folium.Marker([rc.lat, rc.lon], tooltip=f'{rc.radar_mode} · radar',
@@ -624,17 +572,23 @@ else:
             if st.button('Připravit export', key='prepare_export'):
                 try:
                     with st.spinner('Připravuji soubor…'), plot_lock():
-                        blob, filename, mime = export_bytes(kind, result, export_levels, index, dpi, alpha, alphas)
+                        blob, filename, mime = export_bytes(kind, result,
+                            levels if kind.startswith('KML') else export_levels,
+                            index, dpi, alpha, alphas)
                         st.session_state.export = (blob, filename, mime,
-                            (kind, tuple(export_levels), index, dpi, alpha, tuple(sorted(alphas.items()))))
+                            (kind, tuple(levels if kind.startswith('KML') else export_levels),
+                             index, dpi, alpha, tuple(sorted(alphas.items()))))
                 except Exception as exc:
                     st.error('Export se nepodařil: '+str(exc))
             export = st.session_state.get('export')
-            signature = (kind, tuple(export_levels), index, dpi, alpha, tuple(sorted(alphas.items())))
+            signature = (kind, tuple(levels if kind.startswith('KML') else export_levels),
+                         index, dpi, alpha, tuple(sorted(alphas.items())))
             if export and export[3] == signature:
                 st.download_button('Stáhnout '+export[1], export[0], export[1], export[2])
         with right:
-            st.markdown('''**GeoPackage:** vektorové plochy a hraniční křivky pro QGIS, bez převodu na pixely.
+            st.markdown('''**KML:** všechny vybrané výpočetní hladiny a krytí cíle jako samostatné polygonové složky v Google Earth; také půdorysy překážek.
+
+**GeoPackage:** vektorové plochy a hraniční křivky pro QGIS, bez převodu na pixely.
 
 **GeoTIFF:** rastrové vrstvy. **NPZ:** úplné výpočetní matice a použitý diagram.
 
