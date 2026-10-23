@@ -21,6 +21,7 @@ from streamlit_folium import st_folium
 import radar_core as core
 from ssr_custom import load_measured_ssr
 from obstacles import apply_obstacles, square_corners
+from project_file import save_project, load_project
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -107,6 +108,60 @@ st.markdown('''<div class="atm-hero">
   <div class="atm-description">PSR / PAR / SSR &nbsp;·&nbsp; Terrain visibility &nbsp;·&nbsp; ATM evaluation</div></div>
   <div class="atm-brand">ELDIS<small>RADAR SYSTEMS</small></div>
 </div>''', unsafe_allow_html=True)
+def open_project_callback():
+    upload = st.session_state.get('project_upload')
+    if upload is None:
+        return
+    try:
+        result, meta = load_project(upload.getvalue())
+        c = result['config']
+        mode = {'RL-2000': 'PSR', 'PAR-NG': 'PAR', 'SSR': 'SSR'}[c.radar_mode]
+        # Set widget keys BEFORE their widgets are instantiated on the rerun.
+        st.session_state.update(
+            radar=mode, lat=c.lat, lon=c.lon, agl=c.antenna_agl, bearing=c.bearing_deg,
+            azstep=c.az_step, k_factor=c.k, tilt=c.antenna_tilt_deg,
+            beam=c.beam_mode, target=c.target_m, reference=c.reference,
+            min_elev=c.min_elev,
+            max_elev=c.max_elev, levels=meta['levels'],
+            obstacles=meta['obstacles'], result=result, geometry={},
+            profile_index=len(result['az'])//2 if mode == 'PAR' else 0,
+            source=meta.get('source_ui', {}).get('source', 'Syntetické demo'),
+            analysis_layer_mode=meta.get('display', {}).get('mode', 'Jedna hladina'),
+            analysis_global_opacity=meta.get('display', {}).get('opacity', .45),
+        )
+        st.session_state['step_'+c.radar_mode] = int(c.step_m)
+        if mode == 'PSR':
+            st.session_state['psr_range_nm'] = min(core.PSR_RANGES_NM,
+                key=lambda nm: abs(nm * core.NM_TO_KM - c.range_km))
+        if mode == 'SSR':
+            st.session_state['ssr_pattern'] = meta.get('source_ui', {}).get('ssr_pattern', 'Measured SSR.txt')
+        dataset = meta.get('source_ui', {}).get('dataset', 'COP30')
+        if dataset in core.DATASETS:
+            st.session_state['dataset_'+c.radar_mode] = dataset
+        for key in ('export', 'selected_point', 'last_map_click', 'last_map_click_obstacle'):
+            st.session_state.pop(key, None)
+        st.session_state['source_signature'] = (
+            st.session_state['source'], dataset, None
+        )
+        st.session_state['loaded_project'] = True
+        st.session_state['project_error'] = ''
+        st.session_state['project_notice'] = 'Projekt načten včetně výpočetních dat — bez přepočtu.'
+    except Exception as exc:
+        st.session_state['project_error'] = str(exc)
+
+
+with st.expander('PROJEKTY / Uložit a otevřít', expanded=False):
+    st.file_uploader('Otevřít projekt COVERAGEDIAGRAMS (.cdproj)',
+                     type=['cdproj'], key='project_upload',
+                     on_change=open_project_callback)
+    if st.session_state.get('project_error'):
+        st.error(st.session_state['project_error'])
+    if st.session_state.get('project_notice'):
+        st.success(st.session_state['project_notice'])
+    st.caption('Soubor obsahuje parametry, překážky, vybrané hladiny, výsledek a vzorkovaný DEM. '
+               'Přihlašovací klíče se neukládají.')
+
+
 settings, obstacles_tab, analysis, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
 
 with settings:
@@ -120,8 +175,8 @@ with settings:
         ssr_pattern = st.selectbox('SSR antenna diagram', ['Measured SSR.txt', 'Generic Gaussian'], disabled=not ssr, key='ssr_pattern')
         lat = st.number_input('Zeměpisná šířka [°]', -80., 80., 50.034, format='%.6f', key='lat')
         lon = st.number_input('Zeměpisná délka [°]', -180., 180., 15.781, format='%.6f', key='lon')
-        agl = st.number_input('Anténa [m AGL]', .1, 5000., 20.)
-        bearing = st.number_input('Azimut osy [°]', 0., 359.99, 0., disabled=not par)
+        agl = st.number_input('Anténa [m AGL]', .1, 5000., 20., key='agl')
+        bearing = st.number_input('Azimut osy [°]', 0., 359.99, 0., disabled=not par, key='bearing')
         if par:
             st.caption('PAR-NG: ±15° od osy · 40 km · vestavěný diagram')
         elif ssr:
@@ -172,14 +227,14 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
         st.caption(f'Dosah: {radius_input:g} km · stejný limit referenční šikmé dálky')
         step = st.select_slider('Radiální krok [m]', [25, 50, 100, 250, 500, 1000, 2000],
                                value=1000 if ssr else (250 if par else 500), key='step_'+radar)
-        azstep = st.select_slider('Krok azimutu [°]', [.25, .5, 1., 2., 2.5, 5.], value=1.)
-        k = st.number_input('Efektivní poloměr Země · k', .5, 3., 4/3, format='%.4f')
+        azstep = st.select_slider('Krok azimutu [°]', [.25, .5, 1., 2., 2.5, 5.], value=1., key='azstep')
+        k = st.number_input('Efektivní poloměr Země · k', .5, 3., 4/3, format='%.4f', key='k_factor')
         min_elev = st.number_input('Minimální elevace [°]', -5., 88., -1.0, key='min_elev')
         max_elev = st.number_input('Maximální elevace [°]', -4., 89., 45., key='max_elev')
-        tilt = st.number_input('Tilt antény [°]', -15., 15., -1.0)
-        beam = st.selectbox('Svazek', ['COMBINED', 'LOW', 'HIGH'], disabled=par or ssr)
-        target = st.number_input('Výška cíle [m]', -500., 30000., 1000.)
-        reference = st.selectbox('Reference cíle', ['AMSL', 'AGL'])
+        tilt = st.number_input('Tilt antény [°]', -15., 15., -1.0, key='tilt')
+        beam = st.selectbox('Svazek', ['COMBINED', 'LOW', 'HIGH'], disabled=par or ssr, key='beam')
+        target = st.number_input('Výška cíle [m]', -500., 30000., 1000., key='target')
+        reference = st.selectbox('Reference cíle', ['AMSL', 'AGL'], key='reference')
     c = core.Config(lat=lat, lon=lon, antenna_agl=agl, radar_mode=radar, bearing_deg=bearing,
                     range_km=40. if par else radius_input, csc_range_km=40. if par else range_ref_input,
                     step_m=float(step), az_step=float(azstep), k=k, min_elev=min_elev, max_elev=max_elev,
@@ -248,6 +303,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                     new_result.update(source=provenance, completed_at=datetime.now(timezone.utc).isoformat(),
                                       duration_s=round(time.perf_counter()-start, 3))
                     st.session_state.result = new_result
+                    st.session_state.loaded_project = False
                     st.session_state.geometry = {}
                     st.session_state.pop('export', None)
                     st.session_state.pop('selected_point', None)
@@ -333,7 +389,7 @@ else:
     rc = result['config']
     source_signature = (source, dataset, uploaded.file_id if uploaded is not None else None)
     with analysis:
-        if (asdict(c) != asdict(rc) or source_signature != st.session_state.source_signature
+        if (asdict(c) != asdict(rc) or (not st.session_state.get('loaded_project') and source_signature != st.session_state.source_signature)
                 or result.get('obstacles_signature') != tuple((o['lat'], o['lon'], o['height_m']) for o in st.session_state.obstacles)):
             st.warning('Nastavení se změnilo. Mapa a exporty stále patří k poslednímu úspěšnému výpočtu.')
         if result['source'] == 'SYNTHETIC DEMO':
@@ -434,6 +490,20 @@ else:
                 mode = st.selectbox('Veličina', ['Terén', 'Spodní hranice'])
                 figure(core.map_plot, result=result, mode=mode)
     with raw:
+        st.subheader('Projekt COVERAGEDIAGRAMS')
+        try:
+            payload = save_project(
+                result, levels=levels, obstacles=st.session_state.obstacles,
+                display={'mode': st.session_state.get('analysis_layer_mode', 'Jedna hladina'),
+                         'opacity': st.session_state.get('analysis_global_opacity', .45)},
+                source_ui={'source': source, 'dataset': dataset, 'ssr_pattern': ssr_pattern}
+            )
+            st.download_button('Uložit kompletní projekt (.cdproj)', data=payload,
+                               file_name='radar_coverage.cdproj',
+                               mime='application/octet-stream', type='primary')
+            st.caption('Po načtení souboru se obnoví vypočtené krytí i podkladový terén bez volání API.')
+        except Exception as exc:
+            st.error('Projekt nelze uložit: ' + str(exc))
         st.subheader('Aktuální výpočet')
         st.json(core.calculation_metadata(result), expanded=False)
         st.caption('RAW tabulka obsahuje nezměněné vzorky vybraného radiálního profilu. Celou matici stáhneš jako NPZ.')
