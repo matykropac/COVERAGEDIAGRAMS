@@ -13,7 +13,7 @@ def test_par_azimuth_sector_width_and_wrap():
 
 def test_par_low_flight_levels_only():
     par = core.flight_levels_for('PAR-NG')
-    assert par[:4] == (50, 100, 150, 500)
+    assert par[:10] == (50, 100, 150, 200, 250, 300, 350, 400, 450, 500)
     assert all(x in par for x in core.FLIGHT_LEVELS_LIST)
     assert core.flight_levels_for('RL-2000') == core.FLIGHT_LEVELS_LIST
     assert core.flight_levels_for('SSR') == core.FLIGHT_LEVELS_LIST
