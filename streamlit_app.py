@@ -346,7 +346,8 @@ else:
             st.caption('Kliknutí do mapy zobrazí radiální profil. Podklad změň v ovladači vrstev.')
         with mapcol:
             m = folium.Map(location=[rc.lat, rc.lon], zoom_start=8 if rc.range_km<=100 else 7,
-                           tiles=None, control_scale=True, prefer_canvas=True)
+                           tiles=None, control_scale=True, prefer_canvas=True,
+                           zoom_animation=False, fade_animation=False, marker_zoom_animation=False)
             for name, provider in core.BASEMAP_PROVIDERS.items():
                 folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                                  max_zoom=provider['max_zoom'], overlay=False, show=name=='OpenStreetMap').add_to(m)
@@ -374,7 +375,9 @@ else:
                 xs, ys, _ = Geod(ellps='WGS84').fwd(np.full(81,rc.lon),np.full(81,rc.lat),bearings,np.full(81,40000.))
                 folium.PolyLine([[rc.lat,rc.lon]]+list(zip(ys,xs))+[[rc.lat,rc.lon]],
                                 color='#8ca4b5',dash_array='5 5',weight=1,tooltip='Sektor PAR-NG ±20° / 40 km').add_to(m)
-            folium.LayerControl().add_to(m)
+            # Layer selection is handled by stable Streamlit controls; Leaflet
+            # keeps only basemap switching, without coverage layer animations.
+            folium.LayerControl(collapsed=True).add_to(m)
             Fullscreen().add_to(m)
             MeasureControl(primary_length_unit='kilometers').add_to(m)
             HoverDetail(result).add_to(m)
