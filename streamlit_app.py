@@ -124,8 +124,13 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
                'Současná poloha je označena oranžově. Změna se provede až po potvrzení.')
 
     selected = st.session_state.get('site_picker_selection')
+    # Keep the current viewport when redrawing the selected location.
+    # Without this a click on a panned/zoomed map could hide the new marker.
+    view = st.session_state.get('site_picker_view')
+    map_center = [view[0], view[1]] if view else [initial_lat, initial_lon]
+    map_zoom = view[2] if view else 11
     map_view = folium.Map(
-        location=[initial_lat, initial_lon], zoom_start=11,
+        location=map_center, zoom_start=map_zoom,
         tiles=None, control_scale=True, prefer_canvas=True,
         zoom_animation=False, fade_animation=False,
     )
@@ -165,8 +170,15 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
     Fullscreen().add_to(map_view)
     selection_event = st_folium(
         map_view, height=510, use_container_width=True,
-        key=f'radar_site_map_{map_id}', returned_objects=['last_clicked']
+        key=f'radar_site_map_{map_id}',
+        returned_objects=['last_clicked', 'center', 'zoom']
     )
+    if selection_event and selection_event.get('center') and selection_event.get('zoom') is not None:
+        current_center = selection_event['center']
+        st.session_state['site_picker_view'] = (
+            float(current_center['lat']), float(current_center['lng']),
+            int(selection_event['zoom'])
+        )
     last_click = selection_event.get('last_clicked') if selection_event else None
     if last_click:
         try:
@@ -247,6 +259,7 @@ with settings:
         lon = st.number_input('Zeměpisná délka [°]', -180., 180., 15.781, format='%.6f', key='lon')
         if st.button('📍 Vybrat z mapy', key='open_radar_site_map', use_container_width=True):
             st.session_state['site_picker_selection'] = None
+            st.session_state.pop('site_picker_view', None)
             st.session_state['site_picker_version'] = st.session_state.get('site_picker_version', 0) + 1
             choose_radar_site_from_map(lat, lon, st.session_state['site_picker_version'])
         if st.session_state.get('site_picker_notice'):
