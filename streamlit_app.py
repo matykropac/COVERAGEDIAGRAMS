@@ -22,6 +22,7 @@ import radar_core as core
 from ssr_custom import load_measured_ssr
 from obstacles import apply_obstacles, square_corners
 from project_file import save_project, load_project
+from project_widgets import restored_widget_values
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -108,35 +109,6 @@ st.markdown('''<div class="atm-hero">
   <div class="atm-description">PSR / PAR / SSR &nbsp;·&nbsp; Terrain visibility &nbsp;·&nbsp; ATM evaluation</div></div>
   <div class="atm-brand">ELDIS<small>RADAR SYSTEMS</small></div>
 </div>''', unsafe_allow_html=True)
-def restored_widget_values(config, meta):
-    """One complete mapping from saved Config to actual Streamlit widget keys."""
-    mode = {'RL-2000': 'PSR', 'PAR-NG': 'PAR', 'SSR': 'SSR'}[config.radar_mode]
-    values = {
-        'radar': mode,
-        'lat': float(config.lat), 'lon': float(config.lon),
-        'agl': float(config.antenna_agl), 'bearing': float(config.bearing_deg),
-        'azstep': float(config.az_step), 'k_factor': float(config.k),
-        'min_elev': float(config.min_elev), 'max_elev': float(config.max_elev),
-        'tilt': float(config.antenna_tilt_deg),
-        'beam': config.beam_mode, 'target': float(config.target_m),
-        'reference': config.reference,
-        'step_' + config.radar_mode: int(config.step_m),
-        'levels': list(meta['levels']),
-        'source': meta.get('source_ui', {}).get('source', 'Syntetické demo'),
-        'analysis_layer_mode': meta.get('display', {}).get('mode', 'Jedna hladina'),
-        'analysis_global_opacity': float(meta.get('display', {}).get('opacity', .45)),
-    }
-    if mode == 'PSR':
-        values['psr_range_nm'] = min(core.PSR_RANGES_NM,
-            key=lambda nm: abs(nm * core.NM_TO_KM - config.range_km))
-    if mode == 'SSR':
-        values['ssr_pattern'] = meta.get('source_ui', {}).get('ssr_pattern', 'Measured SSR.txt')
-    dataset = meta.get('source_ui', {}).get('dataset', 'COP30')
-    if dataset in core.DATASETS:
-        values['dataset_' + config.radar_mode] = dataset
-    return values
-
-
 def open_project_callback():
     upload = st.session_state.get('project_upload')
     if upload is None:
