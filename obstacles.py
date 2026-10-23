@@ -60,7 +60,7 @@ def arc_parameters(obstacle, radar_lat, radar_lon):
     return b1, span, r1, r2
 
 
-def validate_obstacle(o, radar_lat, radar_lon):
+def validate_obstacle(o, radar_lat, radar_lon, *, enforce_point_range=True):
     """Validate both legacy 10×10 m obstacles and clockwise WGS84 arc walls."""
     import math
     kind = o.get('kind', 'point')
@@ -74,7 +74,7 @@ def validate_obstacle(o, radar_lat, radar_lon):
         if not all(math.isfinite(v) for v in (lat, lon)) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
             raise ValueError('Neplatné souřadnice bodové překážky.')
         _, _, radius = GEOD.inv(radar_lon, radar_lat, lon, lat)
-        if radius > 20000.0:
+        if enforce_point_range and radius > 20000.0:
             raise ValueError('Překážky jsou podporovány nejvýše 20 km od radaru.')
     else:
         for key, limit in (('start_lat', 90), ('start_lon', 180),
