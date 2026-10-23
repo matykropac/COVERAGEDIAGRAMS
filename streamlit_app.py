@@ -25,6 +25,7 @@ from obstacles import apply_obstacles, obstacle_polygon, obstacle_signature
 from project_file import save_project, load_project
 from project_widgets import restored_widget_values
 from obstacle_ui import render_obstacle_editor
+from diagnostics_ui import render_diagnostics
 from site_picker import coordinates_from_map_click
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
@@ -245,7 +246,7 @@ def open_project_callback():
 
 
 
-settings, obstacles_tab, analysis, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
+settings, obstacles_tab, analysis, diagnostics_tab, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DIAGNOSTIKA', 'DATA / EXPORTY'])
 
 with settings:
     location, parameters, preview, execution = st.columns([22, 22, 34, 22], gap='small')
@@ -607,3 +608,10 @@ else:
 **PNG:** tiskový graf krytí při 300 nebo 600 DPI, bez online mapového podkladu.
 
 Přesnost křivek určuje krok výpočtu a rozlišení DEM. Vyšší DPI nezvyšuje přesnost terénu.''')
+
+
+with diagnostics_tab:
+    if result is None:
+        st.info('Nejprve vypočítej krytí nebo načti projekt (.cdproj).')
+    else:
+        render_diagnostics(result)
