@@ -108,6 +108,35 @@ st.markdown('''<div class="atm-hero">
   <div class="atm-description">PSR / PAR / SSR &nbsp;·&nbsp; Terrain visibility &nbsp;·&nbsp; ATM evaluation</div></div>
   <div class="atm-brand">ELDIS<small>RADAR SYSTEMS</small></div>
 </div>''', unsafe_allow_html=True)
+def restored_widget_values(config, meta):
+    """One complete mapping from saved Config to actual Streamlit widget keys."""
+    mode = {'RL-2000': 'PSR', 'PAR-NG': 'PAR', 'SSR': 'SSR'}[config.radar_mode]
+    values = {
+        'radar': mode,
+        'lat': float(config.lat), 'lon': float(config.lon),
+        'agl': float(config.antenna_agl), 'bearing': float(config.bearing_deg),
+        'azstep': float(config.az_step), 'k_factor': float(config.k),
+        'min_elev': float(config.min_elev), 'max_elev': float(config.max_elev),
+        'tilt': float(config.antenna_tilt_deg),
+        'beam': config.beam_mode, 'target': float(config.target_m),
+        'reference': config.reference,
+        'step_' + config.radar_mode: int(config.step_m),
+        'levels': list(meta['levels']),
+        'source': meta.get('source_ui', {}).get('source', 'Syntetické demo'),
+        'analysis_layer_mode': meta.get('display', {}).get('mode', 'Jedna hladina'),
+        'analysis_global_opacity': float(meta.get('display', {}).get('opacity', .45)),
+    }
+    if mode == 'PSR':
+        values['psr_range_nm'] = min(core.PSR_RANGES_NM,
+            key=lambda nm: abs(nm * core.NM_TO_KM - config.range_km))
+    if mode == 'SSR':
+        values['ssr_pattern'] = meta.get('source_ui', {}).get('ssr_pattern', 'Measured SSR.txt')
+    dataset = meta.get('source_ui', {}).get('dataset', 'COP30')
+    if dataset in core.DATASETS:
+        values['dataset_' + config.radar_mode] = dataset
+    return values
+
+
 def open_project_callback():
     upload = st.session_state.get('project_upload')
     if upload is None:
@@ -115,38 +144,22 @@ def open_project_callback():
     try:
         result, meta = load_project(upload.getvalue())
         c = result['config']
-        mode = {'RL-2000': 'PSR', 'PAR-NG': 'PAR', 'SSR': 'SSR'}[c.radar_mode]
-        result['antenna_pattern'] = antenna(c.radar_mode, meta.get('source_ui', {}).get('ssr_pattern', 'Measured SSR.txt'))
-        # Set widget keys BEFORE their widgets are instantiated on the rerun.
+        values = restored_widget_values(c, meta)
+        result['antenna_pattern'] = antenna(c.radar_mode, values.get('ssr_pattern', 'Measured SSR.txt'))
+        st.session_state.update(values)
         st.session_state.update(
-            radar=mode, lat=c.lat, lon=c.lon, agl=c.antenna_agl, bearing=c.bearing_deg,
-            azstep=c.az_step, k_factor=c.k, tilt=c.antenna_tilt_deg,
-            beam=c.beam_mode, target=c.target_m, reference=c.reference,
-            min_elev=c.min_elev,
-            max_elev=c.max_elev, levels=meta['levels'],
             obstacles=meta['obstacles'], result=result, geometry={},
-            profile_index=len(result['az'])//2 if mode == 'PAR' else 0,
-            source=meta.get('source_ui', {}).get('source', 'Syntetické demo'),
-            analysis_layer_mode=meta.get('display', {}).get('mode', 'Jedna hladina'),
-            analysis_global_opacity=meta.get('display', {}).get('opacity', .45),
+            profile_index=len(result['az'])//2 if c.radar_mode == 'PAR-NG' else 0,
+            loaded_project=True, project_error='',
+            project_notice='Projekt načten včetně všech parametrů a vypočteného krytí.',
         )
-        st.session_state['step_'+c.radar_mode] = int(c.step_m)
-        if mode == 'PSR':
-            st.session_state['psr_range_nm'] = min(core.PSR_RANGES_NM,
-                key=lambda nm: abs(nm * core.NM_TO_KM - c.range_km))
-        if mode == 'SSR':
-            st.session_state['ssr_pattern'] = meta.get('source_ui', {}).get('ssr_pattern', 'Measured SSR.txt')
-        dataset = meta.get('source_ui', {}).get('dataset', 'COP30')
-        if dataset in core.DATASETS:
-            st.session_state['dataset_'+c.radar_mode] = dataset
         for key in ('export', 'selected_point', 'last_map_click', 'last_map_click_obstacle'):
             st.session_state.pop(key, None)
+        # The restored result stays authoritative even when its original DEM file
+        # is no longer accessible. Configuration comparison still detects edits.
         st.session_state['source_signature'] = (
-            st.session_state['source'], dataset, None
+            values['source'], meta.get('source_ui', {}).get('dataset', 'COP30'), None
         )
-        st.session_state['loaded_project'] = True
-        st.session_state['project_error'] = ''
-        st.session_state['project_notice'] = 'Projekt načten včetně výpočetních dat — bez přepočtu.'
     except Exception as exc:
         st.session_state['project_error'] = str(exc)
 
