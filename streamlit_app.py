@@ -20,6 +20,7 @@ from streamlit_folium import st_folium
 
 import radar_core as core
 from ssr_custom import load_measured_ssr
+from obstacles import apply_obstacles, square_corners
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -39,9 +40,17 @@ from web_support import EXPORTS, HoverDetail, clicked_point, coverage_geojson, e
 
 st.set_page_config(page_title='ELDIS · Radar Coverage', page_icon='📡', layout='wide')
 st.markdown('''<style>
-.block-container {padding-top:1.2rem;padding-bottom:1rem;}
-[data-testid="stVerticalBlock"] {gap:.65rem;}
-p {line-height:1.35;} h1 {font-size:1.8rem!important;}
+ .block-container {padding-top:.45rem;padding-bottom:.4rem;max-width:100%;}
+[data-testid="stAppViewContainer"] {font-size:.9rem;}
+[data-testid="stWidgetLabel"] {margin-bottom:-.25rem;}
+[data-testid="stVerticalBlock"] > div {margin-bottom:0;}
+[data-testid="stTabs"] [data-baseweb="tab-list"] {gap:.35rem;}
+[data-testid="stTabs"] [data-baseweb="tab"] {padding:.35rem .75rem;}
+[data-testid="stNumberInput"] input {min-height:1.9rem;}
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div {min-height:1.9rem;}
+
+[data-testid="stVerticalBlock"] {gap:.3rem;}
+p {line-height:1.2;} h1 {font-size:1.45rem!important;margin:0!important;} h2,h3 {margin:.25rem 0!important;font-size:1.05rem!important;}
 </style>''', unsafe_allow_html=True)
 
 
@@ -70,7 +79,7 @@ def figure(draw, **kwargs):
 
 st.title('ELDIS · RADAR COVERAGE')
 st.caption('PSR / PAR / SSR · terénní analýza a radarové krytí')
-settings, analysis, raw = st.tabs(['NASTAVENÍ', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
+settings, obstacles_tab, analysis, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
 
 with settings:
     location, parameters, preview = st.columns([25, 25, 50])
@@ -186,6 +195,8 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                         terrain, ground = core.sample(path, c, report)
                         provenance = 'OpenTopography · ' + dataset
                     new_result = core.solve(c, terrain, ground, antenna(radar, ssr_pattern))
+                    apply_obstacles(new_result, st.session_state.get('obstacles', []))
+                    new_result['obstacles_signature'] = tuple((o['lat'], o['lon'], o['height_m']) for o in st.session_state.get('obstacles', []))
                     new_result.update(source=provenance, completed_at=datetime.now(timezone.utc).isoformat(),
                                       duration_s=round(time.perf_counter()-start, 3))
                     st.session_state.result = new_result
@@ -203,6 +214,64 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
             finally:
                 progress.empty()
 
+
+# Obstacles are stored per browser session. Placement is independent of the
+# coverage sampling grid, so a 10 m object is not lost in a 500 m grid cell.
+with obstacles_tab:
+    st.subheader('Překážky v blízkosti radaru')
+    st.caption('Přibliž mapu a kliknutím vlož překážku 10 × 10 m. Výška je nad místním terénem. '
+               'Po úpravě spusť znovu Vypočítat krytí v NASTAVENÍ.')
+    if 'obstacles' not in st.session_state:
+        st.session_state.obstacles = []
+    height_input, count_col = st.columns([1, 2])
+    with height_input:
+        obstacle_height = st.number_input('Výška nové překážky [m AGL]', min_value=0.1,
+                                          max_value=1000.0, value=20.0, step=1.0)
+    with count_col:
+        st.caption(f"Počet překážek: {len(st.session_state.obstacles)} / 100")
+    om = folium.Map(location=[lat, lon], zoom_start=17, tiles=None, control_scale=True)
+    for name, provider in core.BASEMAP_PROVIDERS.items():
+        folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
+                         max_zoom=provider['max_zoom'], overlay=False,
+                         show=name=='OpenStreetMap').add_to(om)
+    folium.Marker([lat, lon], tooltip='Radar', icon=folium.Icon(color='orange', icon='signal')).add_to(om)
+    for i, item in enumerate(st.session_state.obstacles):
+        folium.Polygon(square_corners(item['lat'], item['lon']),
+                       color='#ff7043', weight=2, fill=True, fill_opacity=.5,
+                       tooltip=f"#{i+1}: 10 × 10 m, {item['height_m']:g} m AGL").add_to(om)
+    folium.LayerControl().add_to(om)
+    Fullscreen().add_to(om)
+    oe = st_folium(om, height=465, use_container_width=True, key='obstacle_map',
+                   returned_objects=['last_clicked'])
+    oc = (oe or {}).get('last_clicked')
+    if oc and oc != st.session_state.get('obstacle_last_click'):
+        st.session_state.obstacle_last_click = oc
+        if len(st.session_state.obstacles) < 100:
+            st.session_state.obstacles.append(dict(lat=float(oc['lat']), lon=float(oc['lng']),
+                                                    height_m=float(obstacle_height)))
+            st.rerun()
+        else:
+            st.warning('Maximum je 100 překážek.')
+    if st.session_state.obstacles:
+        names = [f"#{i+1} · {o['height_m']:g} m · {o['lat']:.6f}, {o['lon']:.6f}"
+                 for i,o in enumerate(st.session_state.obstacles)]
+        edit_col, h_col, delete_col = st.columns([3, 1, 1])
+        with edit_col:
+            selected = st.selectbox('Upravit překážku', range(len(names)),
+                                    format_func=lambda idx: names[idx])
+        with h_col:
+            new_height = st.number_input('Výška [m]', min_value=.1, max_value=1000.,
+                                          value=float(st.session_state.obstacles[selected]['height_m']),
+                                          key=f"height_edit_{selected}")
+            if abs(new_height-st.session_state.obstacles[selected]['height_m']) > 1e-8:
+                st.session_state.obstacles[selected]['height_m'] = new_height
+                st.rerun()
+        with delete_col:
+            if st.button('Odstranit', key='remove_obstacle'):
+                st.session_state.obstacles.pop(selected)
+                st.session_state.pop('obstacle_last_click', None)
+                st.rerun()
+
 result = st.session_state.get('result')
 if result is None:
     with analysis:
@@ -213,7 +282,8 @@ else:
     rc = result['config']
     source_signature = (source, dataset, uploaded.file_id if uploaded is not None else None)
     with analysis:
-        if asdict(c) != asdict(rc) or source_signature != st.session_state.source_signature:
+        if (asdict(c) != asdict(rc) or source_signature != st.session_state.source_signature
+                or result.get('obstacles_signature') != tuple((o['lat'], o['lon'], o['height_m']) for o in st.session_state.obstacles)):
             st.warning('Nastavení se změnilo. Mapa a exporty stále patří k poslednímu úspěšnému výpočtu.')
         if result['source'] == 'SYNTHETIC DEMO':
             st.warning('SYNTETICKÝ TERÉN — NEJDE O SKUTEČNÉ KRYTÍ STANOVIŠTĚ.')
@@ -249,6 +319,10 @@ else:
                         style_function=lambda feature, color=color, opacity=opacity:
                             dict(color=color, weight=1.5, fillColor=color, fillOpacity=opacity),
                         tooltip=folium.GeoJsonTooltip(fields=['hladina'], labels=False)).add_to(m)
+            for obs in result.get('obstacles', []):
+                folium.Polygon(square_corners(obs['lat'], obs['lon']), color='#ff7043',
+                               weight=1, fill=True, fill_opacity=.65,
+                               tooltip=f"Překážka {obs['height_m']:g} m AGL").add_to(m)
             folium.Marker([rc.lat, rc.lon], tooltip=f'{rc.radar_mode} · radar',
                           icon=folium.Icon(color='orange', icon='signal')).add_to(m)
             if par := (rc.radar_mode == 'PAR-NG'):
@@ -261,7 +335,7 @@ else:
             Fullscreen().add_to(m)
             MeasureControl(primary_length_unit='kilometers').add_to(m)
             HoverDetail(result).add_to(m)
-            event = st_folium(m, height=650, use_container_width=True,
+            event = st_folium(m, height=540, use_container_width=True,
                              key='coverage_'+result['completed_at'], returned_objects=['last_clicked'])
             click = event.get('last_clicked') if event else None
             if click and click != st.session_state.get('last_map_click'):
