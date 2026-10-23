@@ -23,6 +23,7 @@ from ssr_custom import load_measured_ssr
 from obstacles import apply_obstacles, square_corners
 from project_file import save_project, load_project
 from project_widgets import restored_widget_values
+from site_picker import coordinates_from_map_click
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -41,6 +42,18 @@ if _missing_core_api:
 from web_support import EXPORTS, HoverDetail, clicked_point, coverage_geojson, export_bytes
 
 st.set_page_config(page_title='ELDIS · Radar Coverage', page_icon='📡', layout='wide')
+
+# A dialog rerun must stage coordinates until the next whole-app rerun.
+# Mutating the lat/lon widget keys after their rendering raises a Streamlit error.
+_pending_radar_site = st.session_state.pop('_pending_radar_site', None)
+if _pending_radar_site is not None:
+    st.session_state['lat'], st.session_state['lon'] = _pending_radar_site
+    st.session_state['site_picker_notice'] = (
+        f"Nové stanoviště: {_pending_radar_site[0]:.6f}°, "
+        f"{_pending_radar_site[1]:.6f}° (WGS 84). Pro nové krytí spusť výpočet."
+    )
+    st.session_state['project_notice'] = ''
+
 # Centralized ATM stylesheet. Keep widget spacing and colors in one place.
 st.markdown('<style>' + (Path(__file__).resolve().parent / 'assets' / 'atm-theme.css').read_text(encoding='utf-8') + '</style>', unsafe_allow_html=True)
 
@@ -103,6 +116,61 @@ def figure(draw, **kwargs):
             fig.clear()
 
 
+@st.dialog('Vybrat stanoviště radaru z mapy', width='large')
+def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
+    """Confirming a map click queues WGS84 coordinates for the next app rerun."""
+    st.caption('Přibliž mapu a klikni na místo, kde má radar stát. '
+               'Současná poloha je označena oranžově. Změna se provede až po potvrzení.')
+
+    selected = st.session_state.get('site_picker_selection')
+    map_view = folium.Map(
+        location=[initial_lat, initial_lon], zoom_start=11,
+        tiles=None, control_scale=True, prefer_canvas=True,
+        zoom_animation=False, fade_animation=False,
+    )
+    for name, provider in core.BASEMAP_PROVIDERS.items():
+        folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
+                         max_zoom=provider['max_zoom'], overlay=False,
+                         show=name == 'OpenStreetMap').add_to(map_view)
+    folium.Marker(
+        [initial_lat, initial_lon], tooltip='Aktuální stanoviště',
+        icon=folium.Icon(color='orange', icon='signal')
+    ).add_to(map_view)
+    if selected is not None:
+        folium.CircleMarker(
+            list(selected), radius=9, color='#3fd5f3', weight=3,
+            fill=True, fill_color='#27bfe0', fill_opacity=.6,
+            tooltip='Nové stanoviště'
+        ).add_to(map_view)
+    folium.LayerControl(collapsed=True).add_to(map_view)
+    Fullscreen().add_to(map_view)
+    selection_event = st_folium(
+        map_view, height=510, use_container_width=True,
+        key=f'radar_site_map_{map_id}', returned_objects=['last_clicked']
+    )
+    last_click = selection_event.get('last_clicked') if selection_event else None
+    if last_click:
+        try:
+            selected = coordinates_from_map_click(last_click)
+            st.session_state['site_picker_selection'] = selected
+        except ValueError as exc:
+            st.error(str(exc))
+            selected = None
+            st.session_state['site_picker_selection'] = None
+
+    if selected is not None:
+        st.success(f'Vybráno: {selected[0]:.6f}°, {selected[1]:.6f}° (WGS 84)')
+    else:
+        st.info('Kliknutím na mapu vyber novou polohu.')
+
+    if st.button('Použít souřadnice', type='primary',
+                 disabled=selected is None, use_container_width=True,
+                 key='confirm_radar_site'):
+        st.session_state['_pending_radar_site'] = selected
+        st.session_state.pop('site_picker_selection', None)
+        st.rerun()
+
+
 st.markdown('''<div class="atm-hero">
   <div><div class="atm-eyebrow">RADAR SYSTEMS · ENGINEERING WORKSTATION</div>
   <div class="atm-title">RADAR COVERAGE ANALYSIS</div>
@@ -128,7 +196,7 @@ def open_project_callback():
         st.session_state.update(
             obstacles=meta['obstacles'], result=result, geometry={},
             profile_index=len(result['az'])//2 if c.radar_mode == 'PAR-NG' else 0,
-            loaded_project=True, project_error='',
+            loaded_project=True, project_error='', site_picker_notice='',
             project_notice='Projekt načten včetně všech parametrů a vypočteného krytí.',
         )
         for key in ('export', 'selected_point', 'last_map_click', 'last_map_click_obstacle'):
@@ -167,6 +235,12 @@ with settings:
         ssr_pattern = st.selectbox('SSR antenna diagram', ['Measured SSR.txt', 'Generic Gaussian'], disabled=not ssr, key='ssr_pattern')
         lat = st.number_input('Zeměpisná šířka [°]', -80., 80., 50.034, format='%.6f', key='lat')
         lon = st.number_input('Zeměpisná délka [°]', -180., 180., 15.781, format='%.6f', key='lon')
+        if st.button('📍 Vybrat z mapy', key='open_radar_site_map', use_container_width=True):
+            st.session_state['site_picker_selection'] = None
+            st.session_state['site_picker_version'] = st.session_state.get('site_picker_version', 0) + 1
+            choose_radar_site_from_map(lat, lon, st.session_state['site_picker_version'])
+        if st.session_state.get('site_picker_notice'):
+            st.caption(st.session_state['site_picker_notice'])
         agl = st.number_input('Anténa [m AGL]', .1, 5000., 20., key=f"agl_restored_{st.session_state.get('project_restore_epoch', 0)}")
         bearing = st.number_input('Azimut osy [°]', 0., 359.99, 0., disabled=not par, key=f"bearing_restored_{st.session_state.get('project_restore_epoch', 0)}")
         if par:
@@ -296,6 +370,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                                       duration_s=round(time.perf_counter()-start, 3))
                     st.session_state.result = new_result
                     st.session_state.loaded_project = False
+                    st.session_state.pop('site_picker_notice', None)
                     st.session_state.geometry = {}
                     st.session_state.pop('export', None)
                     st.session_state.pop('selected_point', None)
