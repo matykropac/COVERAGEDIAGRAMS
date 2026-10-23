@@ -39,19 +39,8 @@ if _missing_core_api:
 from web_support import EXPORTS, HoverDetail, clicked_point, coverage_geojson, export_bytes
 
 st.set_page_config(page_title='ELDIS · Radar Coverage', page_icon='📡', layout='wide')
-st.markdown('''<style>
- .block-container {padding-top:.45rem;padding-bottom:.4rem;max-width:100%;}
-[data-testid="stAppViewContainer"] {font-size:.9rem;}
-[data-testid="stWidgetLabel"] {margin-bottom:-.25rem;}
-[data-testid="stVerticalBlock"] > div {margin-bottom:0;}
-[data-testid="stTabs"] [data-baseweb="tab-list"] {gap:.35rem;}
-[data-testid="stTabs"] [data-baseweb="tab"] {padding:.35rem .75rem;}
-[data-testid="stNumberInput"] input {min-height:1.9rem;}
-[data-testid="stSelectbox"] div[data-baseweb="select"] > div {min-height:1.9rem;}
-
-[data-testid="stVerticalBlock"] {gap:.3rem;}
-p {line-height:1.2;} h1 {font-size:1.45rem!important;margin:0!important;} h2,h3 {margin:.25rem 0!important;font-size:1.05rem!important;}
-</style>''', unsafe_allow_html=True)
+# Centralized ATM stylesheet. Keep widget spacing and colors in one place.
+st.markdown('<style>' + (Path(__file__).resolve().parent / 'assets' / 'atm-theme.css').read_text(encoding='utf-8') + '</style>', unsafe_allow_html=True)
 
 
 @st.cache_resource
@@ -77,14 +66,18 @@ def figure(draw, **kwargs):
             fig.clear()
 
 
-st.title('ELDIS · RADAR COVERAGE')
-st.caption('PSR / PAR / SSR · terénní analýza a radarové krytí')
+st.markdown('''<div class="atm-hero">
+  <div><div class="atm-eyebrow">RADAR SYSTEMS · ENGINEERING WORKSTATION</div>
+  <div class="atm-title">RADAR COVERAGE ANALYSIS</div>
+  <div class="atm-description">PSR / PAR / SSR &nbsp;·&nbsp; Terrain visibility &nbsp;·&nbsp; ATM evaluation</div></div>
+  <div class="atm-brand">ELDIS<small>RADAR SYSTEMS</small></div>
+</div>''', unsafe_allow_html=True)
 settings, obstacles_tab, analysis, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
 
 with settings:
     location, parameters, preview, execution = st.columns([22, 22, 34, 22], gap='small')
     with location:
-        st.subheader('Radar a stanoviště')
+        st.subheader('01 / Radar a stanoviště')
         radar_label = st.selectbox('Radar', ['PSR', 'PAR', 'SSR'], key='radar')
         radar = {'PSR': 'RL-2000', 'PAR': 'PAR-NG', 'SSR': 'SSR'}[radar_label]
         ssr = radar == 'SSR'
@@ -135,7 +128,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
         else:
             st.caption('Demo používá umělý terén, nikoli skutečné okolí stanoviště.')
     with parameters:
-        st.subheader('Parametry výpočtu')
+        st.subheader('02 / Parametry výpočtu')
         if radar == 'RL-2000':
             psr_nm = st.selectbox('Dosah PSR [NM]', core.PSR_RANGES_NM, index=2, key='psr_range_nm')
         else:
@@ -158,7 +151,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                     antenna_tilt_deg=tilt, beam_mode='COMBINED' if par or ssr else beam,
                     target_m=target, reference=reference, csc_enabled=True)
     with preview:
-        st.subheader('Vyzařovací diagram')
+        st.subheader('03 / Vyzařovací diagram')
         try:
             c.validate()
             figure(core.technical_plot, config=c, pattern=antenna(radar, ssr_pattern))
@@ -166,7 +159,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
         except ValueError as exc:
             st.warning(str(exc))
     with execution:
-        st.subheader('Výpočet a stav')
+        st.subheader('04 / Výpočet a stav')
         st.caption('Zvol hladiny, spusť výpočet a sleduj průběh jednotlivých kroků.')
         levels = st.multiselect('Výškové řezy [ft AMSL] · nominální ISA', core.FLIGHT_LEVELS_LIST,
                                 default=[3000, 10000], format_func=core.level_label, key='levels')
@@ -241,7 +234,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
 # Obstacles are stored per browser session. Placement is independent of the
 # coverage sampling grid, so a 10 m object is not lost in a 500 m grid cell.
 with obstacles_tab:
-    st.subheader('Překážky v blízkosti radaru')
+    st.subheader('OBSTACLES / Překážky v blízkosti radaru')
     st.caption('Přibliž mapu a kliknutím vlož překážku 10 × 10 m. Výška je nad místním terénem. '
                'Po úpravě spusť znovu Vypočítat krytí v NASTAVENÍ.')
     if 'obstacles' not in st.session_state:
@@ -314,7 +307,7 @@ else:
                    f"{result['completed_at']} · {result['duration_s']:g} s")
         legend, mapcol, profile = st.columns([20, 55, 25])
         with legend:
-            st.subheader('Letové hladiny')
+            st.subheader('DISPLAY CONTROL / Hladiny')
             # One selected layer by default: no duplicated opacity sliders and
             # no animated layer toggles that shift the entire sidebar.
             available_levels = list(levels)
@@ -391,7 +384,7 @@ else:
                 if idx is not None:
                     st.session_state.profile_index = idx
         with profile:
-            st.subheader('Radiální profil')
+            st.subheader('RADIAL PROFILE / Radiální profil')
             idx = st.select_slider('Azimut [°]', options=list(range(len(result['az']))),
                                    format_func=lambda i:f"{result['az'][i]%360:.2f}°", key='profile_index')
             point = st.session_state.get('selected_point')
