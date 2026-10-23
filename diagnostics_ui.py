@@ -65,7 +65,7 @@ def side_view(result, diagnosis):
     if blocker and blocker["distance_m"]/1000 <= d_target:
         ax.scatter([blocker["distance_m"]/1000], [blocker["top_m"]],
                    marker="x", color="#b52922", s=100, linewidths=2.5, zorder=10,
-                   label="Limitující překážka / terén")
+                   label="Nejvyšší horizont na trase")
 
     ax.set(xlim=(0, x[-1]), ylim=(y_low, y_high),
            xlabel="Vzdálenost od radaru [km]", ylabel="Výška [m AMSL]",
@@ -133,7 +133,7 @@ def render_diagnostics(result):
                 st.write("• " + cause)
             blocker = info.get("blocker")
             if blocker:
-                st.write("**Limitující objekt na trase**")
+                st.write("**Nejvyšší horizont na trase (nemusí blokovat)**")
                 st.write("{} · {:.2f} km od radaru".format(
                     blocker["name"], blocker["distance_m"]/1000))
                 st.write("Vrchol {:.1f} m AMSL · zdánlivý úhel {:.3f}°".format(
