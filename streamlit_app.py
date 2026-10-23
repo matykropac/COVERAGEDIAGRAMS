@@ -116,6 +116,7 @@ def open_project_callback():
         result, meta = load_project(upload.getvalue())
         c = result['config']
         mode = {'RL-2000': 'PSR', 'PAR-NG': 'PAR', 'SSR': 'SSR'}[c.radar_mode]
+        result['antenna_pattern'] = antenna(c.radar_mode, meta.get('source_ui', {}).get('ssr_pattern', 'Measured SSR.txt'))
         # Set widget keys BEFORE their widgets are instantiated on the rerun.
         st.session_state.update(
             radar=mode, lat=c.lat, lon=c.lon, agl=c.antenna_agl, bearing=c.bearing_deg,
