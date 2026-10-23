@@ -118,6 +118,12 @@ def open_project_callback():
         c = result['config']
         values = restored_widget_values(c, meta)
         result['antenna_pattern'] = antenna(c.radar_mode, values.get('ssr_pattern', 'Measured SSR.txt'))
+        # Change widget identities for values that were previously displayed
+        # with Streamlit's stale widget state after an upload.
+        epoch = int(st.session_state.get('project_restore_epoch', 0)) + 1
+        st.session_state['project_restore_epoch'] = epoch
+        for field in ('agl', 'bearing', 'tilt'):
+            values[f'{field}_restored_{epoch}'] = values[field]
         st.session_state.update(values)
         st.session_state.update(
             obstacles=meta['obstacles'], result=result, geometry={},
@@ -161,8 +167,8 @@ with settings:
         ssr_pattern = st.selectbox('SSR antenna diagram', ['Measured SSR.txt', 'Generic Gaussian'], disabled=not ssr, key='ssr_pattern')
         lat = st.number_input('Zeměpisná šířka [°]', -80., 80., 50.034, format='%.6f', key='lat')
         lon = st.number_input('Zeměpisná délka [°]', -180., 180., 15.781, format='%.6f', key='lon')
-        agl = st.number_input('Anténa [m AGL]', .1, 5000., 20., key='agl')
-        bearing = st.number_input('Azimut osy [°]', 0., 359.99, 0., disabled=not par, key='bearing')
+        agl = st.number_input('Anténa [m AGL]', .1, 5000., 20., key=f"agl_restored_{st.session_state.get('project_restore_epoch', 0)}")
+        bearing = st.number_input('Azimut osy [°]', 0., 359.99, 0., disabled=not par, key=f"bearing_restored_{st.session_state.get('project_restore_epoch', 0)}")
         if par:
             st.caption('PAR-NG: ±15° od osy · 40 km · vestavěný diagram')
         elif ssr:
@@ -217,7 +223,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
         k = st.number_input('Efektivní poloměr Země · k', .5, 3., 4/3, format='%.4f', key='k_factor')
         min_elev = st.number_input('Minimální elevace [°]', -5., 88., -1.0, key='min_elev')
         max_elev = st.number_input('Maximální elevace [°]', -4., 89., 45., key='max_elev')
-        tilt = st.number_input('Tilt antény [°]', -15., 15., -1.0, key='tilt')
+        tilt = st.number_input('Tilt antény [°]', -15., 15., -1.0, key=f"tilt_restored_{st.session_state.get('project_restore_epoch', 0)}")
         beam = st.selectbox('Svazek', ['COMBINED', 'LOW', 'HIGH'], disabled=par or ssr, key='beam')
         target = st.number_input('Výška cíle [m]', -500., 30000., 1000., key='target')
         reference = st.selectbox('Reference cíle', ['AMSL', 'AGL'], key='reference')
