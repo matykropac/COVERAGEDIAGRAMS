@@ -9,6 +9,7 @@ import json
 from zipfile import ZipFile, ZIP_DEFLATED, BadZipFile
 import numpy as np
 import radar_core as core
+from obstacles import obstacle_signature, validate_obstacle
 
 FORMAT = 'COVERAGEDIAGRAMS'
 VERSION = 1
@@ -73,16 +74,18 @@ def load_project(blob, antenna_pattern=None):
     if not isinstance(obstacles, list) or len(obstacles) > 100:
         raise ValueError('Neplatný seznam překážek.')
     for item in obstacles:
-        if (not isinstance(item, dict) or
-                not all(k in item for k in ('lat', 'lon', 'height_m')) or
-                not all(np.isfinite(item[k]) for k in ('lat', 'lon', 'height_m'))):
-            raise ValueError('Neplatná překážka v projektu.')
+        if not isinstance(item, dict):
+            raise ValueError('Neplatný záznam překážky v projektu.')
+        try:
+            validate_obstacle(item, config.lat, config.lon)
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise ValueError('Neplatná překážka v projektu: ' + str(exc)) from exc
     levels = meta.get('levels', [])
     if not isinstance(levels, list) or any(l not in core.flight_levels_for(config.radar_mode) for l in levels):
         raise ValueError('Neplatný výběr výškových hladin.')
     result = dict(data, config=config, antenna=meta['antenna'], site_height=meta['site_height'],
                   antenna_pattern=antenna_pattern, obstacles=obstacles,
-                  obstacles_signature=tuple((o['lat'], o['lon'], o['height_m']) for o in obstacles),
+                  obstacles_signature=obstacle_signature(obstacles),
                   source=meta.get('source', 'PROJECT'), completed_at=meta.get('completed_at', ''),
                   duration_s=meta.get('duration_s', 0))
     return result, meta
