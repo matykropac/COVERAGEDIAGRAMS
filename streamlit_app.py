@@ -22,6 +22,7 @@ import radar_core as core
 from ssr_custom import load_measured_ssr
 from obstacles import apply_obstacles, square_corners
 from project_file import save_project, load_project
+from project_widgets import restored_widget_values
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -115,38 +116,28 @@ def open_project_callback():
     try:
         result, meta = load_project(upload.getvalue())
         c = result['config']
-        mode = {'RL-2000': 'PSR', 'PAR-NG': 'PAR', 'SSR': 'SSR'}[c.radar_mode]
-        result['antenna_pattern'] = antenna(c.radar_mode, meta.get('source_ui', {}).get('ssr_pattern', 'Measured SSR.txt'))
-        # Set widget keys BEFORE their widgets are instantiated on the rerun.
+        values = restored_widget_values(c, meta)
+        result['antenna_pattern'] = antenna(c.radar_mode, values.get('ssr_pattern', 'Measured SSR.txt'))
+        # Change widget identities for values that were previously displayed
+        # with Streamlit's stale widget state after an upload.
+        epoch = int(st.session_state.get('project_restore_epoch', 0)) + 1
+        st.session_state['project_restore_epoch'] = epoch
+        for field in ('agl', 'bearing', 'tilt'):
+            values[f'{field}_restored_{epoch}'] = values[field]
+        st.session_state.update(values)
         st.session_state.update(
-            radar=mode, lat=c.lat, lon=c.lon, agl=c.antenna_agl, bearing=c.bearing_deg,
-            azstep=c.az_step, k_factor=c.k, tilt=c.antenna_tilt_deg,
-            beam=c.beam_mode, target=c.target_m, reference=c.reference,
-            min_elev=c.min_elev,
-            max_elev=c.max_elev, levels=meta['levels'],
             obstacles=meta['obstacles'], result=result, geometry={},
-            profile_index=len(result['az'])//2 if mode == 'PAR' else 0,
-            source=meta.get('source_ui', {}).get('source', 'Syntetické demo'),
-            analysis_layer_mode=meta.get('display', {}).get('mode', 'Jedna hladina'),
-            analysis_global_opacity=meta.get('display', {}).get('opacity', .45),
+            profile_index=len(result['az'])//2 if c.radar_mode == 'PAR-NG' else 0,
+            loaded_project=True, project_error='',
+            project_notice='Projekt načten včetně všech parametrů a vypočteného krytí.',
         )
-        st.session_state['step_'+c.radar_mode] = int(c.step_m)
-        if mode == 'PSR':
-            st.session_state['psr_range_nm'] = min(core.PSR_RANGES_NM,
-                key=lambda nm: abs(nm * core.NM_TO_KM - c.range_km))
-        if mode == 'SSR':
-            st.session_state['ssr_pattern'] = meta.get('source_ui', {}).get('ssr_pattern', 'Measured SSR.txt')
-        dataset = meta.get('source_ui', {}).get('dataset', 'COP30')
-        if dataset in core.DATASETS:
-            st.session_state['dataset_'+c.radar_mode] = dataset
         for key in ('export', 'selected_point', 'last_map_click', 'last_map_click_obstacle'):
             st.session_state.pop(key, None)
+        # The restored result stays authoritative even when its original DEM file
+        # is no longer accessible. Configuration comparison still detects edits.
         st.session_state['source_signature'] = (
-            st.session_state['source'], dataset, None
+            values['source'], meta.get('source_ui', {}).get('dataset', 'COP30'), None
         )
-        st.session_state['loaded_project'] = True
-        st.session_state['project_error'] = ''
-        st.session_state['project_notice'] = 'Projekt načten včetně výpočetních dat — bez přepočtu.'
     except Exception as exc:
         st.session_state['project_error'] = str(exc)
 
@@ -176,8 +167,8 @@ with settings:
         ssr_pattern = st.selectbox('SSR antenna diagram', ['Measured SSR.txt', 'Generic Gaussian'], disabled=not ssr, key='ssr_pattern')
         lat = st.number_input('Zeměpisná šířka [°]', -80., 80., 50.034, format='%.6f', key='lat')
         lon = st.number_input('Zeměpisná délka [°]', -180., 180., 15.781, format='%.6f', key='lon')
-        agl = st.number_input('Anténa [m AGL]', .1, 5000., 20., key='agl')
-        bearing = st.number_input('Azimut osy [°]', 0., 359.99, 0., disabled=not par, key='bearing')
+        agl = st.number_input('Anténa [m AGL]', .1, 5000., 20., key=f"agl_restored_{st.session_state.get('project_restore_epoch', 0)}")
+        bearing = st.number_input('Azimut osy [°]', 0., 359.99, 0., disabled=not par, key=f"bearing_restored_{st.session_state.get('project_restore_epoch', 0)}")
         if par:
             st.caption('PAR-NG: ±15° od osy · 40 km · vestavěný diagram')
         elif ssr:
@@ -232,7 +223,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
         k = st.number_input('Efektivní poloměr Země · k', .5, 3., 4/3, format='%.4f', key='k_factor')
         min_elev = st.number_input('Minimální elevace [°]', -5., 88., -1.0, key='min_elev')
         max_elev = st.number_input('Maximální elevace [°]', -4., 89., 45., key='max_elev')
-        tilt = st.number_input('Tilt antény [°]', -15., 15., -1.0, key='tilt')
+        tilt = st.number_input('Tilt antény [°]', -15., 15., -1.0, key=f"tilt_restored_{st.session_state.get('project_restore_epoch', 0)}")
         beam = st.selectbox('Svazek', ['COMBINED', 'LOW', 'HIGH'], disabled=par or ssr, key='beam')
         target = st.number_input('Výška cíle [m]', -500., 30000., 1000., key='target')
         reference = st.selectbox('Reference cíle', ['AMSL', 'AGL'], key='reference')
