@@ -45,7 +45,7 @@ div[data-baseweb="tag"]{background:#164c67!important;color:#dcfaff!important;bor
 div[data-baseweb="tag"] span{color:#dcfaff!important}
 div[data-baseweb="slider"] [role="slider"]{background:#3fd0ee!important}
 [data-testid="stTabs"] [data-baseweb="tab-list"]{gap:.4rem!important;border-bottom:1px solid #21465f!important;padding-bottom:.4rem!important;margin-bottom:.55rem!important}
-[data-testid="stTabs"] [data-baseweb="tab"]{padding:.67rem 1rem!important;background:#0c263a!important;border:1px solid #234862!important;border-radius:8px!important;color:#a4c4d8!important;font-weight:650!important;font-size:.76rem!important;letter-spacing:.035em}
+[data-testid="stTabs"] [data-baseweb="tab"]{padding:.67rem 2rem!important;background:#0c263a!important;border:1px solid #234862!important;border-radius:8px!important;color:#a4c4d8!important;font-weight:650!important;font-size:.76rem!important;letter-spacing:.035em}
 [data-testid="stTabs"] [aria-selected="true"]{background:#12435f!important;color:#bff4ff!important;border-color:#3cbce4!important;box-shadow:inset 0 -2px #35cff1,0 0 12px rgba(28,159,206,.13)}
 [data-testid="stTabs"] [data-baseweb="tab-highlight"],[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none!important}
 [data-testid="stButton"]>button[kind="primary"],[data-testid="stDownloadButton"]>button[kind="primary"]{background:linear-gradient(120deg,#0788b8,#06bad4)!important;color:#f5fdff!important;border:1px solid #25d6f0!important;box-shadow:0 4px 16px rgba(0,139,194,.23);border-radius:8px!important;font-weight:650!important}
