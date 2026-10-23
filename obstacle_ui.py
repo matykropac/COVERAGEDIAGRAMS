@@ -75,6 +75,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
             else:
                 obstacles.append(item)
                 st.session_state['obstacle_selected_index'] = len(obstacles)-1
+                st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
                 st.session_state.pop('obstacle_confirm_delete', None)
                 st.rerun()
     else:
@@ -128,6 +129,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
             else:
                 obstacles.append(item)
                 st.session_state['obstacle_selected_index'] = len(obstacles)-1
+                st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
                 st.rerun()
 
     st.markdown('**02 / Seznam uložených překážek**')
@@ -141,8 +143,17 @@ def render_obstacle_editor(radar_lat, radar_lon):
         'Výška [m AGL]': float(o['height_m']),
         'Poloha vzhledem k radaru': _description(o, radar_lat, radar_lon),
     } for i, o in enumerate(obstacles)]
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True,
-                 height=min(460, 36*(len(rows)+1)+8))
+    selection = st.dataframe(
+        pd.DataFrame(rows), hide_index=True, use_container_width=True,
+        height=min(460, 36*(len(rows)+1)+8),
+        on_select='rerun', selection_mode='single-row',
+        key=f'obstacle_table_{st.session_state.get("obstacle_list_rev", 0)}')
+    if selection.selection.rows:
+        clicked_row = int(selection.selection.rows[0])
+        if clicked_row < len(obstacles) and clicked_row != selected_idx:
+            st.session_state['obstacle_selected_index'] = clicked_row
+            st.rerun()
+    st.caption('Klikni na řádek v tabulce pro výběr, nebo použij seznam níže.')
 
     chosen_index = st.selectbox(
         'Vybrat překážku pro úpravu', list(range(len(obstacles))),
@@ -208,6 +219,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
                 st.session_state.pop('obstacle_confirm_delete', None)
                 st.session_state.pop('obstacle_last_click', None)
                 st.session_state['_obstacle_next_selected'] = max(0, chosen_index-1)
+                st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
                 st.session_state['obstacle_editor_rev'] = revision+1
                 st.rerun()
         with no:
