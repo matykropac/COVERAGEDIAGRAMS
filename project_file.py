@@ -77,7 +77,8 @@ def load_project(blob, antenna_pattern=None):
         if not isinstance(item, dict):
             raise ValueError('Neplatný záznam překážky v projektu.')
         try:
-            validate_obstacle(item, config.lat, config.lon)
+            validate_obstacle(item, config.lat, config.lon,
+                                  enforce_point_range=False)
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
             raise ValueError('Neplatná překážka v projektu: ' + str(exc)) from exc
     levels = meta.get('levels', [])
