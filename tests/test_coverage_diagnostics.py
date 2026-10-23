@@ -89,6 +89,15 @@ class CoverageDiagnosticsTests(unittest.TestCase):
         self.assertIsNone(stats[90]["covered_pct"])
         self.assertEqual(stats[90]["unknown_pct"], 100.)
 
+    def test_side_view_renders_selected_ray_and_shadow(self):
+        from diagnostics_ui import side_view
+        result = flat_result()
+        info = diagnose(result, 90, 5., 3000)
+        fig = side_view(result, info)
+        self.assertEqual(len(fig.axes), 1)
+        self.assertGreaterEqual(len(fig.axes[0].lines), 2)
+        fig.clear()
+
     def test_restricted_range_stats_are_bounded(self):
         stats = azimuth_coverage_stats(flat_result(), 3000, 0., 10.)
         self.assertEqual(len(stats), 360)
