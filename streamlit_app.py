@@ -65,10 +65,10 @@ def plot_lock():
 
 
 # Antenna patterns must not be cached across Streamlit hot-reloads:
-# stale class instances can outlive updates to radar_core / ssr_custom.
-def antenna(mode, ssr_pattern='Measured SSR.txt'):
-    if mode == 'SSR':
-        return load_measured_ssr() if ssr_pattern == 'Measured SSR.txt' else core.generic_ssr_pattern()
+# stale class instances can outlive updates to radar_core / _custom.
+def antenna(mode, _pattern='Measured .txt'):
+    if mode == '':
+        return load_measured_() if _pattern == 'Measured .txt' else core.generic__pattern()
     return core.builtin_par_pattern() if mode == 'PAR-NG' else core.rl2000_dual_beam_pattern()
 
 
@@ -206,9 +206,9 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
 
 st.markdown('''<div class="atm-hero">
   <div><div class="atm-eyebrow"></div>
-  <div class="atm-title">RADAR COVERAGE ANALYSIS</div>
-  <div class="atm-description">PSR / PAR / SSR</div></div>
-  <div class="atm-brand">ELDIS<small>RADAR SYSTEMS</small></div>
+  <div class="atm-title"></div>
+  <div class="atm-description"></div></div>
+  <div class="atm-brand">ELDIS<small></small></div>
 </div>''', unsafe_allow_html=True)
 def open_project_callback():
     upload = st.session_state.get('project_upload')
@@ -218,7 +218,7 @@ def open_project_callback():
         result, meta = load_project(upload.getvalue())
         c = result['config']
         values = restored_widget_values(c, meta)
-        result['antenna_pattern'] = antenna(c.radar_mode, values.get('ssr_pattern', 'Measured SSR.txt'))
+        result['antenna_pattern'] = antenna(c.radar_mode, values.get('_pattern', 'Measured .txt'))
         # Change widget identities for values that were previously displayed
         # with Streamlit's stale widget state after an upload.
         epoch = int(st.session_state.get('project_restore_epoch', 0)) + 1
@@ -250,11 +250,11 @@ with settings:
     location, parameters, preview, execution = st.columns([22, 22, 34, 22], gap='small')
     with location:
         st.subheader('01 / Radar a stanoviště')
-        radar_label = st.selectbox('Radar', ['PSR', 'PAR', 'SSR'], key='radar')
-        radar = {'PSR': 'RL-2000', 'PAR': 'PAR-NG', 'SSR': 'SSR'}[radar_label]
-        ssr = radar == 'SSR'
+        radar_label = st.selectbox('Radar', ['PSR', 'PAR', ''], key='radar')
+        radar = {'PSR': 'RL-2000', 'PAR': 'PAR-NG', '': ''}[radar_label]
+         = radar == ''
         par = radar == 'PAR-NG'
-        ssr_pattern = st.selectbox('SSR antenna diagram', ['Measured SSR.txt', 'Generic Gaussian'], disabled=not ssr, key='ssr_pattern')
+        _pattern = st.selectbox(' antenna diagram', ['Measured SSR.txt', 'Generic Gaussian'], disabled=not ssr, key='ssr_pattern')
         lat = st.number_input('Zeměpisná šířka [°]', -80., 80., 50.034, format='%.6f', key='lat')
         lon = st.number_input('Zeměpisná délka [°]', -180., 180., 15.781, format='%.6f', key='lon')
         if st.button('📍 Vybrat z mapy', key='open_radar_site_map', use_container_width=True):
