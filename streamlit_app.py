@@ -123,7 +123,7 @@ with settings:
         agl = st.number_input('Anténa [m AGL]', .1, 5000., 20.)
         bearing = st.number_input('Azimut osy [°]', 0., 359.99, 0., disabled=not par)
         if par:
-            st.caption('PAR-NG: ±20° od osy · 40 km · vestavěný diagram')
+            st.caption('PAR-NG: ±15° od osy · 40 km · vestavěný diagram')
         elif ssr:
             st.caption('SSR: 360° · pevný limit 256 NM · obecný orientační model')
             with st.expander('Předpoklady SSR modelu'):
@@ -196,7 +196,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
     with execution:
         st.subheader('04 / Výpočet a stav')
         st.caption('Zvol hladiny, spusť výpočet a sleduj průběh jednotlivých kroků.')
-        levels = st.multiselect('Výškové řezy [ft AMSL] · nominální ISA', core.FLIGHT_LEVELS_LIST,
+        levels = st.multiselect('Výškové řezy [ft AMSL] · nominální ISA', core.flight_levels_for(radar),
                                 default=[3000, 10000], format_func=core.level_label, key='levels')
         calculate = st.button('Vypočítat krytí', type='primary', key='calculate', use_container_width=True)
         log_view = st.empty()
@@ -399,10 +399,10 @@ else:
                           icon=folium.Icon(color='orange', icon='signal')).add_to(m)
             if par := (rc.radar_mode == 'PAR-NG'):
                 from pyproj import Geod
-                bearings = np.linspace(rc.bearing_deg-20, rc.bearing_deg+20, 81)
+                bearings = np.linspace(rc.bearing_deg-15, rc.bearing_deg+15, 81)
                 xs, ys, _ = Geod(ellps='WGS84').fwd(np.full(81,rc.lon),np.full(81,rc.lat),bearings,np.full(81,40000.))
                 folium.PolyLine([[rc.lat,rc.lon]]+list(zip(ys,xs))+[[rc.lat,rc.lon]],
-                                color='#8ca4b5',dash_array='5 5',weight=1,tooltip='Sektor PAR-NG ±20° / 40 km').add_to(m)
+                                color='#8ca4b5',dash_array='5 5',weight=1,tooltip='Sektor PAR-NG ±15° / 40 km').add_to(m)
             # Layer selection is handled by stable Streamlit controls; Leaflet
             # keeps only basemap switching, without coverage layer animations.
             folium.LayerControl(collapsed=True).add_to(m)
@@ -446,7 +446,7 @@ else:
         with left:
             kind = st.selectbox('Formát exportu', EXPORTS)
             dpi = st.selectbox('Rozlišení PNG [DPI]', [300,600])
-            export_levels = st.multiselect('Exportované hladiny [ft AMSL]', core.FLIGHT_LEVELS_LIST,
+            export_levels = st.multiselect('Exportované hladiny [ft AMSL]', core.flight_levels_for(radar),
                                           default=levels, format_func=core.level_label)
             if st.button('Připravit export', key='prepare_export'):
                 try:
