@@ -56,6 +56,41 @@ def antenna(mode, ssr_pattern='Measured SSR.txt'):
     return core.builtin_par_pattern() if mode == 'PAR-NG' else core.rl2000_dual_beam_pattern()
 
 
+def antenna_preview(config, pattern):
+    """Roomy, transparent two-panel preview within the ATM dashboard card.
+
+    This changes presentation only. Engineering coverage limits and diagram
+    interpolation are still handled by radar_core.
+    """
+    with plot_lock():
+        fig = Figure(figsize=(9.0, 7.4), facecolor='none')
+        try:
+            gain_ax, envelope_ax = core.technical_plot(
+                fig, config=config, pattern=pattern
+            )
+            fig.patch.set_alpha(0.0)
+            for ax in (gain_ax, envelope_ax):
+                ax.set_facecolor('none')
+                ax.patch.set_alpha(0.0)
+                ax.tick_params(labelsize=8, pad=3)
+                ax.title.set_fontsize(9)
+                ax.title.set_wrap(True)
+                ax.xaxis.label.set_size(8)
+                ax.yaxis.label.set_size(8)
+            # Preserve the engineering ranges, but show the useful gain range
+            # rather than dedicating most of the plot to near-zero antenna gain.
+            gain_ax.set_xlim(config.min_elev, config.max_elev)
+            gain_ax.set_ylim(-65, 5)
+            gain_ax.margins(x=0.01)
+            # The fixed two-plot layout previously left insufficient room for
+            # long antenna labels, legends and axis ticks in a narrow column.
+            fig.subplots_adjust(left=.16, right=.985, bottom=.085,
+                                top=.93, hspace=.56)
+            st.pyplot(fig, use_container_width=True, transparent=True)
+        finally:
+            fig.clear()
+
+
 def figure(draw, **kwargs):
     with plot_lock():
         fig = Figure(figsize=(7, 5), facecolor=core.PLOT_BG)
@@ -154,7 +189,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
         st.subheader('03 / Vyzařovací diagram')
         try:
             c.validate()
-            figure(core.technical_plot, config=c, pattern=antenna(radar, ssr_pattern))
+            antenna_preview(c, antenna(radar, ssr_pattern))
             st.caption('Náhled: orientační výška stanoviště 200 m AMSL.')
         except ValueError as exc:
             st.warning(str(exc))
