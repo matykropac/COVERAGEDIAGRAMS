@@ -49,8 +49,8 @@ _pending_radar_site = st.session_state.pop('_pending_radar_site', None)
 if _pending_radar_site is not None:
     st.session_state['lat'], st.session_state['lon'] = _pending_radar_site
     st.session_state['site_picker_notice'] = (
-        f"Nové stanoviště: {_pending_radar_site[0]:.6f}° N, "
-        f"{_pending_radar_site[1]:.6f}° E. Pro nové krytí spusť výpočet."
+        f"Nové stanoviště: {_pending_radar_site[0]:.6f}°, "
+        f"{_pending_radar_site[1]:.6f}° (WGS 84). Pro nové krytí spusť výpočet."
     )
     st.session_state['project_notice'] = ''
 
@@ -159,7 +159,7 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
             st.session_state['site_picker_selection'] = None
 
     if selected is not None:
-        st.success(f'Vybráno: {selected[0]:.6f}° N, {selected[1]:.6f}° E (WGS 84)')
+        st.success(f'Vybráno: {selected[0]:.6f}°, {selected[1]:.6f}° (WGS 84)')
     else:
         st.info('Kliknutím na mapu vyber novou polohu.')
 
