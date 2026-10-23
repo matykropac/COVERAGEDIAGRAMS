@@ -97,8 +97,8 @@ def axes(c):
     c.validate()
     nr = int(np.ceil(c.range_km * 1000 / c.step_m))
     if c.radar_mode == 'PAR-NG':
-        az = np.linspace(c.bearing_deg - 20, c.bearing_deg + 20,
-                         int(np.ceil(40 / c.az_step)) + 1)
+        az = np.linspace(c.bearing_deg - 15, c.bearing_deg + 15,
+                         int(np.ceil(30 / c.az_step)) + 1)
     else:
         az = np.linspace(0, 360, int(np.ceil(360 / c.az_step)), endpoint=False)
     return az, np.linspace(c.range_km * 1000 / nr, c.range_km * 1000, nr)
@@ -109,9 +109,9 @@ def azimuth_indices(azimuths, c, angles):
     angles = np.asarray(angles, dtype=float)
     if c.radar_mode == 'PAR-NG':
         delta = (angles - c.bearing_deg + 180) % 360 - 180
-        inside = np.isfinite(delta) & (np.abs(delta) <= 20 + 1e-9)
+        inside = np.isfinite(delta) & (np.abs(delta) <= 15 + 1e-9)
         step = azimuths[1] - azimuths[0]
-        index = np.rint((np.nan_to_num(delta) + 20) / step).astype(int)
+        index = np.rint((np.nan_to_num(delta) + 15) / step).astype(int)
         return np.clip(index, 0, len(azimuths)-1), inside
     index = np.rint(np.nan_to_num(angles % 360) / (360 / len(azimuths))).astype(int) % len(azimuths)
     return index, np.isfinite(angles)
@@ -141,6 +141,14 @@ FLIGHT_LEVELS_LIST = (
     500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 9000,
     10000, 12000, 15000, 20000, 25000, 30000, 35000, 40000, 66000
 )
+
+
+PAR_LOW_LEVELS_FT = (50, 100, 150)
+
+
+def flight_levels_for(mode):
+    """Additional low-altitude slices for PAR; other radar modes unchanged."""
+    return PAR_LOW_LEVELS_FT + FLIGHT_LEVELS_LIST if mode in ('PAR', 'PAR-NG') else FLIGHT_LEVELS_LIST
 
 
 HEIGHT_PRESETS_FT = FLIGHT_LEVELS_LIST
@@ -1473,10 +1481,10 @@ def map_plot(fig, result, mode='Krytí cíle', basemap=None, levels_ft=(), alpha
         fig.colorbar(mesh, ax=ax, pad=0.025, shrink=0.7, label='m AMSL')
         title = 'Spodní hranice krytí' if mode == 'Spodní hranice' else 'Vzorkovaný výškový model'
     if sector:
-        outline = np.deg2rad(np.linspace(c.bearing_deg-20, c.bearing_deg+20, 161))
+        outline = np.deg2rad(np.linspace(c.bearing_deg-15, c.bearing_deg+15, 161))
         ax.plot(np.r_[0, np.sin(outline)*40, 0], np.r_[0, np.cos(outline)*40, 0],
                 color=UI_MUTED, linestyle='--', linewidth=0.8, zorder=5)
-        title += f' · PAR-NG {c.bearing_deg:g}° ±20° / 40 km'
+        title += f' · PAR-NG {c.bearing_deg:g}° ±15° / 40 km'
     ax.scatter([0], [0], marker='+', s=140, c=UI_TARGET, linewidths=2, zorder=5)
     ax.set(xlabel='Východ [km]', ylabel='Sever [km]', title=title, aspect='equal',
            xlim=(-c.range_km, c.range_km), ylim=(-c.range_km, c.range_km))
@@ -1507,7 +1515,7 @@ def point_detail(result, x_km, y_km, levels_ft=()):
         return location + '\nStanoviště / oblast před prvním vzorkem — krytí není vzorkováno.'
     ai, inside = azimuth_indices(result['az'], c, az)
     if not inside:
-        return location + '\nBod je mimo vypočtený sektor PAR-NG ±20°.'
+        return location + '\nBod je mimo vypočtený sektor PAR-NG ±15°.'
     ai = int(ai)
     ri = int(np.argmin(np.abs(result['distance'] - radius * 1000)))
     terrain, lower = result['terrain'][ai, ri], result['lower'][ai, ri]
