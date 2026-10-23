@@ -8,6 +8,7 @@ import threading
 import time
 
 import folium
+from branca.element import Element
 from folium.plugins import Fullscreen, MeasureControl
 import matplotlib
 matplotlib.use('Agg')
@@ -128,6 +129,16 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
         tiles=None, control_scale=True, prefer_canvas=True,
         zoom_animation=False, fade_animation=False,
     )
+    # This CSS is rendered inside the Folium iframe, so only this map has
+    # a precise crosshair instead of Leaflet's default grab / pointer hand.
+    map_view.get_root().header.add_child(Element('''
+        <style>
+        .leaflet-container, .leaflet-container.leaflet-grab,
+        .leaflet-container.leaflet-grabbing, .leaflet-interactive {
+            cursor: crosshair !important;
+        }
+        </style>
+    '''))
     for name, provider in core.BASEMAP_PROVIDERS.items():
         folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                          max_zoom=provider['max_zoom'], overlay=False,
@@ -137,10 +148,18 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
         icon=folium.Icon(color='orange', icon='signal')
     ).add_to(map_view)
     if selected is not None:
+        # Two concentric circles create an unambiguous point: the white dot
+        # is centered exactly on the stored WGS84 click, without marker offset.
         folium.CircleMarker(
-            list(selected), radius=9, color='#3fd5f3', weight=3,
-            fill=True, fill_color='#27bfe0', fill_opacity=.6,
-            tooltip='Nové stanoviště'
+            list(selected), radius=12, color='#1cd6f6', weight=2,
+            fill=True, fill_color='#0c3852', fill_opacity=.35,
+            interactive=False,
+        ).add_to(map_view)
+        folium.CircleMarker(
+            list(selected), radius=4, color='#073349', weight=1,
+            fill=True, fill_color='#ffffff', fill_opacity=1,
+            tooltip='Vybrané stanoviště – klikni jinam pro změnu',
+            interactive=False,
         ).add_to(map_view)
     folium.LayerControl(collapsed=True).add_to(map_view)
     Fullscreen().add_to(map_view)
@@ -151,12 +170,14 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
     last_click = selection_event.get('last_clicked') if selection_event else None
     if last_click:
         try:
-            selected = coordinates_from_map_click(last_click)
-            st.session_state['site_picker_selection'] = selected
+            new_selection = coordinates_from_map_click(last_click)
+            if new_selection != selected:
+                st.session_state['site_picker_selection'] = new_selection
+                # Dialogs are fragments; redraw now so the selected point
+                # appears immediately and persists through further interactions.
+                st.rerun(scope='fragment')
         except ValueError as exc:
             st.error(str(exc))
-            selected = None
-            st.session_state['site_picker_selection'] = None
 
     if selected is not None:
         st.success(f'Vybráno: {selected[0]:.6f}°, {selected[1]:.6f}° (WGS 84)')
@@ -209,17 +230,6 @@ def open_project_callback():
     except Exception as exc:
         st.session_state['project_error'] = str(exc)
 
-
-with st.expander('PROJEKTY / Uložit a otevřít', expanded=False):
-    st.file_uploader('Otevřít projekt COVERAGEDIAGRAMS (.cdproj)',
-                     type=['cdproj'], key='project_upload',
-                     on_change=open_project_callback)
-    if st.session_state.get('project_error'):
-        st.error(st.session_state['project_error'])
-    if st.session_state.get('project_notice'):
-        st.success(st.session_state['project_notice'])
-    st.caption('Soubor obsahuje parametry, překážky, vybrané hladiny, výsledek a vzorkovaný DEM. '
-               'Přihlašovací klíče se neukládají.')
 
 
 settings, obstacles_tab, analysis, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
@@ -388,6 +398,19 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                 st.session_state['last_compute_log'] = '\n'.join(f'[{t}] {m}' for t, m in log_messages[-30:])
                 progress.empty()
 
+
+    # Project controls belong below the four settings cards.
+    with st.expander('PROJEKTY / Uložit a otevřít', expanded=False):
+        st.file_uploader('Otevřít projekt COVERAGEDIAGRAMS (.cdproj)',
+                         type=['cdproj'], key='project_upload',
+                         on_change=open_project_callback)
+        if st.session_state.get('project_error'):
+            st.error(st.session_state['project_error'])
+        if st.session_state.get('project_notice'):
+            st.success(st.session_state['project_notice'])
+        st.caption('Soubor obsahuje parametry, překážky, vybrané hladiny, výsledek a vzorkovaný DEM. '
+                   'Přihlašovací klíče se neukládají.')
+    
 
 # Obstacles are stored per browser session. Placement is independent of the
 # coverage sampling grid, so a 10 m object is not lost in a 500 m grid cell.
