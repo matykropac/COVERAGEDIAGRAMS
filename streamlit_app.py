@@ -314,16 +314,36 @@ else:
                    f"{result['completed_at']} · {result['duration_s']:g} s")
         legend, mapcol, profile = st.columns([20, 55, 25])
         with legend:
-            st.subheader('Legenda')
-            show_target = st.checkbox('Krytí cíle', value=not bool(levels))
-            alpha = st.slider('Průhlednost výplně · opacity', 0., 1., .42, .02)
+            st.subheader('Letové hladiny')
+            # One selected layer by default: no duplicated opacity sliders and
+            # no animated layer toggles that shift the entire sidebar.
+            available_levels = list(levels)
+            display_mode = st.radio('Zobrazení', ['Jedna hladina', 'Porovnání', 'Cíl'],
+                                    horizontal=False, key='analysis_layer_mode')
+            alpha = st.slider('Průhlednost vrstev', 0., 1., .45, .05,
+                              key='analysis_global_opacity')
             active = []
-            alphas = {}
-            for ft in levels:
-                if st.checkbox(core.level_label(ft), value=True, key=f'show_{ft}'):
-                    active.append(ft)
-                    alphas[ft] = st.slider(f'Opacity · {core.level_label(ft)}', 0., 1., alpha, .05, key=f'alpha_{ft}')
-            st.caption('Podklad přepni ovladačem vrstev vpravo nahoře v mapě. Klik vybere radiální profil.')
+            show_target = display_mode == 'Cíl'
+            if display_mode == 'Jedna hladina':
+                if available_levels:
+                    chosen = st.selectbox('Zobrazená hladina', available_levels,
+                                          format_func=core.level_label,
+                                          key='analysis_single_level')
+                    active = [chosen]
+                    st.caption('Přepnutím hladiny se změní pouze zobrazení; krytí se nepřepočítává.')
+                else:
+                    st.info('V NASTAVENÍ nejprve vyber výškové hladiny.')
+            elif display_mode == 'Porovnání':
+                active = st.multiselect('Zobrazené hladiny', available_levels,
+                                        default=available_levels[:3],
+                                        format_func=core.level_label,
+                                        key='analysis_comparison_levels')
+                st.caption('Pro čitelnost mapy doporučuji 2–3 hladiny.')
+            else:
+                st.caption('Zobrazuje krytí cílové výšky nastavené ve výpočtu.')
+            alphas = {ft: alpha for ft in active}
+            st.caption(f'Aktivní vrstvy: {len(active) + int(show_target)}')
+            st.caption('Kliknutí do mapy zobrazí radiální profil. Podklad změň v ovladači vrstev.')
         with mapcol:
             m = folium.Map(location=[rc.lat, rc.lon], zoom_start=8 if rc.range_km<=100 else 7,
                            tiles=None, control_scale=True, prefer_canvas=True)
@@ -336,7 +356,7 @@ else:
                     st.session_state.geometry[ft] = coverage_geojson(result, ft)
                 geo = st.session_state.geometry[ft]
                 color = '#22d3c5' if ft is None else to_hex(core.level_color(ft))
-                opacity = alpha if ft is None else alphas[ft]
+                opacity = alpha
                 if geo['features']:
                     folium.GeoJson(geo, name='Cíl' if ft is None else core.level_label(ft),
                         style_function=lambda feature, color=color, opacity=opacity:
