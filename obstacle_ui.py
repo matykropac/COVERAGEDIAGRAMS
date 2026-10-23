@@ -81,6 +81,8 @@ def render_obstacle_editor(radar_lat, radar_lon):
         st.info('Nastav výšku a klikni na mapu. Vloží se překážka 10 × 10 m. '
                 'Na existující překážku lze kliknout pro zobrazení popisu.')
 
+    if '_obstacle_next_selected' in st.session_state:
+        st.session_state['obstacle_selected_index'] = st.session_state.pop('_obstacle_next_selected')
     selected_idx = min(st.session_state.get('obstacle_selected_index', 0),
                        max(0, len(obstacles)-1))
     st.session_state['obstacle_selected_index'] = selected_idx
@@ -205,7 +207,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
                 obstacles.pop(chosen_index)
                 st.session_state.pop('obstacle_confirm_delete', None)
                 st.session_state.pop('obstacle_last_click', None)
-                st.session_state['obstacle_selected_index'] = max(0, chosen_index-1)
+                st.session_state['_obstacle_next_selected'] = max(0, chosen_index-1)
                 st.session_state['obstacle_editor_rev'] = revision+1
                 st.rerun()
         with no:
