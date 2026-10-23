@@ -2,6 +2,11 @@
 import json
 from pathlib import Path
 import tempfile
+from zipfile import ZipFile, ZIP_STORED
+from io import BytesIO
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+import xml.etree.ElementTree as ET
 
 import numpy as np
 from pyproj import Geod, Transformer
@@ -9,8 +14,9 @@ from shapely.geometry import mapping
 from shapely.ops import transform
 from branca.element import MacroElement, Template
 import radar_core as core
+from obstacles import obstacle_polygon
 
-EXPORTS = ('GeoPackage · vektory', 'GeoTIFF · rastr', 'RAW · NPZ',
+EXPORTS = ('QuickReport · ZIP (600 DPI)', 'KML · všechny vrstvy (polygony)', 'GeoPackage · vektory', 'GeoTIFF · rastr', 'RAW · NPZ',
            'Profil · CSV', 'Metadata · JSON', 'Obrázek · PNG')
 
 
@@ -84,9 +90,158 @@ map.on('mousemove', function(e) {
 {% endmacro %}''')
 
 
+
+KML_NS = 'http://www.opengis.net/kml/2.2'
+ET.register_namespace('', KML_NS)
+
+
+def _kml_element(parent, name, value=None):
+    child = ET.SubElement(parent, '{' + KML_NS + '}' + name)
+    if value is not None:
+        child.text = str(value)
+    return child
+
+
+def _kml_polygon(parent, rings):
+    """Write WGS84 Polygon with optional interior rings (KML expects lon,lat)."""
+    polygon = _kml_element(parent, 'Polygon')
+    _kml_element(polygon, 'tessellate', '1')
+    _kml_element(polygon, 'altitudeMode', 'clampToGround')
+    for i, ring in enumerate(rings):
+        boundary = _kml_element(polygon, 'outerBoundaryIs' if i == 0 else 'innerBoundaryIs')
+        linear = _kml_element(boundary, 'LinearRing')
+        coords = list(ring)
+        if coords and coords[0] != coords[-1]:
+            coords.append(coords[0])
+        _kml_element(linear, 'coordinates',
+                     ' '.join(f'{float(x):.8f},{float(y):.8f},0' for x, y in coords))
+
+
+def _kml_geometry(parent, geometry):
+    if geometry['type'] == 'Polygon':
+        _kml_polygon(parent, geometry['coordinates'])
+    elif geometry['type'] == 'MultiPolygon':
+        multi = _kml_element(parent, 'MultiGeometry')
+        for rings in geometry['coordinates']:
+            _kml_polygon(multi, rings)
+    else:
+        raise ValueError('KML podporuje pouze polygonové vrstvy.')
+
+
+def _kml_style(parent, color, opacity='88'):
+    style = _kml_element(parent, 'Style')
+    line = _kml_element(style, 'LineStyle')
+    _kml_element(line, 'color', 'ff' + color[5:7] + color[3:5] + color[1:3])
+    _kml_element(line, 'width', '1.2')
+    poly = _kml_element(style, 'PolyStyle')
+    _kml_element(poly, 'color', opacity + color[5:7] + color[3:5] + color[1:3])
+
+
+def export_kml(result, levels):
+    """One KML file: separate polygon folders for target + every requested FL + obstacles."""
+    from matplotlib.colors import to_hex
+    root = ET.Element('{' + KML_NS + '}kml')
+    doc = _kml_element(root, 'Document')
+    _kml_element(doc, 'name', 'COVERAGEDIAGRAMS · všechny vrstvy')
+    _kml_element(doc, 'description',
+                 'Polygonové krytí WGS84, přepínatelné hladiny; vodorovné plochy, ne 3D objemy.')
+    for flight_level in [None] + list(dict.fromkeys(levels)):
+        label = 'Krytí cíle' if flight_level is None else core.level_label(flight_level)
+        folder = _kml_element(doc, 'Folder')
+        _kml_element(folder, 'name', label)
+        color = '#22d3c5' if flight_level is None else to_hex(core.level_color(flight_level))
+        features = coverage_geojson(result, flight_level)['features']
+        for i, feature in enumerate(features, 1):
+            pm = _kml_element(folder, 'Placemark')
+            _kml_element(pm, 'name', f'{label} · polygon {i}')
+            _kml_style(pm, color)
+            _kml_geometry(pm, feature['geometry'])
+    if result.get('obstacles'):
+        folder = _kml_element(doc, 'Folder')
+        _kml_element(folder, 'name', 'Překážky')
+        c = result['config']
+        for i, o in enumerate(result['obstacles'], 1):
+            pm = _kml_element(folder, 'Placemark')
+            _kml_element(pm, 'name', o.get('name') or f'Překážka {i}')
+            _kml_element(pm, 'description', f'{o["height_m"]:g} m AGL · půdorys překážky')
+            _kml_style(pm, '#ff7043', 'bb')
+            latlon = obstacle_polygon(o, c.lat, c.lon)
+            ring = [[lon, lat] for lat, lon in latlon]
+            _kml_polygon(pm, [ring])
+    return ET.tostring(root, encoding='utf-8', xml_declaration=True)
+
+
+def export_quickreport(result, *, flight_levels=None):
+    """Create a single ZIP containing the antenna plot, terrain and every flight level at 600 DPI.
+
+    All images use the application's print renderer. Images are rendered one at a time;
+    the raw matrices are not recalculated and the archive has one directory per section.
+    """
+    c = result['config']
+    all_levels = tuple(core.flight_levels_for(c.radar_mode))
+    requested = all_levels if flight_levels is None else tuple(dict.fromkeys(flight_levels))
+    if any(level not in all_levels for level in requested):
+        raise ValueError('Nepodporovaná letová hladina pro zvolený radar.')
+
+    manifest = {
+        'format': 'COVERAGEDIAGRAMS_QUICKREPORT',
+        'radar': c.radar_mode,
+        'source': result.get('source'),
+        'completed_at': result.get('completed_at'),
+        'image_dpi': 600,
+        'flight_levels_ft_amsl': list(requested),
+        'terrain': '01_Teren/terrain_600dpi.png',
+        'antenna_diagram': '02_Vyzarovaci_diagram/antenna_diagram_600dpi.png',
+        'flight_level_directory': '03_Letove_hladiny/',
+        'note': 'Vypočtené geometrické krytí; rozlišení zdrojového DEM se zvýšením DPI nemění.',
+    }
+    with tempfile.TemporaryDirectory(prefix='radar_quickreport_') as directory:
+        root = Path(directory)
+        png = root / 'page.png'
+        # PNG files are already compressed. Store entries directly without further CPU-heavy ZIP deflation.
+        archive_bytes = BytesIO()
+        with ZipFile(archive_bytes, 'w', compression=ZIP_STORED, allowZip64=True) as archive:
+            core.export_map_image(png, result, 'Terén', dpi=600, alpha=1.0)
+            archive.write(png, manifest['terrain'])
+
+            fig = Figure(figsize=(13, 9), dpi=600, facecolor=core.PLOT_BG)
+            FigureCanvasAgg(fig)
+            try:
+                core.technical_plot(fig, result=result)
+                fig.text(.07, .975, 'ELDIS · ANTENNA DIAGRAM',
+                         color=core.UI_TEXT, fontsize=18, weight='bold', va='top')
+                fig.savefig(png, dpi=600, format='png', facecolor=fig.get_facecolor())
+            finally:
+                fig.clear()
+            archive.write(png, manifest['antenna_diagram'])
+
+            for level in requested:
+                # One altitude per page keeps the established print layout and readable legend.
+                core.export_map_image(png, result, 'Vybrané výšky',
+                                      levels_ft=(level,), alpha=0.74, dpi=600)
+                archive.write(png, f'03_Letove_hladiny/{int(level):05d}ft_AMSL_600dpi.png')
+            archive.writestr('report_manifest.json',
+                             json.dumps(manifest, ensure_ascii=False, indent=2))
+            archive.writestr(
+                'README.txt',
+                'COVERAGEDIAGRAMS / QuickReport\\n'
+                f'Radar: {c.radar_mode}\\n'
+                '01_Teren: terénní model\\n'
+                '02_Vyzarovaci_diagram: diagram antény a technická obálka\\n'
+                f'03_Letove_hladiny: {len(requested)} jednotlivých hladin ft AMSL\\n'
+                'Každá grafika 600 DPI; obrázky nejsou mapová ortofota.\\n'
+                'Vyšší tiskové DPI nezvyšuje přesnost zdrojových dat DEM.\\n'
+            )
+        return archive_bytes.getvalue()
+
+
 def export_bytes(kind, result, levels, index, dpi, alpha, level_alphas=None):
     with tempfile.TemporaryDirectory(prefix='radar_export_') as directory:
         root = Path(directory)
+        if kind == 'QuickReport · ZIP (600 DPI)':
+            return export_quickreport(result), 'COVERAGEDIAGRAMS_QuickReport_600dpi.zip', 'application/zip'
+        if kind == 'KML · všechny vrstvy (polygony)':
+            return export_kml(result, levels), 'coverage_all_layers.kml', 'application/vnd.google-earth.kml+xml'
         if kind == 'GeoPackage · vektory':
             path, mime = root/'coverage.gpkg', 'application/geopackage+sqlite3'
             core.export_gpkg(path, result, levels)
