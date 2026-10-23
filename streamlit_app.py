@@ -583,15 +583,15 @@ else:
                 try:
                     with st.spinner('Připravuji soubor…'), plot_lock():
                         blob, filename, mime = export_bytes(kind, result,
-                            levels if kind.startswith('KML') else export_levels,
+                            core.flight_levels_for(rc.radar_mode) if kind.startswith('KML') else export_levels,
                             index, dpi, alpha, alphas)
                         st.session_state.export = (blob, filename, mime,
-                            (kind, tuple(levels if kind.startswith('KML') else export_levels),
+                            (kind, tuple(core.flight_levels_for(rc.radar_mode) if kind.startswith('KML') else export_levels),
                              index, dpi, alpha, tuple(sorted(alphas.items()))))
                 except Exception as exc:
                     st.error('Export se nepodařil: '+str(exc))
             export = st.session_state.get('export')
-            signature = (kind, tuple(levels if kind.startswith('KML') else export_levels),
+            signature = (kind, tuple(core.flight_levels_for(rc.radar_mode) if kind.startswith('KML') else export_levels),
                          index, dpi, alpha, tuple(sorted(alphas.items())))
             if export and export[3] == signature:
                 st.download_button('Stáhnout '+export[1], export[0], export[1], export[2])
