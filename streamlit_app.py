@@ -205,9 +205,9 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
 
 
 st.markdown('''<div class="atm-hero">
-  <div><div class="atm-eyebrow">RADAR SYSTEMS · ENGINEERING WORKSTATION</div>
+  <div><div class="atm-eyebrow"></div>
   <div class="atm-title">RADAR COVERAGE ANALYSIS</div>
-  <div class="atm-description">PSR / PAR / SSR &nbsp;·&nbsp; Terrain visibility &nbsp;·&nbsp; ATM evaluation</div></div>
+  <div class="atm-description">PSR / PAR / SSR</div></div>
   <div class="atm-brand">ELDIS<small>RADAR SYSTEMS</small></div>
 </div>''', unsafe_allow_html=True)
 def open_project_callback():
