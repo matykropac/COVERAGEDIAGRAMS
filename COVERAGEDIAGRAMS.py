@@ -262,7 +262,7 @@ FLIGHT_LEVELS_LIST = (
     10000, 12000, 15000, 20000, 25000, 30000, 35000, 40000, 66000
 )
 # Zpětná kompatibilita se zbytkem výpočetního/exportního kódu.
-PAR_LOW_LEVELS_FT = (50, 100, 150)
+PAR_LOW_LEVELS_FT = (50, 100, 150, 200, 250, 300, 350, 400, 450)
 
 
 def flight_levels_for(mode):
