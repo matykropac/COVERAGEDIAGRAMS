@@ -82,7 +82,7 @@ st.caption('PSR / PAR / SSR · terénní analýza a radarové krytí')
 settings, obstacles_tab, analysis, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
 
 with settings:
-    location, parameters, preview = st.columns([25, 25, 50])
+    location, parameters, preview, execution = st.columns([22, 22, 34, 22], gap='small')
     with location:
         st.subheader('Radar a stanoviště')
         radar_label = st.selectbox('Radar', ['PSR', 'PAR', 'SSR'], key='radar')
@@ -162,12 +162,25 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
         try:
             c.validate()
             figure(core.technical_plot, config=c, pattern=antenna(radar, ssr_pattern))
-            st.caption('Náhled obálky před výpočtem používá orientační výšku terénu 200 m AMSL.')
+            st.caption('Náhled: orientační výška stanoviště 200 m AMSL.')
         except ValueError as exc:
             st.warning(str(exc))
+    with execution:
+        st.subheader('Výpočet a stav')
+        st.caption('Zvol hladiny, spusť výpočet a sleduj průběh jednotlivých kroků.')
         levels = st.multiselect('Výškové řezy [ft AMSL] · nominální ISA', core.FLIGHT_LEVELS_LIST,
                                 default=[3000, 10000], format_func=core.level_label, key='levels')
-        calculate = st.button('Vypočítat krytí', type='primary', key='calculate')
+        calculate = st.button('Vypočítat krytí', type='primary', key='calculate', use_container_width=True)
+        log_view = st.empty()
+        log_messages = []
+        def log(message):
+            stamp = datetime.now().strftime('%H:%M:%S')
+            entry = str(message)
+            if not log_messages or log_messages[-1][1] != entry:
+                log_messages.append((stamp, entry))
+            log_view.code('\n'.join(f'[{t}] {m}' for t, m in log_messages[-16:]), language=None)
+        if not calculate and st.session_state.get('last_compute_log'):
+            log_view.code(st.session_state['last_compute_log'], language=None)
         if calculate:
             progress = st.empty()
             try:
@@ -176,8 +189,12 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                 if len(az) * len(distance) > 250_000:
                     raise ValueError('Webová verze: nejvýše 250 000 bodů. Zvětši krok pro plynulou mapu.')
                 start = time.perf_counter()
-                report = lambda message, *args: progress.info(message)
+                def report(message, *args):
+                    log(message)
+                    progress.info(message)
+                log(f'Počáteční kontrola OK · {len(az) * len(distance):,} vzorků')
                 with st.spinner('Počítám terén a krytí…'):
+                    log('Připravuji digitální model terénu…')
                     if source == 'Syntetické demo':
                         terrain, ground = core.demo_terrain(c)
                         provenance = 'SYNTHETIC DEMO'
@@ -194,7 +211,10 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                         path = core.download(c, api_key, dataset, report)
                         terrain, ground = core.sample(path, c, report)
                         provenance = 'OpenTopography · ' + dataset
+                    log(f'Terén připraven · výška stanoviště {ground:.1f} m AMSL')
+                    log('Počítám terénní horizont a radarové krytí…')
                     new_result = core.solve(c, terrain, ground, antenna(radar, ssr_pattern))
+                    log(f"Započítávám překážky: {len(st.session_state.get('obstacles', []))}")
                     apply_obstacles(new_result, st.session_state.get('obstacles', []))
                     new_result['obstacles_signature'] = tuple((o['lat'], o['lon'], o['height_m']) for o in st.session_state.get('obstacles', []))
                     new_result.update(source=provenance, completed_at=datetime.now(timezone.utc).isoformat(),
@@ -206,12 +226,15 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                     st.session_state.pop('last_map_click', None)
                     st.session_state.profile_index = len(az)//2 if par else 0
                     st.session_state.source_signature = (source, dataset, uploaded.file_id if uploaded is not None else None)
+                log(f"Hotovo · {new_result['duration_s']:.2f} s")
                 st.success('Výpočet dokončen. Výsledek je v záložce MAPA / ANALÝZA.')
             except Exception as exc:
                 # The download routine already redacts API credentials from its errors.
                 message = str(exc).replace(api_key, '[skryto]') if api_key else str(exc)
+                log('CHYBA: ' + message)
                 st.error('Výpočet se nepodařil: ' + message)
             finally:
+                st.session_state['last_compute_log'] = '\n'.join(f'[{t}] {m}' for t, m in log_messages[-30:])
                 progress.empty()
 
 
