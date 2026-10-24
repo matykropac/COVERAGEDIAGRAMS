@@ -37,31 +37,25 @@ def render_obstacle_editor(radar_lat, radar_lon):
     obstacles = st.session_state.setdefault('obstacles', [])
     st.caption(f'Zaznamenáno: **{len(obstacles)} / {MAX_OBSTACLES}**')
 
-    # Compact control rail (~200 px at typical desktop width) + flexible map.
-    rail, map_panel = st.columns([1, 5], gap='medium')
-    with rail:
-        st.markdown('**01 / Přidat překážku**')
+    # Drawing controls stay compact above the map.
+    controls, wind_control = st.columns([1, 2], gap='medium')
+    with controls:
         height = st.number_input('Výška nové překážky [m AGL]', 0.1, 1000.0,
                                  value=20.0, step=1.0, key='obstacle_new_height')
-        st.info('V mapě vyber polygon (ikona pětiúhelníku), označ půdorys a '
-                'dvojklikem dokonči. Výška se převezme z pole výše.')
+    with wind_control:
         show_wind = st.checkbox('Zobrazit větrné elektrárny (100 km)',
                                 value=True, key='obstacle_show_wind')
-        wind_data = []
-        if show_wind:
-            try:
-                wind_data = load_wind_turbines(round(radar_lat, 6), round(radar_lon, 6))
-            except Exception:
-                st.warning('Vrstva větrných elektráren není momentálně dostupná.')
+    wind_data = []
+    if show_wind:
+        try:
+            wind_data = load_wind_turbines(round(radar_lat, 6), round(radar_lon, 6))
+        except Exception:
+            st.warning('Vrstva větrných elektráren není momentálně dostupná.')
 
-
-    if '_obstacle_next_selected' in st.session_state:
-        st.session_state['obstacle_selected_index'] = st.session_state.pop('_obstacle_next_selected')
-    selected_idx = min(st.session_state.get('obstacle_selected_index', 0),
-                       max(0, len(obstacles)-1))
-    st.session_state['obstacle_selected_index'] = selected_idx
-
+    selected_idx = st.session_state.get('obstacle_selected_index', -1)
+    map_panel, table_panel = st.columns([2, 1], gap='medium')
     with map_panel:
+        st.markdown('**01 / Mapa překážek**')
         om = folium.Map(location=[radar_lat, radar_lon], zoom_start=11,
                         tiles=None, control_scale=True)
         for name, provider in core.BASEMAP_PROVIDERS.items():
@@ -114,99 +108,51 @@ def render_obstacle_editor(radar_lat, radar_lon):
                         st.session_state['obstacle_selected_index'] = len(obstacles)-1
                         st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
                         st.rerun()
-    st.markdown('**02 / Seznam uložených překážek**')
-    if not obstacles:
-        st.info('Zatím žádné překážky. Nakresli polygon do mapy.')
-        return
-    rows = [{
-        '#': i+1,
-        'Název': _label(o, i),
-        'Typ': 'Polygon' if o.get('kind') == 'polygon' else 'Starší typ',
-        'Výška [m AGL]': float(o['height_m']),
-        'Poloha vzhledem k radaru': _description(o, radar_lat, radar_lon),
-    } for i, o in enumerate(obstacles)]
-    selection = st.dataframe(
-        pd.DataFrame(rows), hide_index=True, use_container_width=True,
-        height=min(460, 36*(len(rows)+1)+8),
-        on_select='rerun', selection_mode='single-row',
-        key=f'obstacle_table_{st.session_state.get("obstacle_list_rev", 0)}')
-    if selection.selection.rows:
-        clicked_row = int(selection.selection.rows[0])
-        if clicked_row < len(obstacles) and clicked_row != selected_idx:
-            st.session_state['obstacle_selected_index'] = clicked_row
-            st.rerun()
-    st.caption('Klikni na řádek v tabulce pro výběr, nebo použij seznam níže.')
+    with table_panel:
+        st.markdown('**02 / Překážky · editovatelná tabulka**')
+        if not obstacles:
+            st.info('Nakresli první polygon v mapě.')
+            return
 
-    chosen_index = st.selectbox(
-        'Vybrat překážku pro úpravu', list(range(len(obstacles))),
-        format_func=lambda i: f'#{i+1:02d} · {_label(obstacles[i], i)} · '
-                              f'{"Polygon" if obstacles[i].get("kind") == "polygon" else ("Oblouk" if obstacles[i].get("kind") == "arc" else "Objekt")} · '
-                              f'{obstacles[i]["height_m"]:g} m',
-        key='obstacle_selected_index'
-    )
-    item = obstacles[chosen_index]
-    revision = st.session_state.get('obstacle_editor_rev', 0)
-    st.markdown('**03 / Upravit vybranou překážku**')
-    with st.form(f'obstacle_edit_{chosen_index}_{revision}', clear_on_submit=False):
-        edit_name = st.text_input('Název', value=_label(item, chosen_index))
-        edit_height = st.number_input('Výška [m AGL]', 0.1, 1000.0,
-                                      value=float(item['height_m']), step=1.0)
-        if item.get('kind') == 'arc':
-            c1, c2 = st.columns(2)
-            with c1:
-                edit_start_lat = st.number_input('Začátek LAT [°]', -90., 90.,
-                                                  float(item['start_lat']), format='%.6f')
-                edit_start_lon = st.number_input('Začátek LON [°]', -180., 180.,
-                                                  float(item['start_lon']), format='%.6f')
-            with c2:
-                edit_end_lat = st.number_input('Konec LAT [°]', -90., 90.,
-                                                float(item['end_lat']), format='%.6f')
-                edit_end_lon = st.number_input('Konec LON [°]', -180., 180.,
-                                                float(item['end_lon']), format='%.6f')
-        elif item.get('kind') == 'polygon':
-            st.caption('Tvar polygonu je uložený v mapě. Výšku a název můžeš upravit zde; '
-                       'pro změnu půdorysu polygon smaž a nakresli znovu.')
-        else:
-            c1, c2 = st.columns(2)
-            with c1:
-                edit_lat = st.number_input('LAT [°]', -90., 90.,
-                                           float(item['lat']), format='%.6f')
-            with c2:
-                edit_lon = st.number_input('LON [°]', -180., 180.,
-                                           float(item['lon']), format='%.6f')
-        submitted = st.form_submit_button('Uložit změny', type='primary')
-    if submitted:
-        updated = dict(item, name=edit_name.strip() or _label(item, chosen_index),
-                       height_m=edit_height)
-        if item.get('kind') == 'arc':
-            updated.update(start_lat=edit_start_lat, start_lon=edit_start_lon,
-                           end_lat=edit_end_lat, end_lon=edit_end_lon)
-        elif item.get('kind') != 'polygon':
-            updated.update(lat=edit_lat, lon=edit_lon)
-        try:
-            validate_obstacle(updated, radar_lat, radar_lon)
-        except (ValueError, TypeError, KeyError) as exc:
-            st.error(str(exc))
-        else:
-            obstacles[chosen_index] = updated
-            st.session_state['obstacle_editor_rev'] = revision + 1
-            st.session_state.pop('obstacle_confirm_delete', None)
-            st.rerun()
-
-    if st.button('🗑️ Smazat vybranou překážku', key='obstacle_delete_request'):
-        st.session_state['obstacle_confirm_delete'] = chosen_index
-    if st.session_state.get('obstacle_confirm_delete') == chosen_index:
-        st.warning('Opravdu smazat ' + _label(item, chosen_index) + '?')
-        yes, no = st.columns(2)
-        with yes:
-            if st.button('Ano, smazat', type='primary', key='obstacle_delete_confirm'):
-                obstacles.pop(chosen_index)
-                st.session_state.pop('obstacle_confirm_delete', None)
-                st.session_state['_obstacle_next_selected'] = max(0, chosen_index-1)
-                st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
-                st.session_state['obstacle_editor_rev'] = revision+1
+        rows = [{
+            'Název': _label(o, i),
+            'Výška [m AGL]': float(o['height_m']),
+            'Smazat': False,
+        } for i, o in enumerate(obstacles)]
+        editor_rev = st.session_state.get('obstacle_list_rev', 0)
+        edited = st.data_editor(
+            pd.DataFrame(rows),
+            key=f'obstacle_editor_{editor_rev}',
+            hide_index=False,
+            use_container_width=True,
+            num_rows='fixed',
+            height=min(690, max(160, 38 * (len(rows) + 1) + 20)),
+            column_config={
+                'Název': st.column_config.TextColumn('Název', required=True),
+                'Výška [m AGL]': st.column_config.NumberColumn(
+                    'Výška [m AGL]', min_value=0.1, max_value=1000.0,
+                    step=1.0, format='%.1f'),
+                'Smazat': st.column_config.CheckboxColumn('Smazat', default=False),
+            },
+        )
+        if st.button('Uložit změny', type='primary',
+                     use_container_width=True, key='obstacle_save_table'):
+            updated = []
+            try:
+                for i, row in edited.iterrows():
+                    if bool(row['Smazat']):
+                        continue
+                    item = dict(obstacles[i])
+                    item['name'] = str(row['Název']).strip() or _label(item, i)
+                    item['height_m'] = float(row['Výška [m AGL]'])
+                    validate_obstacle(item, radar_lat, radar_lon)
+                    updated.append(item)
+            except (ValueError, TypeError, KeyError) as exc:
+                st.error(f'Neplatná úprava: {exc}')
+            else:
+                obstacles[:] = updated
+                st.session_state['obstacle_list_rev'] = editor_rev + 1
                 st.rerun()
-        with no:
-            if st.button('Zrušit', key='obstacle_delete_cancel'):
-                st.session_state.pop('obstacle_confirm_delete', None)
-                st.rerun()
+        st.caption('Uprav název nebo výšku přímo v tabulce. '
+                   'Pro odstranění zaškrtni Smazat a ulož. '
+                   'Půdorys polygonu upravíš novým nakreslením.')
