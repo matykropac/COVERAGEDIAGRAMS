@@ -20,7 +20,7 @@ GEOD = Geod(ellps="WGS84")
 NM_M = 1852.0
 MAX_NM = 260
 
-@st.cache_data(ttl=55, show_spinner=False)
+@st.cache_data(ttl=15, show_spinner=False)
 def _traffic(lat, lon, provider):
     """Return normalized aircraft positions; API radius is limited to 250 NM."""
     hosts = {"ADSB.lol": "https://api.adsb.lol",
@@ -115,7 +115,7 @@ def _render(result, level_ft, traffic):
     Fullscreen().add_to(m)
     return m,counts
 
-@st.fragment(run_every="60s")
+@st.fragment(run_every="15s")
 def _live_frame(result, level_ft, provider):
     try:
         timestamp, states = _traffic(round(result["config"].lat,5),round(result["config"].lon,5),provider)
@@ -125,7 +125,7 @@ def _live_frame(result, level_ft, provider):
         return
     m,counts=_render(result,level_ft,states)
     when=datetime.fromtimestamp(timestamp,timezone.utc).strftime("%H:%M:%S UTC") if timestamp else "N/A"
-    st.caption(f"{provider} snapshot: {when} · aktualizace cca 60 s · "
+    st.caption(f"{provider} snapshot: {when} · aktualizace cca 15 s · "
                f"🟢 {counts['visible']} potenciálně viditelných · "
                f"🔴 {counts['hidden']} mimo krytí · 🟡 {counts['unknown']} neurčeno")
     st_folium(m,height=680,use_container_width=True,key=f"simulation_{level_ft}",returned_objects=[])
