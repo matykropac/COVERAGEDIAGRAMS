@@ -207,6 +207,20 @@ def simulation_dialog(result,level_ft,provider):
                 f"{result['config'].lat:.4f}°, {result['config'].lon:.4f}°")
     _live_frame(result,level_ft,provider)
 
+@st.fragment(run_every="5s")
+def _persistent_display(result, level_ft, provider):
+    try:
+        _, states = _traffic(round(result["config"].lat,5),
+                             round(result["config"].lon,5), provider)
+        aircraft = []
+        for row in states:
+            aircraft.append({"hex":row[0],"flight":row[1],"lat":row[6],
+                             "lon":row[5],"alt_geom":row[13]/0.3048 if row[13] is not None else None,
+                             "track":row[10],"gs":row[11]})
+        open_display(result, level_ft, provider, aircraft)
+    except Exception as exc:
+        st.warning(f"ADS-B data nejsou dostupná: {str(exc)[:160]}")
+
 def simulation_tab(result,levels):
     st.subheader("LIVE SIMULATION / ADS-B")
     st.caption("Živé ADS-B polohy letadel nad vypočteným radarovým pokrytím. "
@@ -226,10 +240,10 @@ def simulation_tab(result,levels):
                             key="simulation_provider")
     st.caption("Veřejná API poskytují maximálně 250 NM kolem radaru; kružnice 260 NM "
                "zůstává orientační. Data nejsou radarové ploty.")
-    st.markdown("**Samostatný radarový displej** — otevře se v nové záložce. "
+    st.markdown("**Radarový displej** — stabilní mapa s aktualizací dat ze serveru. "
                 "Mapa zůstává stabilní a aktualizují se pouze cíle každých 5 sekund. "
                 "Trajektorie až 12 NM s postupným fade.")
-    open_display(result, selected, provider)
+    _persistent_display(result, selected, provider)
     with st.expander("Původní náhled v aplikaci (fullscreen se resetuje)"):
         if st.button("▶ OTEVŘÍT NÁHLED",key="open_simulation"):
             simulation_dialog(result,selected,provider)
