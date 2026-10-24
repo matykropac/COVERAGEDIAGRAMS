@@ -96,8 +96,8 @@ def add_wind_layer(map_obj, turbines, cluster_points=True, fallback_height=None)
             f"Azimut: {t['az']}°"
         )
         folium.CircleMarker(
-            [t["lat"], t["lon"]], radius=5, color="#f8e07b", weight=1.5,
-            fill=True, fill_color="#f59e0b", fill_opacity=.95,
-            tooltip=f"{t['distance_km']} km · {t['az']}°", popup=folium.Popup(body, max_width=200),
+            [t["lat"], t["lon"]], radius=5, color="#67e8f9", weight=1.5,
+            fill=True, fill_color="#0891b2", fill_opacity=.95,
+            tooltip="WINDTURBINE", popup=folium.Popup(body, max_width=200),
         ).add_to(target)
     layer.add_to(map_obj)
