@@ -27,6 +27,7 @@ from obstacles import apply_obstacles, obstacle_polygon, obstacle_signature
 from project_file import save_project, load_project
 from project_widgets import restored_widget_values
 from obstacle_ui import render_obstacle_editor
+from wind_turbines import load_wind_turbines, add_wind_layer
 from site_picker import coordinates_from_map_click
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
@@ -476,6 +477,25 @@ else:
             alphas = {ft: alpha for ft in active}
             st.caption(f'Aktivní vrstvy: {len(active) + int(show_target)}')
             st.caption('Kliknutí měří přímo v mapě, bez překreslení aplikace — funguje i na celou obrazovku.')
+            st.markdown('**Větrné turbíny**')
+            show_analysis_wind = st.checkbox('Zobrazit jednotlivé turbíny (100 km)',
+                                             value=True, key='analysis_show_wind')
+            assumed_wind_height = st.number_input(
+                'Výška, pokud není v OSM [m AGL]', min_value=0.0,
+                max_value=400.0, value=0.0, step=5.0,
+                key='analysis_wind_height_fallback',
+                help='0 = neznámá výška. Hodnota je pouze pro popis bodu, '
+                     'nemění radarové krytí.')
+            analysis_wind_data = []
+            if show_analysis_wind:
+                try:
+                    analysis_wind_data = load_wind_turbines(round(rc.lat, 6), round(rc.lon, 6))
+                    st.caption(f'Na mapě: {len(analysis_wind_data)} turbín · žluté body.')
+                except Exception as exc:
+                    st.warning('Turbíny nelze načíst; krytí zůstává dostupné.')
+                    st.caption(str(exc)[:240])
+            st.caption('Výška turbín je informativní. Neovlivňuje výpočet krytí.')
+
 
         with mapcol:
             m = folium.Map(location=[rc.lat, rc.lon], zoom_start=8 if rc.range_km<=100 else 7,
@@ -496,6 +516,9 @@ else:
                         style_function=lambda feature, color=color, opacity=opacity:
                             dict(color=color, weight=1.5, fillColor=color, fillOpacity=opacity),
                         tooltip=folium.GeoJsonTooltip(fields=['hladina'], labels=False)).add_to(m)
+            if show_analysis_wind and analysis_wind_data:
+                add_wind_layer(m, analysis_wind_data, cluster_points=False,
+                               fallback_height=assumed_wind_height or None)
             for obs in result.get('obstacles', []):
                 folium.Polygon(obstacle_polygon(obs, rc.lat, rc.lon), color='#ff7043',
                                weight=1, fill=True, fill_opacity=.65,
