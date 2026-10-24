@@ -1,5 +1,4 @@
 """Standalone Leaflet ADS-B display: no Streamlit map rerenders."""
-import base64
 import json
 import math
 
@@ -28,6 +27,7 @@ def open_display(result, level_ft, provider):
     folium.Marker([c.lat,c.lon],tooltip="RADAR",
                   icon=folium.Icon(color="orange",icon="signal")).add_to(m)
     folium.LayerControl().add_to(m)
+    Fullscreen(position="topright", title="Celá obrazovka", title_cancel="Zavřít fullscreen").add_to(m)
     # Keep the base map mounted; only update a dedicated aircraft layer.
     az = np.asarray(result["az"],dtype=float)
     dist = np.asarray(result["distance"],dtype=float)
@@ -117,24 +117,7 @@ update();setInterval(update,5000);
     # Inject script AFTER Folium initializes the Leaflet map.
     from branca.element import Element
     m.get_root().script.add_child(Element(script))
-    html=m.get_root().render().encode("utf-8")
-    payload=base64.b64encode(html).decode("ascii")
-    components.html("""
-<button id="open" style="padding:12px 22px;background:#143d55;color:white;border:1px solid #398ab0;border-radius:8px;cursor:pointer">↗ OTEVŘÍT SAMOSTATNÝ RADAR DISPLAY</button>
-<script>
-document.getElementById('open').onclick=()=>{
- const b64='""" + payload + """';
- const tab=window.open('about:blank','_blank');
- if(!tab){alert('Povol vyskakovací okna.');return;}
- try{
-   const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
-   const html=new TextDecoder('utf-8').decode(bytes);
-   tab.document.open();
-   tab.document.write(html);
-   tab.document.close();
-   tab.document.title='RADAR LIVE · COVERAGEDIAGRAMS';
- }catch(e){
-   tab.document.body.textContent='Radar display se nepodařilo otevřít: '+e.message;
- }
-};
-</script>""",height=60)
+    html = m.get_root().render()
+    # Keep the Leaflet map mounted in a stable component; do not open an
+    # about:srcdoc popup from Streamlit's sandboxed component iframe.
+    components.html(html, height=850, scrolling=False)
