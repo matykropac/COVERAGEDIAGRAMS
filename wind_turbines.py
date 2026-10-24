@@ -7,6 +7,7 @@ import folium
 import streamlit as st
 from folium.plugins import MarkerCluster
 from pyproj import Geod
+from wind_offline import select_turbines, bundled_dataset
 
 GEOD = Geod(ellps="WGS84")
 RADIUS_M = 100_000
@@ -15,7 +16,14 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_wind_turbines(lat: float, lon: float):
-    """Query wind generators within 100 km; never change obstacle calculations."""
+    """Prefer bundled/uploaded offline dataset; Overpass only when none is available."""
+    raw = st.session_state.get("wind_dataset_bytes")
+    filename = st.session_state.get("wind_dataset_filename", "wind_turbines.csv")
+    if raw is None:
+        raw = bundled_dataset()
+        filename = "wind_turbines.csv"
+    if raw is not None:
+        return select_turbines(raw, filename, lat, lon, RADIUS_M)
     import json
     # A bounding box is much cheaper for Overpass than a 100 km around query.
     lat_delta = RADIUS_M / 111_000
