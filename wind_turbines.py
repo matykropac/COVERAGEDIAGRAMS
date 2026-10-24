@@ -9,15 +9,15 @@ from folium.plugins import MarkerCluster
 from pyproj import Geod
 
 GEOD = Geod(ellps="WGS84")
-RADIUS_M = 300_000
+RADIUS_M = 100_000
 OVERPASS_URL = "https://overpass.kumi.systems/api/interpreter"
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_wind_turbines(lat: float, lon: float):
-    """Query wind generators within 300 km; never change obstacle calculations."""
+    """Query wind generators within 100 km; never change obstacle calculations."""
     import json
-    # A bounding box is much cheaper for Overpass than a 300 km around query.
+    # A bounding box is much cheaper for Overpass than a 100 km around query.
     lat_delta = RADIUS_M / 111_000
     lon_delta = RADIUS_M / (111_000 * max(0.1, math.cos(math.radians(lat))))
     south, north = max(-90, lat-lat_delta), min(90, lat+lat_delta)
