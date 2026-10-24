@@ -10,7 +10,7 @@ from pyproj import Geod
 
 GEOD = Geod(ellps="WGS84")
 RADIUS_M = 100_000
-OVERPASS_URL = "https://overpass.kumi.systems/api/interpreter"
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -24,30 +24,27 @@ def load_wind_turbines(lat: float, lon: float):
     west, east = max(-180, lon-lon_delta), min(180, lon+lon_delta)
     bbox = f"{south:.5f},{west:.5f},{north:.5f},{east:.5f}"
     query = (
-        '[out:json][timeout:35];'
+        '[out:json][timeout:20];'
         f'node["power"="generator"]["generator:source"="wind"]({bbox});'
         'out body;'
     )
     import json
-    last_error = None
+    errors = []
     for endpoint in (
-        "https://overpass.private.coffee/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter",
         "https://overpass-api.de/api/interpreter",
+        "https://overpass.nchc.org.tw/api/interpreter",
+        "https://overpass.private.coffee/api/interpreter",
     ):
         try:
-            req = urllib.request.Request(
-                endpoint,
-                data=urllib.parse.urlencode({"data": query}).encode("utf-8"),
-                headers={"User-Agent": "COVERAGEDIAGRAMS/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=42) as response:
+            url = endpoint + "?" + urllib.parse.urlencode({"data": query})
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 COVERAGEDIAGRAMS"})
+            with urllib.request.urlopen(req, timeout=12) as response:
                 raw = json.load(response)
             break
         except Exception as exc:
-            last_error = exc
+            errors.append(f"{urllib.parse.urlsplit(endpoint).hostname}: {type(exc).__name__}: {exc}")
     else:
-        raise RuntimeError(f"Overpass servery neodpovídají: {last_error}")
+        raise RuntimeError(" | ".join(errors))
     turbines = []
     seen = set()
     for element in raw.get("elements", []):
