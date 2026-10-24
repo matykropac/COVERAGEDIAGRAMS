@@ -10,6 +10,7 @@ from streamlit_folium import st_folium
 
 import radar_core as core
 from obstacles import arc_parameters, obstacle_polygon, validate_obstacle
+from wind_turbines import load_wind_turbines, add_wind_layer
 
 GEOD = Geod(ellps='WGS84')
 MAX_OBSTACLES = 100
@@ -95,12 +96,31 @@ def render_obstacle_editor(radar_lat, radar_lon):
                        max(0, len(obstacles)-1))
     st.session_state['obstacle_selected_index'] = selected_idx
 
+    st.markdown('**Větrné elektrárny · 300 km**')
+    show_wind = st.checkbox('Zobrazit větrné turbíny v mapě', value=True,
+                            key='obstacle_show_wind')
+    wind_data = []
+    if show_wind:
+        try:
+            with st.spinner('Načítám větrné turbíny v okruhu 300 km…'):
+                wind_data = load_wind_turbines(round(radar_lat, 6), round(radar_lon, 6))
+            st.success(f'Načteno {len(wind_data)} větrných turbín z OpenStreetMap.')
+        except Exception as exc:
+            st.warning('Turbíny se nyní nepodařilo načíst. Zkus znovu později.')
+            st.caption(f'Overpass API: {str(exc)[:200]}')
+        st.caption('Žluté značky jsou pouze informativní; do překážek se nepřidávají.')
+    if st.button('🔄 Znovu načíst turbíny', key='refresh_wind_turbines'):
+        load_wind_turbines.clear()
+        st.rerun()
+
     om = folium.Map(location=[radar_lat, radar_lon], zoom_start=17,
                     tiles=None, control_scale=True)
     for name, provider in core.BASEMAP_PROVIDERS.items():
         folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                          max_zoom=provider['max_zoom'], overlay=False,
                          show=name == 'OpenStreetMap').add_to(om)
+    if show_wind and wind_data:
+        add_wind_layer(om, wind_data)
     folium.Marker([radar_lat, radar_lon], tooltip='Radar',
                   icon=folium.Icon(color='orange', icon='signal')).add_to(om)
     for i, item in enumerate(obstacles):
