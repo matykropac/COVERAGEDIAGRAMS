@@ -83,7 +83,7 @@ def load_wind_turbines(lat: float, lon: float):
     return turbines
 
 
-def add_wind_layer(map_obj, turbines):
+def add_wind_layer(map_obj, turbines, cluster_points=True, fallback_height=None):
     from html import escape
     layer = folium.FeatureGroup(name=f"Větrné turbíny ({len(turbines)})", show=True)
     target = layer
