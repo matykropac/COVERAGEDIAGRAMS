@@ -117,7 +117,63 @@ class ClickMeasure(MacroElement):
  const map = {{this._parent.get_name()}};
  const site = L.latLng({{this.site_lat}}, {{this.site_lon}});
  const profiles = {{this.profile_data | safe}};
- let marker = null, line = null;
+ let marker = null, line = null, sectorLayer = null;
+ // Terrain cells are the very same sampled DEM used for coverage computation.
+ // Draw a 20° wedge centered on the selected radial, only on line hover.
+ function destination(bearing, km) {
+   const rad=Math.PI/180, d=km/6371.0088, lat1=site.lat*rad, lon1=site.lng*rad, br=bearing*rad;
+   const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(br));
+   const lon2=lon1+Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+   return [lat2/rad,((lon2/rad+540)%360)-180];
+ }
+ function hideTerrainSector() {
+   if(sectorLayer){map.removeLayer(sectorLayer);sectorLayer=null;}
+ }
+ function showTerrainSector(bearing, selectedKm) {
+   hideTerrainSector();
+   const az=profiles.az, dist=profiles.distance, data=profiles.terrain;
+   if(!az.length || dist.length<2)return;
+   const maxKm=Math.min(selectedKm,dist[dist.length-1]);
+   if(maxKm<=0)return;
+   // Coarsen rendering, not source data. 2° x approximately 3 km.
+   const angularStep=Math.max(1,Math.ceil(az.length/180));
+   const radialStep=Math.max(1,Math.ceil(dist.length/70));
+   const cells=[], heights=[];
+   function rowFor(angle) {
+     let best=Infinity,idx=0;
+     for(let i=0;i<az.length;i++){
+       const diff=Math.abs(((angle-az[i]+540)%360)-180);
+       if(diff<best){best=diff;idx=i;}
+     }
+     return data[idx];
+   }
+   for(let offset=-10;offset<10;offset+=2){
+     const midBearing=(bearing+offset+1+360)%360, row=rowFor(midBearing);
+     for(let j=0;j<dist.length-1;j+=radialStep){
+       const next=Math.min(j+radialStep,dist.length-1);
+       if(dist[j]>=maxKm)break;
+       const h=row[Math.min(j+Math.floor((next-j)/2),row.length-1)];
+       if(h===null||!Number.isFinite(h))continue;
+       const r0=j===0?0:dist[j],r1=Math.min(maxKm,dist[next]);
+       if(r1<=r0)continue;
+       cells.push({a0:bearing+offset,a1:bearing+offset+2,r0,r1,h});
+       heights.push(h);
+     }
+   }
+   if(!heights.length)return;
+   const min=Math.min(...heights),max=Math.max(...heights),spread=Math.max(1,max-min);
+   const palette=['#17375d','#205b8a','#277e91','#419a85','#7ca66d','#b3a55c','#c68d58','#d4b27e'];
+   sectorLayer=L.layerGroup().addTo(map);
+   for(const cell of cells){
+     const bin=Math.max(0,Math.min(palette.length-1,Math.floor((cell.h-min)/spread*palette.length)));
+     L.polygon([destination(cell.a0,cell.r0),destination(cell.a1,cell.r0),
+                destination(cell.a1,cell.r1),destination(cell.a0,cell.r1)],
+       {stroke:false,fillColor:palette[bin],fillOpacity:.72,interactive:false}
+     ).addTo(sectorLayer);
+   }
+   // Keep the selection line above the DEM wedge.
+   if(line)line.bringToFront();
+ }
  const panel = L.control({position:'bottomright'});
  panel.onAdd = function() {
    this.box = L.DomUtil.create('div');
@@ -201,7 +257,10 @@ class ClickMeasure(MacroElement):
    if(marker)map.removeLayer(marker);
    if(line)map.removeLayer(line);
    marker=L.circleMarker(point,{radius:7,color:'#fff',weight:2,fillColor:'#ffb454',fillOpacity:1}).addTo(map);
-   line=L.polyline([site,point],{color:'#ffb454',weight:2,opacity:.85,dashArray:'6 5',interactive:false}).addTo(map);
+   hideTerrainSector();
+   line=L.polyline([site,point],{color:'#ffb454',weight:3,opacity:.95,dashArray:'6 5',interactive:true}).addTo(map);
+   line.on('mouseover',()=>showTerrainSector(bearing,distance));
+   line.on('mouseout',hideTerrainSector);
    info.innerHTML='<b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Vzdálenost od stanoviště:<br><b>'+distance.toFixed(2)+' km</b><br>Azimut od stanoviště:<br><b>'+bearing.toFixed(1)+'°</b><br><small>'+point.lat.toFixed(5)+'°, '+point.lng.toFixed(5)+'°</small>';
    draw(bearing,distance);
  });
