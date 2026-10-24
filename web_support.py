@@ -91,6 +91,45 @@ map.on('mousemove', function(e) {
 
 
 
+
+class ClickMeasure(MacroElement):
+    """Fast Leaflet-only point selection, including fullscreen and exported HTML."""
+    def __init__(self, lat, lon):
+        super().__init__()
+        self._name = 'ClickMeasure'
+        self.site_lat = float(lat)
+        self.site_lon = float(lon)
+        self._template = Template(r'''
+{% macro script(this, kwargs) %}
+(function() {
+ const map = {{this._parent.get_name()}};
+ const site = L.latLng({{this.site_lat}}, {{this.site_lon}});
+ let marker = null, line = null;
+ const panel = L.control({position:'bottomright'});
+ panel.onAdd = function() {
+   this.box = L.DomUtil.create('div');
+   this.box.style.cssText = 'background:#071b2df2;color:#e9f7ff;padding:12px 15px;border:1px solid #3d7897;border-radius:9px;box-shadow:0 4px 16px #0008;font:13px sans-serif;line-height:1.65;min-width:205px';
+   this.box.innerHTML = '<b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Klikni do mapy pro měření';
+   L.DomEvent.disableClickPropagation(this.box);
+   return this.box;
+ };
+ panel.addTo(map);
+ map.on('click', function(e) {
+   const point = e.latlng;
+   const rad = Math.PI / 180, p1 = site.lat*rad, p2 = point.lat*rad, dl = (point.lng-site.lng)*rad;
+   const a = Math.sin((p2-p1)/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+   const distance = 6371.0088 * 2 * Math.asin(Math.min(1,Math.sqrt(a)));
+   const azimuth = (Math.atan2(Math.sin(dl)*Math.cos(p2),Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl))/rad+360)%360;
+   if(marker) map.removeLayer(marker);
+   if(line) map.removeLayer(line);
+   marker = L.circleMarker(point,{radius:7,color:'#fff',weight:2,fillColor:'#ffb454',fillOpacity:1}).addTo(map);
+   line = L.polyline([site,point],{color:'#ffb454',weight:2,opacity:.85,dashArray:'6 5',interactive:false}).addTo(map);
+   panel.box.innerHTML = '<b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Vzdálenost od stanoviště: <b>'+distance.toFixed(2)+' km</b><br>Azimut od stanoviště: <b>'+azimuth.toFixed(1)+'°</b><br><small>'+point.lat.toFixed(5)+'°, '+point.lng.toFixed(5)+'°</small>';
+ });
+})();
+{% endmacro %}''')
+
+
 KML_NS = 'http://www.opengis.net/kml/2.2'
 ET.register_namespace('', KML_NS)
 
