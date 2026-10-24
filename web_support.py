@@ -100,13 +100,15 @@ class ClickMeasure(MacroElement):
         config = result['config']
         self.site_lat = float(config.lat)
         self.site_lon = float(config.lon)
-        # Preserve native radial DEM sampling for the terrain sector and profile.
+        # Bound browser payload; retain enough samples for a responsive sector.
         az = np.asarray(result['az'], dtype=float)
         distance = np.asarray(result['distance'], dtype=float) / 1000.0
         terrain = np.asarray(result['terrain'], dtype=float)
+        step = max(1, int(np.ceil(len(distance) / 240)))
+        terrain = terrain[:, ::step]
         self.profile_data = json.dumps({
             'az': np.round(az, 3).tolist(),
-            'distance': np.round(distance, 3).tolist(),
+            'distance': np.round(distance[::step], 3).tolist(),
             'terrain': np.where(np.isfinite(terrain), np.round(terrain, 1), None).tolist(),
         }, separators=(',', ':'), allow_nan=False)
         self._template = Template(r'''
@@ -133,9 +135,9 @@ class ClickMeasure(MacroElement):
    if(!az.length || dist.length<2)return;
    const maxKm=Math.min(selectedKm,dist[dist.length-1]);
    if(maxKm<=0)return;
-   // Use native DEM samples; limit polygon count only for very large datasets.
-   const angularStep=Math.min(1, Math.max(.25, az.length>1 ? Math.abs(az[1]-az[0]) : 1));
-   const radialStep=Math.max(1,Math.ceil((20/angularStep)*dist.length/14000));
+   // Limit the wedge to ~1800 polygons so hovering never stalls the map.
+   const angularStep=1;
+   const radialStep=Math.max(1,Math.ceil(20*dist.length/1800));
    const cells=[], heights=[];
    function rowFor(angle) {
      let best=Infinity,idx=0;
@@ -163,7 +165,6 @@ class ClickMeasure(MacroElement):
    const min=Math.min(...heights),max=Math.max(...heights),spread=Math.max(1,max-min);
    const palette=['#17375d','#205b8a','#277e91','#419a85','#7ca66d','#b3a55c','#c68d58','#d4b27e'];
    sectorLayer=L.layerGroup().addTo(map);
-   const canvasRenderer=L.canvas({padding:.2});
    function colorFor(h){
      const t=Math.max(0,Math.min(palette.length-1.000001,(h-min)/spread*(palette.length-1)));
      const i=Math.floor(t), f=t-i;
@@ -174,7 +175,7 @@ class ClickMeasure(MacroElement):
    for(const cell of cells){
      L.polygon([destination(cell.a0,cell.r0),destination(cell.a1,cell.r0),
                 destination(cell.a1,cell.r1),destination(cell.a0,cell.r1)],
-       {renderer:canvasRenderer,stroke:false,fillColor:colorFor(cell.h),fillOpacity:.83,interactive:false}
+       {stroke:false,fillColor:colorFor(cell.h),fillOpacity:.83,interactive:false}
      ).addTo(sectorLayer);
    }
    // Keep the selection line above the DEM wedge.
