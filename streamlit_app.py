@@ -28,6 +28,7 @@ from project_file import save_project, load_project
 from project_widgets import restored_widget_values
 from obstacle_ui import render_obstacle_editor
 from live_simulation import simulation_tab
+from radar_window import render_radar_window
 from wind_turbines import load_wind_turbines, add_wind_layer
 from site_picker import coordinates_from_map_click
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
@@ -62,6 +63,11 @@ if _pending_radar_site is not None:
 
 # Centralized ATM stylesheet. Keep widget spacing and colors in one place.
 st.markdown('<style>' + (Path(__file__).resolve().parent / 'assets' / 'atm-theme.css').read_text(encoding='utf-8') + '</style>', unsafe_allow_html=True)
+
+# The separate radar tab is a lightweight route, not a second dashboard.
+if render_radar_window():
+    st.stop()
+
 
 
 @st.cache_resource
