@@ -124,9 +124,17 @@ update();setInterval(update,5000);
 <script>
 document.getElementById('open').onclick=()=>{
  const b64='""" + payload + """';
- const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
- const url=URL.createObjectURL(new Blob([bytes],{type:'text/html;charset=utf-8'}));
- const tab=window.open(url,'_blank');
- if(!tab)alert('Povol vyskakovací okna.');
+ const tab=window.open('about:blank','_blank');
+ if(!tab){alert('Povol vyskakovací okna.');return;}
+ try{
+   const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+   const html=new TextDecoder('utf-8').decode(bytes);
+   tab.document.open();
+   tab.document.write(html);
+   tab.document.close();
+   tab.document.title='RADAR LIVE · COVERAGEDIAGRAMS';
+ }catch(e){
+   tab.document.body.textContent='Radar display se nepodařilo otevřít: '+e.message;
+ }
 };
 </script>""",height=60)
