@@ -100,15 +100,13 @@ class ClickMeasure(MacroElement):
         config = result['config']
         self.site_lat = float(config.lat)
         self.site_lon = float(config.lon)
-        # Downsample only for the miniature chart; the calculation is untouched.
+        # Preserve native radial DEM sampling for the terrain sector and profile.
         az = np.asarray(result['az'], dtype=float)
         distance = np.asarray(result['distance'], dtype=float) / 1000.0
         terrain = np.asarray(result['terrain'], dtype=float)
-        step = max(1, int(np.ceil(len(distance) / 160)))
-        terrain = terrain[:, ::step]
         self.profile_data = json.dumps({
             'az': np.round(az, 3).tolist(),
-            'distance': np.round(distance[::step], 3).tolist(),
+            'distance': np.round(distance, 3).tolist(),
             'terrain': np.where(np.isfinite(terrain), np.round(terrain, 1), None).tolist(),
         }, separators=(',', ':'), allow_nan=False)
         self._template = Template(r'''
@@ -135,9 +133,9 @@ class ClickMeasure(MacroElement):
    if(!az.length || dist.length<2)return;
    const maxKm=Math.min(selectedKm,dist[dist.length-1]);
    if(maxKm<=0)return;
-   // Coarsen rendering, not source data. 2° x approximately 3 km.
-   const angularStep=Math.max(1,Math.ceil(az.length/180));
-   const radialStep=Math.max(1,Math.ceil(dist.length/70));
+   // Use native DEM samples; limit polygon count only for very large datasets.
+   const angularStep=Math.min(1, Math.max(.25, az.length>1 ? Math.abs(az[1]-az[0]) : 1));
+   const radialStep=Math.max(1,Math.ceil((20/angularStep)*dist.length/14000));
    const cells=[], heights=[];
    function rowFor(angle) {
      let best=Infinity,idx=0;
@@ -147,8 +145,9 @@ class ClickMeasure(MacroElement):
      }
      return data[idx];
    }
-   for(let offset=-10;offset<10;offset+=2){
-     const midBearing=(bearing+offset+1+360)%360, row=rowFor(midBearing);
+   for(let offset=-10;offset<10-1e-6;offset+=angularStep){
+     const nextOffset=Math.min(10,offset+angularStep);
+     const midBearing=(bearing+(offset+nextOffset)/2+360)%360, row=rowFor(midBearing);
      for(let j=0;j<dist.length-1;j+=radialStep){
        const next=Math.min(j+radialStep,dist.length-1);
        if(dist[j]>=maxKm)break;
@@ -156,7 +155,7 @@ class ClickMeasure(MacroElement):
        if(h===null||!Number.isFinite(h))continue;
        const r0=j===0?0:dist[j],r1=Math.min(maxKm,dist[next]);
        if(r1<=r0)continue;
-       cells.push({a0:bearing+offset,a1:bearing+offset+2,r0,r1,h});
+       cells.push({a0:bearing+offset,a1:bearing+nextOffset,r0,r1,h});
        heights.push(h);
      }
    }
@@ -164,11 +163,18 @@ class ClickMeasure(MacroElement):
    const min=Math.min(...heights),max=Math.max(...heights),spread=Math.max(1,max-min);
    const palette=['#17375d','#205b8a','#277e91','#419a85','#7ca66d','#b3a55c','#c68d58','#d4b27e'];
    sectorLayer=L.layerGroup().addTo(map);
+   const canvasRenderer=L.canvas({padding:.2});
+   function colorFor(h){
+     const t=Math.max(0,Math.min(palette.length-1.000001,(h-min)/spread*(palette.length-1)));
+     const i=Math.floor(t), f=t-i;
+     const a=palette[i].slice(1),b=palette[i+1].slice(1);
+     const c=k=>Math.round(parseInt(a.slice(k,k+2),16)*(1-f)+parseInt(b.slice(k,k+2),16)*f).toString(16).padStart(2,'0');
+     return '#'+c(0)+c(2)+c(4);
+   }
    for(const cell of cells){
-     const bin=Math.max(0,Math.min(palette.length-1,Math.floor((cell.h-min)/spread*palette.length)));
      L.polygon([destination(cell.a0,cell.r0),destination(cell.a1,cell.r0),
                 destination(cell.a1,cell.r1),destination(cell.a0,cell.r1)],
-       {stroke:false,fillColor:palette[bin],fillOpacity:.72,interactive:false}
+       {renderer:canvasRenderer,stroke:false,fillColor:colorFor(cell.h),fillOpacity:.83,interactive:false}
      ).addTo(sectorLayer);
    }
    // Keep the selection line above the DEM wedge.
