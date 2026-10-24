@@ -121,8 +121,8 @@ class ClickMeasure(MacroElement):
  const panel = L.control({position:'bottomright'});
  panel.onAdd = function() {
    this.box = L.DomUtil.create('div');
-   this.box.style.cssText = 'display:flex;align-items:center;gap:12px;background:#071b2df2;color:#e9f7ff;padding:10px 13px;border:1px solid #3d7897;border-radius:9px;box-shadow:0 4px 16px #0008;font:12px sans-serif;line-height:1.6;max-width:min(650px,85vw)';
-   this.box.innerHTML = '<div id="measure-info" style="min-width:185px"><b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Klikni do mapy pro měření</div><div style="width:265px;max-width:40vw"><div style="color:#5fe3f2;font-weight:bold">PROFIL TERÉNU</div><canvas id="measure-profile" width="265" height="112" style="width:100%;height:112px;display:block"></canvas></div>';
+   this.box.style.cssText = 'display:flex;align-items:center;gap:12px;background:#071b2df2;color:#e9f7ff;padding:10px 13px;border:1px solid #3d7897;border-radius:9px;box-shadow:0 4px 16px #0008;font:12px sans-serif;line-height:1.6;width:min(1050px,92vw);max-width:92vw';
+   this.box.innerHTML = '<div id="measure-info" style="width:230px;min-width:185px;flex-shrink:0"><b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Klikni do mapy pro měření</div><div style="flex:1;min-width:0"><div style="color:#5fe3f2;font-weight:bold">PROFIL TERÉNU</div><canvas id="measure-profile" width="780" height="112" style="width:100%;height:112px;display:block"></canvas></div>';
    L.DomEvent.disableClickPropagation(this.box);
    L.DomEvent.disableScrollPropagation(this.box);
    return this.box;
@@ -141,34 +141,46 @@ class ClickMeasure(MacroElement):
    const values=profiles.terrain[index];
    ctx.clearRect(0,0,canvas.width,canvas.height);
    if(!values || !dist.length) return;
-   const valid=values.filter(v=>v!==null && Number.isFinite(v));
-   if(!valid.length) return;
-   const low=Math.min(...valid), high=Math.max(...valid);
-   const min=low-Math.max(20,(high-low)*.12), max=high+Math.max(20,(high-low)*.12);
-   const left=7,right=canvas.width-7,top=10,bottom=canvas.height-20;
    const maxDist=dist[dist.length-1]||1;
-   const x=d=>left+(right-left)*Math.max(0,Math.min(1,d/maxDist));
+   // A sliding terrain window follows the click. The chosen point is always
+   // at the horizontal center, including near the radar or range boundary.
+   const span=Math.max(10,maxDist*.30);
+   const start=selectedKm-span/2, finish=selectedKm+span/2;
+   const left=7,right=canvas.width-7,top=10,bottom=canvas.height-20;
+   const x=d=>left+(right-left)*(d-start)/span;
+   const visible=values.filter((v,i)=>v!==null && Number.isFinite(v) && dist[i]>=start && dist[i]<=finish);
+   if(!visible.length) {
+     ctx.fillStyle='#c4dce9';ctx.font='12px sans-serif';
+     ctx.fillText('V této vzdálenosti nejsou dostupná terénní data.',12,55);
+     return;
+   }
+   const low=Math.min(...visible),high=Math.max(...visible);
+   const padding=Math.max(20,(high-low)*.15);
+   const min=low-padding,max=high+padding;
    const y=v=>bottom-(v-min)/(max-min)*(bottom-top);
    ctx.strokeStyle='#35566b';ctx.lineWidth=1;
    for(let j=0;j<3;j++){const yy=top+(bottom-top)*j/2;ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(right,yy);ctx.stroke();}
+   ctx.save();ctx.beginPath();ctx.rect(left,top,right-left,bottom-top);ctx.clip();
    ctx.beginPath();let started=false;
    for(let i=0;i<values.length;i++){
-     const v=values[i];
+     const v=values[i],d=dist[i];
      if(v===null || !Number.isFinite(v)){started=false;continue;}
-     if(!started){ctx.moveTo(x(dist[i]),y(v));started=true;}else ctx.lineTo(x(dist[i]),y(v));
+     if(!started){ctx.moveTo(x(d),y(v));started=true;}else ctx.lineTo(x(d),y(v));
    }
    ctx.strokeStyle='#5fe3f2';ctx.lineWidth=2;ctx.stroke();
    const xx=x(selectedKm);
    ctx.setLineDash([3,3]);ctx.strokeStyle='#ffb454';ctx.beginPath();ctx.moveTo(xx,top);ctx.lineTo(xx,bottom);ctx.stroke();ctx.setLineDash([]);
-   if(selectedKm<=maxDist){
+   if(selectedKm>=0 && selectedKm<=maxDist){
      let near=0;for(let i=1;i<dist.length;i++)if(Math.abs(dist[i]-selectedKm)<Math.abs(dist[near]-selectedKm))near=i;
      if(values[near]!==null && Number.isFinite(values[near])){
        ctx.fillStyle='#ffb454';ctx.beginPath();ctx.arc(xx,y(values[near]),4,0,Math.PI*2);ctx.fill();
      }
    }
+   ctx.restore();
    ctx.font='10px sans-serif';ctx.fillStyle='#c4dce9';
-   ctx.fillText('0 km',left,canvas.height-5);
-   ctx.textAlign='right';ctx.fillText(maxDist.toFixed(0)+' km',right,canvas.height-5);ctx.textAlign='left';
+   ctx.fillText(start.toFixed(1)+' km',left,canvas.height-5);
+   ctx.textAlign='center';ctx.fillStyle='#ffb454';ctx.fillText(selectedKm.toFixed(1)+' km',xx,canvas.height-5);
+   ctx.textAlign='right';ctx.fillStyle='#c4dce9';ctx.fillText(finish.toFixed(1)+' km',right,canvas.height-5);ctx.textAlign='left';
  }
  map.on('click', function(e) {
    const point=e.latlng;
