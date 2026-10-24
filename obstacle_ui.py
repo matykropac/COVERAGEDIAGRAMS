@@ -10,6 +10,7 @@ from streamlit_folium import st_folium
 
 import radar_core as core
 from obstacles import arc_parameters, obstacle_polygon, validate_obstacle
+from wind_turbines import load_wind_turbines, add_wind_layer
 
 GEOD = Geod(ellps='WGS84')
 MAX_OBSTACLES = 100
@@ -44,6 +45,15 @@ def render_obstacle_editor(radar_lat, radar_lon):
                                  value=20.0, step=1.0, key='obstacle_new_height')
         st.info('V mapě vyber polygon (ikona pětiúhelníku), označ půdorys a '
                 'dvojklikem dokonči. Výška se převezme z pole výše.')
+        show_wind = st.checkbox('Zobrazit větrné elektrárny (100 km)',
+                                value=True, key='obstacle_show_wind')
+        wind_data = []
+        if show_wind:
+            try:
+                wind_data = load_wind_turbines(round(radar_lat, 6), round(radar_lon, 6))
+            except Exception:
+                st.warning('Vrstva větrných elektráren není momentálně dostupná.')
+
 
     if '_obstacle_next_selected' in st.session_state:
         st.session_state['obstacle_selected_index'] = st.session_state.pop('_obstacle_next_selected')
@@ -58,6 +68,8 @@ def render_obstacle_editor(radar_lat, radar_lon):
             folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                              max_zoom=provider['max_zoom'], overlay=False,
                              show=name == 'OpenStreetMap').add_to(om)
+        if show_wind and wind_data:
+            add_wind_layer(om, wind_data, cluster_points=False)
         folium.Marker([radar_lat, radar_lon], tooltip='Radar',
                       icon=folium.Icon(color='orange', icon='signal')).add_to(om)
         for i, item in enumerate(obstacles):
