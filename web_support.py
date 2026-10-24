@@ -121,13 +121,23 @@ class ClickMeasure(MacroElement):
  const panel = L.control({position:'bottomright'});
  panel.onAdd = function() {
    this.box = L.DomUtil.create('div');
-   this.box.style.cssText = 'display:flex;align-items:center;gap:12px;background:#071b2df2;color:#e9f7ff;padding:10px 13px;border:1px solid #3d7897;border-radius:9px;box-shadow:0 4px 16px #0008;font:12px sans-serif;line-height:1.6;width:min(1050px,92vw);max-width:92vw';
+   this.box.style.cssText = 'display:none;align-items:center;gap:12px;background:#071b2df2;color:#e9f7ff;padding:10px 13px;border:1px solid #3d7897;border-radius:9px;box-shadow:0 4px 16px #0008;font:12px sans-serif;line-height:1.6;width:min(1050px,92vw);max-width:92vw';
    this.box.innerHTML = '<div id="measure-info" style="width:230px;min-width:185px;flex-shrink:0"><b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Klikni do mapy pro měření</div><div style="flex:1;min-width:0"><div style="color:#5fe3f2;font-weight:bold">PROFIL TERÉNU</div><canvas id="measure-profile" width="780" height="112" style="width:100%;height:112px;display:block"></canvas></div>';
    L.DomEvent.disableClickPropagation(this.box);
    L.DomEvent.disableScrollPropagation(this.box);
    return this.box;
  };
  panel.addTo(map);
+ // The wide measuring panel belongs to fullscreen/standalone views only.
+ // In the embedded map it would be clipped and obstruct navigation.
+ function updatePanelVisibility() {
+   const fullscreen = !!(map._isFullscreen || (map.getContainer().matches && map.getContainer().matches(':fullscreen')) || document.fullscreenElement);
+   const standalone = window.self === window.top;
+   panel.box.style.display = (fullscreen || standalone) ? 'flex' : 'none';
+ }
+ updatePanelVisibility();
+ map.on('fullscreenchange', updatePanelVisibility);
+ document.addEventListener('fullscreenchange', updatePanelVisibility);
  const info = panel.box.querySelector('#measure-info');
  const canvas = panel.box.querySelector('#measure-profile');
  const ctx = canvas.getContext('2d');
