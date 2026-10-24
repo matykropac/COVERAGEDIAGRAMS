@@ -285,7 +285,7 @@ Anténa letadla 0 dBi; každý spoj má ztráty 3 dB a rezervu 6 dB.
 Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti detekce.''')
         else:
             st.caption('PSR: RL-2000 · 360° · vestavěný LOW / HIGH diagram')
-        source = st.selectbox('Zdroj terénu', ['Syntetické demo', 'Nahrát DEM', 'OpenTopography'], key='source')
+        source = st.selectbox('Zdroj terénu', ['OpenTopography', 'Nahrát DEM'], key='source')
         uploaded = None
         api_key = ''
         dataset = 'COP30'
@@ -307,8 +307,6 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
             else:
                 api_key = st.text_input('OpenTopography API klíč', type='password', key='opentopo_key')
                 st.caption('Pro trvalé automatické načítání nastav OPENTOPOGRAPHY_API_KEY v Streamlit Cloud Secrets.')
-        else:
-            st.caption('Demo používá umělý terén, nikoli skutečné okolí stanoviště.')
     with parameters:
         st.subheader('02 / Parametry výpočtu')
         if radar == 'RL-2000':
@@ -370,10 +368,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                 log(f'Počáteční kontrola OK · {len(az) * len(distance):,} vzorků')
                 with st.spinner('Počítám terén a krytí…'):
                     log('Připravuji digitální model terénu…')
-                    if source == 'Syntetické demo':
-                        terrain, ground = core.demo_terrain(c)
-                        provenance = 'SYNTHETIC DEMO'
-                    elif source == 'Nahrát DEM':
+                    if source == 'Nahrát DEM':
                         if uploaded is None:
                             raise ValueError('Nejprve nahraj soubor DEM.')
                         with tempfile.TemporaryDirectory(prefix='radar_dem_') as directory:
