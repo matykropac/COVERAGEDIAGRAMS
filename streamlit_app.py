@@ -42,7 +42,7 @@ if _missing_core_api:
             f"Loaded radar_core from: {getattr(core, '__file__', '?')}. "
             "Reboot the Streamlit Cloud app to deploy all files from the same commit."
         )
-from web_support import EXPORTS, HoverDetail, clicked_point, coverage_geojson, export_bytes
+from web_support import EXPORTS, HoverDetail, ClickMeasure, clicked_point, coverage_geojson, export_bytes
 
 st.set_page_config(page_title='ELDIS · Radar Coverage', page_icon='📡', layout='wide')
 
@@ -479,7 +479,7 @@ else:
                 st.caption('Zobrazuje krytí cílové výšky nastavené ve výpočtu.')
             alphas = {ft: alpha for ft in active}
             st.caption(f'Aktivní vrstvy: {len(active) + int(show_target)}')
-            st.caption('Klikni do mapy: označí se bod, vzdálenost a azimut od radaru. Podklad změň v ovladači vrstev.')
+            st.caption('Kliknutí měří přímo v mapě, bez překreslení aplikace — funguje i na celou obrazovku.')
         with mapcol:
             m = folium.Map(location=[rc.lat, rc.lon], zoom_start=8 if rc.range_km<=100 else 7,
                            tiles=None, control_scale=True, prefer_canvas=True,
@@ -511,54 +511,19 @@ else:
                 xs, ys, _ = Geod(ellps='WGS84').fwd(np.full(81,rc.lon),np.full(81,rc.lat),bearings,np.full(81,40000.))
                 folium.PolyLine([[rc.lat,rc.lon]]+list(zip(ys,xs))+[[rc.lat,rc.lon]],
                                 color='#8ca4b5',dash_array='5 5',weight=1,tooltip='Sektor PAR-NG ±15° / 40 km').add_to(m)
-            # Persistent clicked point, with geodesic distance and bearing from radar.
-            from pyproj import Geod
-            selected = st.session_state.get('selected_point')
-            if selected and 'lat' in selected and 'lng' in selected:
-                point_lat, point_lon = float(selected['lat']), float(selected['lng'])
-                azimuth, _, distance_m = Geod(ellps='WGS84').inv(
-                    rc.lon, rc.lat, point_lon, point_lat)
-                azimuth = azimuth % 360.0
-                folium.CircleMarker(
-                    [point_lat, point_lon], radius=7, color='#ffffff',
-                    weight=2, fill=True, fill_color='#ffb454', fill_opacity=1,
-                    tooltip=f'Bod · {distance_m/1000:.2f} km · {azimuth:.1f}°'
-                ).add_to(m)
-                folium.PolyLine(
-                    [[rc.lat, rc.lon], [point_lat, point_lon]],
-                    color='#ffb454', weight=2, opacity=.85, dash_array='6 5'
-                ).add_to(m)
-                from branca.element import MacroElement, Template
-                from html import escape
-                class PointInfo(MacroElement):
-                    def __init__(self, distance_km, bearing):
-                        super().__init__()
-                        self._name = 'PointInfo'
-                        self.distance_km = f'{distance_km:.2f}'
-                        self.bearing = f'{bearing:.1f}'
-                        self._template = Template("""
-                        {% macro script(this, kwargs) %}
-                        var panel = L.control({position: 'bottomright'});
-                        panel.onAdd = function(map) {
-                            var el = L.DomUtil.create('div');
-                            el.style.cssText = 'background:#071b2d;color:#e9f7ff;padding:12px 16px;border:1px solid #3d7897;border-radius:9px;box-shadow:0 4px 16px #0008;font:13px sans-serif;line-height:1.7;min-width:190px;';
-                            el.innerHTML = '<b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Vzdálenost od stanoviště: <b>{{this.distance_km}} km</b><br>Azimut od stanoviště: <b>{{this.bearing}}°</b>';
-                            L.DomEvent.disableClickPropagation(el);
-                            return el;
-                        };
-                        panel.addTo({{this._parent.get_name()}});
-                        {% endmacro %}
-                        """)
-                PointInfo(distance_m / 1000, azimuth).add_to(m)
+            ClickMeasure(rc.lat, rc.lon).add_to(m)
             # Layer selection is handled by stable Streamlit controls; Leaflet
             # keeps only basemap switching, without coverage layer animations.
             folium.LayerControl(collapsed=True).add_to(m)
             Fullscreen().add_to(m)
             MeasureControl(primary_length_unit='kilometers').add_to(m)
             HoverDetail(result).add_to(m)
+            # Leaflet handles clicks without Streamlit reruns in fast mode.
+            sync_click = st.session_state.get('sync_map_click', False)
             event = st_folium(m, height=540, use_container_width=True,
-                             key='coverage_'+result['completed_at'], returned_objects=['last_clicked'])
-            click = event.get('last_clicked') if event else None
+                             key='coverage_'+result['completed_at'],
+                             returned_objects=['last_clicked'] if sync_click else [])
+            click = event.get('last_clicked') if (sync_click and event) else None
             if click and click != st.session_state.get('last_map_click'):
                 st.session_state.last_map_click = click
                 st.session_state.selected_point = click
@@ -568,7 +533,18 @@ else:
                 _, idx, _ = clicked_point(result, click['lat'], click['lng'], active)
                 if idx is not None:
                     st.session_state.profile_index = idx
+            st.download_button(
+                '↗ Samostatná mapa (HTML)',
+                data=m.get_root().render().encode('utf-8'),
+                file_name='coverage_map.html', mime='text/html',
+                help='Stáhni HTML a otevři jej v samostatném okně prohlížeče.',
+                key='download_standalone_map'
+            )
+            st.caption('Samostatná mapa: otevři stažený HTML soubor v prohlížeči. Podkladové dlaždice vyžadují internet.')
         with profile:
+            st.toggle('Přenášet kliknutí z mapy do diagnostiky (pomalejší)',
+                      value=False, key='sync_map_click',
+                      help='Zapne aktualizaci radiálního profilu. Vypnuto = rychlé klikání i ve fullscreen.')
             st.subheader('RADIAL PROFILE / Radiální profil')
             idx = st.select_slider('Azimut [°]', options=list(range(len(result['az']))),
                                    format_func=lambda i:f"{result['az'][i]%360:.2f}°", key='profile_index')
