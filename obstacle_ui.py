@@ -93,13 +93,13 @@ def render_obstacle_editor(radar_lat, radar_lon):
             st.info('V mapě vyber nástroj polygon (ikona pětiúhelníku), naklikej vrcholy a dvojklikem dokonči. '
                     'Polygon se uloží s výškou nastavenou výše (m AGL).')
 
-        st.markdown('**Větrné elektrárny · 300 km**')
+        st.markdown('**Větrné elektrárny · 100 km**')
         show_wind = st.checkbox('Zobrazit větrné turbíny v mapě', value=True,
                                 key='obstacle_show_wind')
         wind_data = []
         if show_wind:
             try:
-                with st.spinner('Načítám větrné turbíny v okruhu 300 km…'):
+                with st.spinner('Načítám větrné turbíny v okruhu 100 km…'):
                     wind_data = load_wind_turbines(round(radar_lat, 6), round(radar_lon, 6))
                 st.success(f'Načteno {len(wind_data)} větrných turbín z OpenStreetMap.')
             except Exception as exc:
