@@ -114,10 +114,12 @@ async function update(){
 update();setInterval(update,5000);
 })();
 """.replace("__PARAMS__",json.dumps(params,separators=(',',':'))).replace("__MAP__",mapname)
-    # Inject script AFTER Folium initializes the Leaflet map.
-    from branca.element import Element
-    m.get_root().script.add_child(Element(script))
+    # Folium's root.script children are rendered BEFORE its own map setup.
+    # Appending our JS there causes a ReferenceError and an empty display.
+    # Insert after Folium's initialization, inside the final script element.
     html = m.get_root().render()
-    # Keep the Leaflet map mounted in a stable component; do not open an
-    # about:srcdoc popup from Streamlit's sandboxed component iframe.
+    end = html.rfind("</script>")
+    if end < 0:
+        raise RuntimeError("Folium did not render a map initialization script")
+    html = html[:end] + "\n" + script + "\n" + html[end:]
     components.html(html, height=850, scrolling=False)
