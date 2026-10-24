@@ -4,14 +4,14 @@ import math
 
 import folium
 import numpy as np
-import streamlit.components.v1 as components
+import streamlit as st
 from folium.plugins import Fullscreen
 from pyproj import Geod
 from web_support import coverage_geojson
 
 GEOD = Geod(ellps="WGS84")
 
-def open_display(result, level_ft, provider):
+def open_display(result, level_ft, provider, traffic=None):
     c = result["config"]
     m = folium.Map(location=[c.lat,c.lon], zoom_start=7, tiles="OpenStreetMap",
                    control_scale=True, prefer_canvas=True)
@@ -72,12 +72,8 @@ function classify(a){
  return h>=cfg.lower[ai][ri]&&h<=cfg.upper[ai][ri]?'visible':'hidden';
 }
 const css=document.createElement('style');css.textContent='.aircraft-arrow{background:transparent;border:0}.aircraft-arrow svg{filter:drop-shadow(0 0 1px white)}';document.head.appendChild(css);
-async function update(){
+function update(ac){
  try{
-  const url=host+'/v2/point/'+cfg.lat.toFixed(5)+'/'+cfg.lon.toFixed(5)+'/250';
-  const response=await fetch(url,{cache:'no-store'});
-  if(!response.ok)throw Error('HTTP '+response.status);
-  const data=await response.json(), ac=data.ac||[];
   targets.clearLayers();
   const now=Date.now()/1000, seen=new Set();
   let count=0;
@@ -111,7 +107,8 @@ async function update(){
   title.textContent='RADAR LIVE · '+cfg.provider+' · '+count+' targets · '+new Date().toLocaleTimeString()+' · 5 s';
  }catch(err){title.textContent='ADS-B connection: '+err.message+' · retry 5 s';}
 }
-update();setInterval(update,5000);
+window.addEventListener('message',event=>{if(event.data?.type==='radar-targets')update(event.data.aircraft||[]);});
+window.parent.postMessage({type:'radar-ready'},'*');
 })();
 """.replace("__PARAMS__",json.dumps(params,separators=(',',':'))).replace("__MAP__",mapname)
     # Folium's root.script children are rendered BEFORE its own map setup.
@@ -122,4 +119,26 @@ update();setInterval(update,5000);
     if end < 0:
         raise RuntimeError("Folium did not render a map initialization script")
     html = html[:end] + "\n" + script + "\n" + html[end:]
-    components.html(html, height=850, scrolling=False)
+    radar_component = st.components.v2.component(
+        name="persistent_radar_v2",
+        html='<iframe class="radar-map" style="width:100%;height:850px;border:0" sandbox="allow-scripts allow-same-origin"></iframe>',
+        js="""
+export default function(component) {
+ const frame=component.parentElement.querySelector('.radar-map');
+ const data=component.data||{};
+ if(!frame.dataset.initialized) {
+   frame.dataset.initialized='yes';
+   frame.srcdoc=data.html;
+   frame.addEventListener('load',()=>frame.contentWindow.postMessage(
+     {type:'radar-targets',aircraft:frame._latest||[]},'*'));
+   window.addEventListener('message',event=>{
+     if(event.source===frame.contentWindow&&event.data?.type==='radar-ready')
+       frame.contentWindow.postMessage({type:'radar-targets',aircraft:frame._latest||[]},'*');
+   });
+ }
+ frame._latest=data.aircraft||[];
+ if(frame.contentWindow)frame.contentWindow.postMessage(
+   {type:'radar-targets',aircraft:frame._latest},'*');
+}
+""")
+    radar_component(key="radar_persistent", data={"html":html,"aircraft":traffic or []})
