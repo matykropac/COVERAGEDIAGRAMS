@@ -10,7 +10,6 @@ from streamlit_folium import st_folium
 
 import radar_core as core
 from obstacles import arc_parameters, obstacle_polygon, validate_obstacle
-from wind_turbines import load_wind_turbines, add_wind_layer
 
 GEOD = Geod(ellps='WGS84')
 MAX_OBSTACLES = 100
@@ -46,42 +45,6 @@ def render_obstacle_editor(radar_lat, radar_lon):
         st.info('V mapě vyber polygon (ikona pětiúhelníku), označ půdorys a '
                 'dvojklikem dokonči. Výška se převezme z pole výše.')
 
-        st.markdown('**Větrné elektrárny · 100 km**')
-        st.caption('Zdroj turbín: Ventodyne · offline soubor data/wind_turbines.csv.gz')
-        st.caption('Zdroj: Merged Global Wind Turbine Dataset by ventodyne '
-                   '(ODbL 1.0; OpenStreetMap a národní registry). '
-                   'Na mapě použij Download → CSV nebo GeoJSON.')
-        wind_upload = st.file_uploader(
-            'Offline databáze turbín (CSV / GeoJSON)',
-            type=['csv', 'geojson', 'json', 'gz'], key='wind_offline_upload',
-            help='Nahraj CSV nebo GeoJSON export World Wind Turbine Map. '
-                 'Data zůstávají v této relaci; pro trvalé použití vlož '
-                 'komprimovaný CSV do data/wind_turbines.csv.gz v GitHub repozitáři.')
-        if wind_upload is not None:
-            raw = wind_upload.getvalue()
-            if st.session_state.get('wind_dataset_bytes') != raw:
-                st.session_state['wind_dataset_bytes'] = raw
-                st.session_state['wind_dataset_filename'] = wind_upload.name
-                load_wind_turbines.clear()
-        if st.session_state.get('wind_dataset_bytes'):
-            st.caption('✅ Offline data načtena pro OBSTACLES i ANALÝZA.')
-
-        show_wind = st.checkbox('Zobrazit větrné turbíny v mapě', value=True,
-                                key='obstacle_show_wind')
-        wind_data = []
-        if show_wind:
-            try:
-                with st.spinner('Načítám větrné turbíny v okruhu 100 km…'):
-                    wind_data = load_wind_turbines(round(radar_lat, 6), round(radar_lon, 6))
-                st.success(f'Načteno {len(wind_data)} větrných turbín (100 km).')
-            except Exception as exc:
-                st.warning('Turbíny se nyní nepodařilo načíst. Zkus znovu později.')
-                st.error(f'Diagnostika zdroje dat: {str(exc)[:900]}')
-            st.caption('Žluté značky jsou pouze informativní; do překážek se nepřidávají.')
-        if st.button('🔄 Znovu načíst turbíny', key='refresh_wind_turbines'):
-            load_wind_turbines.clear()
-            st.rerun()
-
     if '_obstacle_next_selected' in st.session_state:
         st.session_state['obstacle_selected_index'] = st.session_state.pop('_obstacle_next_selected')
     selected_idx = min(st.session_state.get('obstacle_selected_index', 0),
@@ -95,8 +58,6 @@ def render_obstacle_editor(radar_lat, radar_lon):
             folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                              max_zoom=provider['max_zoom'], overlay=False,
                              show=name == 'OpenStreetMap').add_to(om)
-        if show_wind and wind_data:
-            add_wind_layer(om, wind_data)
         folium.Marker([radar_lat, radar_lon], tooltip='Radar',
                       icon=folium.Icon(color='orange', icon='signal')).add_to(om)
         for i, item in enumerate(obstacles):
