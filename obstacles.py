@@ -41,7 +41,8 @@ def obstacle_signature(obstacles):
     """Stable geometry signature for coverage freshness (labels do not affect physics)."""
     return tuple((o.get('kind', 'point'), o.get('lat'), o.get('lon'),
                   o.get('start_lat'), o.get('start_lon'),
-                  o.get('end_lat'), o.get('end_lon'), o['height_m'])
+                  o.get('end_lat'), o.get('end_lon'),
+                  tuple(tuple(p) for p in o.get('coordinates', [])), o['height_m'])
                  for o in obstacles)
 
 
@@ -64,7 +65,7 @@ def validate_obstacle(o, radar_lat, radar_lon, *, enforce_point_range=True):
     """Validate both legacy 10×10 m obstacles and clockwise WGS84 arc walls."""
     import math
     kind = o.get('kind', 'point')
-    if kind not in ('point', 'arc'):
+    if kind not in ('point', 'arc', 'polygon'):
         raise ValueError('Neznámý typ překážky.')
     height = float(o['height_m'])
     if not math.isfinite(height) or not 0.1 <= height <= 1000.0:
@@ -76,6 +77,25 @@ def validate_obstacle(o, radar_lat, radar_lon, *, enforce_point_range=True):
         _, _, radius = GEOD.inv(radar_lon, radar_lat, lon, lat)
         if enforce_point_range and radius > 20000.0:
             raise ValueError('Překážky jsou podporovány nejvýše 20 km od radaru.')
+    elif kind == 'polygon':
+        from shapely.geometry import Polygon
+        coords = o.get('coordinates', [])
+        if not 3 <= len(coords) <= 150:
+            raise ValueError('Polygon musí mít 3 až 150 vrcholů.')
+        vertices = []
+        for pair in coords:
+            if len(pair) != 2:
+                raise ValueError('Každý vrchol musí mít LAT a LON.')
+            lat, lon = map(float, pair)
+            if not all(math.isfinite(v) for v in (lat, lon)) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise ValueError('Neplatné souřadnice polygonu.')
+            az, _, radius = GEOD.inv(radar_lon, radar_lat, lon, lat)
+            if radius > 20000:
+                raise ValueError('Všechny vrcholy musí být do 20 km od radaru.')
+            vertices.append((radius*np.sin(np.radians(az)), radius*np.cos(np.radians(az))))
+        shape = Polygon(vertices)
+        if not shape.is_valid or shape.area < 0.01:
+            raise ValueError('Polygon je neplatný, protíná sám sebe nebo má nulovou plochu.')
     else:
         for key, limit in (('start_lat', 90), ('start_lon', 180),
                            ('end_lat', 90), ('end_lon', 180)):
@@ -89,6 +109,8 @@ def obstacle_polygon(obstacle, radar_lat, radar_lon):
     """Map footprint [lat, lon] of point (square) or 10 m wide clockwise arc."""
     if obstacle.get('kind', 'point') == 'point':
         return square_corners(obstacle['lat'], obstacle['lon'])
+    if obstacle.get('kind') == 'polygon':
+        return [[float(lat), float(lon)] for lat, lon in obstacle['coordinates']]
     bearing, span, r1, r2 = arc_parameters(obstacle, radar_lat, radar_lon)
     n = max(2, int(np.ceil(span / 1.0)) + 1)
     fraction = np.linspace(0., 1., n)
@@ -121,12 +143,39 @@ def apply_obstacles(result, obstacles):
         kind = o.get('kind', 'point')
         if kind == 'arc':
             b_start, span, r_start, r_end = arc_parameters(o, c.lat, c.lon)
+        elif kind == 'polygon':
+            from shapely.geometry import Polygon, LineString
+            vertices = []
+            for lat, lon in o['coordinates']:
+                az_vertex, _, radius_vertex = GEOD.inv(c.lon, c.lat, float(lon), float(lat))
+                vertices.append((radius_vertex*np.sin(np.radians(az_vertex)),
+                                 radius_vertex*np.cos(np.radians(az_vertex))))
+            footprint = Polygon(vertices)
         else:
             bearing, _, radius = GEOD.inv(c.lon, c.lat, float(o['lon']), float(o['lat']))
             ea = radius*np.sin(np.radians(bearing))
             no = radius*np.cos(np.radians(bearing))
         for j, bearing_ray in enumerate(az):
-            if kind == 'arc':
+            if kind == 'polygon':
+                angle_rad = np.radians(bearing_ray)
+                ray = LineString([(0., 0.),
+                                  (float(distances[-1])*np.sin(angle_rad),
+                                   float(distances[-1])*np.cos(angle_rad))])
+                cut = ray.intersection(footprint)
+                if cut.is_empty:
+                    continue
+                points = []
+                def collect(geom):
+                    if hasattr(geom, 'geoms'):
+                        for part in geom.geoms:
+                            collect(part)
+                    elif hasattr(geom, 'coords'):
+                        points.extend(geom.coords)
+                collect(cut)
+                if not points:
+                    continue
+                entry = min(np.hypot(x, y) for x, y in points)
+            elif kind == 'arc':
                 clockwise = (float(bearing_ray) - b_start) % 360.0
                 if clockwise > span + 1e-8:
                     continue
