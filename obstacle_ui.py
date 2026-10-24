@@ -94,6 +94,21 @@ def render_obstacle_editor(radar_lat, radar_lon):
                     'Polygon se uloží s výškou nastavenou výše (m AGL).')
 
         st.markdown('**Větrné elektrárny · 100 km**')
+        wind_upload = st.file_uploader(
+            'Offline databáze turbín (CSV / GeoJSON)',
+            type=['csv', 'geojson', 'json'], key='wind_offline_upload',
+            help='Jednorázově nahraj export World Wind Turbine Map. '
+                 'Data zůstávají v této relaci; pro trvalé použití vlož '
+                 'CSV do data/wind_turbines.csv v GitHub repozitáři.')
+        if wind_upload is not None:
+            raw = wind_upload.getvalue()
+            if st.session_state.get('wind_dataset_bytes') != raw:
+                st.session_state['wind_dataset_bytes'] = raw
+                st.session_state['wind_dataset_filename'] = wind_upload.name
+                load_wind_turbines.clear()
+        if st.session_state.get('wind_dataset_bytes'):
+            st.caption('✅ Offline data načtena pro OBSTACLES i ANALÝZA.')
+
         show_wind = st.checkbox('Zobrazit větrné turbíny v mapě', value=True,
                                 key='obstacle_show_wind')
         wind_data = []
@@ -101,10 +116,10 @@ def render_obstacle_editor(radar_lat, radar_lon):
             try:
                 with st.spinner('Načítám větrné turbíny v okruhu 100 km…'):
                     wind_data = load_wind_turbines(round(radar_lat, 6), round(radar_lon, 6))
-                st.success(f'Načteno {len(wind_data)} větrných turbín z OpenStreetMap.')
+                st.success(f'Načteno {len(wind_data)} větrných turbín (100 km).')
             except Exception as exc:
                 st.warning('Turbíny se nyní nepodařilo načíst. Zkus znovu později.')
-                st.error(f'Diagnostika Overpass: {str(exc)[:900]}')
+                st.error(f'Diagnostika zdroje dat: {str(exc)[:900]}')
             st.caption('Žluté značky jsou pouze informativní; do překážek se nepřidávají.')
         if st.button('🔄 Znovu načíst turbíny', key='refresh_wind_turbines'):
             load_wind_turbines.clear()
