@@ -94,17 +94,16 @@ def render_obstacle_editor(radar_lat, radar_lon):
                     'Polygon se uloží s výškou nastavenou výše (m AGL).')
 
         st.markdown('**Větrné elektrárny · 100 km**')
-        st.link_button('🌍 Otevřít World Wind Turbine Map',
-                       'https://turbinemap.ventodyne.com/')
+        st.caption('Zdroj turbín: Ventodyne · offline soubor data/wind_turbines.csv.gz')
         st.caption('Zdroj: Merged Global Wind Turbine Dataset by ventodyne '
                    '(ODbL 1.0; OpenStreetMap a národní registry). '
                    'Na mapě použij Download → CSV nebo GeoJSON.')
         wind_upload = st.file_uploader(
             'Offline databáze turbín (CSV / GeoJSON)',
-            type=['csv', 'geojson', 'json'], key='wind_offline_upload',
+            type=['csv', 'geojson', 'json', 'gz'], key='wind_offline_upload',
             help='Nahraj CSV nebo GeoJSON export World Wind Turbine Map. '
                  'Data zůstávají v této relaci; pro trvalé použití vlož '
-                 'CSV do data/wind_turbines.csv v GitHub repozitáři.')
+                 'komprimovaný CSV do data/wind_turbines.csv.gz v GitHub repozitáři.')
         if wind_upload is not None:
             raw = wind_upload.getvalue()
             if st.session_state.get('wind_dataset_bytes') != raw:
