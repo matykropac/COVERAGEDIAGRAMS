@@ -14,6 +14,7 @@ from folium.plugins import Fullscreen
 from pyproj import Geod
 from streamlit_folium import st_folium
 
+from standalone_radar import open_display
 from web_support import coverage_geojson
 import radar_core as core
 
@@ -167,7 +168,7 @@ def _update_trails(states, timestamp):
             _, _, segment = GEOD.inv(points[j-1][1],points[j-1][0],
                                      points[j][1],points[j][0])
             distance += segment
-            if distance > 4 * NM_M:
+            if distance > 12 * NM_M:
                 cut = j
                 break
         if cut:
@@ -194,7 +195,7 @@ def _live_frame(result, level_ft, provider):
                f"🟢 {counts['visible']} potenciálně viditelných · "
                f"🔴 {counts['hidden']} mimo krytí · 🟡 {counts['unknown']} neurčeno")
     st_folium(m,height=680,use_container_width=True,key=f"simulation_{level_ft}",returned_objects=[])
-    st.caption("Stopy tvoří skutečné po sobě přijaté ADS-B polohy (max. 4 NM); po otevření simulace se teprve začnou sbírat. Šipka ukazuje hlášený kurz letu.")
+    st.caption("Stopy tvoří skutečné po sobě přijaté ADS-B polohy (max. 12 NM); po otevření simulace se teprve začnou sbírat. Šipka ukazuje hlášený kurz letu.")
     st.caption("Simulace, nikoli skutečné radarové detekce. Posouzení využívá výšku letadla "
                "a vypočtenou spodní/horní hranici pokrytí; nezahrnuje RCS, výkon, "
                "maskování provozem ani omezení ADS-B zdroje. Kružnice 20–260 NM, "
@@ -225,5 +226,10 @@ def simulation_tab(result,levels):
                             key="simulation_provider")
     st.caption("Veřejná API poskytují maximálně 250 NM kolem radaru; kružnice 260 NM "
                "zůstává orientační. Data nejsou radarové ploty.")
-    if st.button("▶ OTEVŘÍT LIVE SIMULACI",type="primary",key="open_simulation"):
-        simulation_dialog(result,selected,provider)
+    st.markdown("**Samostatný radarový displej** — otevře se v nové záložce. "
+                "Mapa zůstává stabilní a aktualizují se pouze cíle každých 5 sekund. "
+                "Trajektorie až 12 NM s postupným fade.")
+    open_display(result, selected, provider)
+    with st.expander("Původní náhled v aplikaci (fullscreen se resetuje)"):
+        if st.button("▶ OTEVŘÍT NÁHLED",key="open_simulation"):
+            simulation_dialog(result,selected,provider)
