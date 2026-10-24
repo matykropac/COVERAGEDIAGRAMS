@@ -17,19 +17,37 @@ OVERPASS_URL = "https://overpass.kumi.systems/api/interpreter"
 def load_wind_turbines(lat: float, lon: float):
     """Query wind generators within 300 km; never change obstacle calculations."""
     import json
+    # A bounding box is much cheaper for Overpass than a 300 km around query.
+    lat_delta = RADIUS_M / 111_000
+    lon_delta = RADIUS_M / (111_000 * max(0.1, math.cos(math.radians(lat))))
+    south, north = max(-90, lat-lat_delta), min(90, lat+lat_delta)
+    west, east = max(-180, lon-lon_delta), min(180, lon+lon_delta)
+    bbox = f"{south:.5f},{west:.5f},{north:.5f},{east:.5f}"
     query = (
-        '[out:json][timeout:45];'
-        f'(nwr["power"="generator"]["generator:source"="wind"](around:{RADIUS_M},{lat:.6f},{lon:.6f});'
-        f'nwr["generator:source"="wind"](around:{RADIUS_M},{lat:.6f},{lon:.6f}););'
-        'out center tags;'
+        '[out:json][timeout:35];'
+        f'node["power"="generator"]["generator:source"="wind"]({bbox});'
+        'out body;'
     )
-    req = urllib.request.Request(
-        OVERPASS_URL,
-        data=urllib.parse.urlencode({"data": query}).encode("utf-8"),
-        headers={"User-Agent": "COVERAGEDIAGRAMS/1.0 (wind turbine map layer)"},
-    )
-    with urllib.request.urlopen(req, timeout=60) as response:
-        raw = json.load(response)
+    import json
+    last_error = None
+    for endpoint in (
+        "https://overpass.private.coffee/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass-api.de/api/interpreter",
+    ):
+        try:
+            req = urllib.request.Request(
+                endpoint,
+                data=urllib.parse.urlencode({"data": query}).encode("utf-8"),
+                headers={"User-Agent": "COVERAGEDIAGRAMS/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=42) as response:
+                raw = json.load(response)
+            break
+        except Exception as exc:
+            last_error = exc
+    else:
+        raise RuntimeError(f"Overpass servery neodpovídají: {last_error}")
     turbines = []
     seen = set()
     for element in raw.get("elements", []):
