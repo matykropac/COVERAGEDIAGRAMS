@@ -91,9 +91,11 @@ def add_wind_layer(map_obj, turbines, cluster_points=True, fallback_height=None)
         target = MarkerCluster(name="Větrné turbíny", options={"maxClusterRadius": 45, "disableClusteringAtZoom": 12})
         target.add_to(layer)
     for t in turbines:
+        height = t.get("height") or "N/A"
         body = (
             f"Vzdálenost: {t['distance_km']} km<br>"
-            f"Azimut: {t['az']}°"
+            f"Azimut: {t['az']}°<br>"
+            f"Celková výška: {escape(str(height))}"
         )
         folium.CircleMarker(
             [t["lat"], t["lon"]], radius=5, color="#67e8f9", weight=1.5,
