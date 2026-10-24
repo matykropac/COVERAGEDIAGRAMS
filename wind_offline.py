@@ -1,5 +1,6 @@
 """Offline wind turbine dataset parser (CSV / GeoJSON exports)."""
 import csv
+import gzip
 import io
 import json
 import math
@@ -31,7 +32,7 @@ def _number(value):
 
 
 def _records(raw, filename):
-    if filename.lower().endswith((".geojson", ".json")):
+    if filename.lower().endswith(".gz"):\n        raw = gzip.decompress(raw)\n        filename = filename[:-3]\n    if filename.lower().endswith((".geojson", ".json")):
         data = json.loads(raw.decode("utf-8-sig"))
         for feature in data.get("features", []):
             if feature.get("geometry", {}).get("type") != "Point":
@@ -58,8 +59,8 @@ def select_turbines(raw, filename, lat, lon, radius_m=100_000):
         if identity in seen:
             continue
         seen.add(identity)
-        hub = _number(_pick(row, "hub_height", "hubheight", "height:hub", "generator:hub_height"))
-        rotor = _number(_pick(row, "rotor_diameter", "rotordiameter", "rotor:diameter", "diameter"))
+        hub = _number(_pick(row, "hub_height", "hubheight", "hub_height_m", "height:hub", "generator:hub_height"))
+        rotor = _number(_pick(row, "rotor_diameter", "rotordiameter", "rotor_diameter_m", "rotor:diameter", "diameter"))
         total = _number(_pick(row, "total_height", "tip_height", "height:total"))
         if total is None and hub is not None and rotor is not None:
             total = hub + rotor / 2
@@ -76,4 +77,4 @@ def select_turbines(raw, filename, lat, lon, radius_m=100_000):
 
 
 def bundled_dataset():
-    return _LOCAL.read_bytes() if _LOCAL.is_file() else None
+    compressed = _LOCAL.with_suffix(_LOCAL.suffix + ".gz")\n    if compressed.is_file():\n        return compressed.read_bytes()\n    return _LOCAL.read_bytes() if _LOCAL.is_file() else None
