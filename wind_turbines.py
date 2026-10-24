@@ -21,7 +21,7 @@ def load_wind_turbines(lat: float, lon: float):
     filename = st.session_state.get("wind_dataset_filename", "wind_turbines.csv")
     if raw is None:
         raw = bundled_dataset()
-        filename = "wind_turbines.csv"
+        filename = "wind_turbines.csv.gz"
     if raw is not None:
         return select_turbines(raw, filename, lat, lon, RADIUS_M)
     import json
