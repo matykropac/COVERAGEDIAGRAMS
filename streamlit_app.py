@@ -27,6 +27,7 @@ from obstacles import apply_obstacles, obstacle_polygon, obstacle_signature
 from project_file import save_project, load_project
 from project_widgets import restored_widget_values
 from obstacle_ui import render_obstacle_editor
+from live_simulation import simulation_tab
 from wind_turbines import load_wind_turbines, add_wind_layer
 from site_picker import coordinates_from_map_click
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
@@ -248,7 +249,7 @@ def open_project_callback():
 
 
 
-settings, obstacles_tab, analysis, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
+settings, obstacles_tab, analysis, simulation, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'LIVE SIMULACE', 'DATA / EXPORTY'])
 
 with settings:
     location, parameters, preview, execution = st.columns([22, 22, 34, 22], gap='small')
@@ -429,6 +430,9 @@ with obstacles_tab:
     render_obstacle_editor(lat, lon)
 
 result = st.session_state.get('result')
+with simulation:
+    simulation_tab(result, levels)
+
 if result is None:
     with analysis:
         st.info('V záložce NASTAVENÍ zvol radar a zdroj DEM a spusť výpočet.')
