@@ -20,17 +20,36 @@ GEOD = Geod(ellps="WGS84")
 NM_M = 1852.0
 MAX_NM = 260
 
-@st.cache_data(ttl=25, show_spinner=False)
-def _traffic(lat, lon):
-    # OpenSky public API: rate limited and sometimes unavailable without credentials.
+@st.cache_data(ttl=1500, show_spinner=False)
+def _token(client_id, client_secret):
+    url = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+    body = urllib.parse.urlencode({"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret}).encode()
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=16) as response:
+        return json.load(response)["access_token"]
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _traffic(lat, lon, client_id="", client_secret=""):
     dlat = MAX_NM * NM_M / 111000
     dlon = dlat / max(0.15, math.cos(math.radians(lat)))
     bounds = {"lamin": max(-90, lat-dlat), "lamax": min(90, lat+dlat),
               "lomin": max(-180, lon-dlon), "lomax": min(180, lon+dlon)}
     url = "https://opensky-network.org/api/states/all?" + urllib.parse.urlencode(bounds)
-    req = urllib.request.Request(url, headers={"User-Agent": "RadarCoverage-Simulation/1.0", "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=16) as response:
-        data = json.load(response)
+    headers = {"User-Agent": "RadarCoverage-Simulation/1.0", "Accept": "application/json"}
+    if client_id and client_secret:
+        headers["Authorization"] = "Bearer " + _token(client_id, client_secret)
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            raise RuntimeError("OpenSky HTTP 401: OAuth2 autorizace chybí nebo není platná.") from exc
+        if exc.code == 403:
+            raise RuntimeError("OpenSky HTTP 403: přístup ze serveru je zakázán.") from exc
+        if exc.code == 429:
+            raise RuntimeError("OpenSky HTTP 429: vyčerpán limit API kreditů.") from exc
+        raise RuntimeError(f"OpenSky HTTP {exc.code}: {exc.reason}") from exc
     return data.get("time"), data.get("states") or []
 
 def _sample(result, lat, lon):
@@ -93,17 +112,17 @@ def _render(result, level_ft, traffic):
     Fullscreen().add_to(m)
     return m,counts
 
-@st.fragment(run_every="30s")
-def _live_frame(result, level_ft):
+@st.fragment(run_every="120s")
+def _live_frame(result, level_ft, client_id, client_secret):
     try:
-        timestamp, states = _traffic(round(result["config"].lat,5),round(result["config"].lon,5))
+        timestamp, states = _traffic(round(result["config"].lat,5),round(result["config"].lon,5),client_id,client_secret)
     except Exception as exc:
         st.warning("OpenSky právě nevrací data (veřejné API může omezovat požadavky).")
         st.caption(f"{type(exc).__name__}: {str(exc)[:180]}")
         return
     m,counts=_render(result,level_ft,states)
     when=datetime.fromtimestamp(timestamp,timezone.utc).strftime("%H:%M:%S UTC") if timestamp else "N/A"
-    st.caption(f"OpenSky snapshot: {when} · aktualizace cca 30 s · "
+    st.caption(f"OpenSky snapshot: {when} · aktualizace cca 120 s · "
                f"🟢 {counts['visible']} potenciálně viditelných · "
                f"🔴 {counts['hidden']} mimo krytí · 🟡 {counts['unknown']} neurčeno")
     st_folium(m,height=680,use_container_width=True,key=f"simulation_{level_ft}",returned_objects=[])
@@ -113,10 +132,10 @@ def _live_frame(result, level_ft):
                "krytí jen do vypočteného dosahu radaru.")
 
 @st.dialog("LIVE TRAFFIC / Simulace radarového pokrytí",width="large")
-def simulation_dialog(result,level_ft):
+def simulation_dialog(result,level_ft,client_id,client_secret):
     st.markdown(f"**Vrstva: {core.level_label(level_ft)}** · radar: "
                 f"{result['config'].lat:.4f}°, {result['config'].lon:.4f}°")
-    _live_frame(result,level_ft)
+    _live_frame(result,level_ft,client_id,client_secret)
 
 def simulation_tab(result,levels):
     st.subheader("LIVE SIMULATION / OpenSky")
@@ -133,5 +152,10 @@ def simulation_tab(result,levels):
                           format_func=core.level_label,key="simulation_level")
     st.caption("Barva letadla se vyhodnocuje podle jeho aktuální hlášené výšky, "
                "nikoliv podle zvolené hladiny. Zvolená hladina určuje mapový podklad.")
+    creds = st.secrets.get("opensky", {})
+    client_id = creds.get("client_id", "")
+    client_secret = creds.get("client_secret", "")
+    if not (client_id and client_secret):
+        st.info("OpenSky anonymní API má omezené kredity a cloudové IP mohou být blokované. Pro spolehlivější přístup nastav OAuth2 client_id a client_secret ve Streamlit Secrets v sekci [opensky].")
     if st.button("▶ OTEVŘÍT LIVE SIMULACI",type="primary",key="open_simulation"):
-        simulation_dialog(result,selected)
+        simulation_dialog(result,selected,client_id,client_secret)
