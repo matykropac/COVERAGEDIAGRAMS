@@ -222,37 +222,23 @@ def _persistent_display(result, level_ft, provider):
     except Exception as exc:
         st.warning(f"ADS-B data nejsou dostupná: {str(exc)[:160]}")
 
-def simulation_tab(result,levels):
-    st.subheader("LIVE SIMULATION / ADS-B")
-    st.caption("Živé ADS-B polohy letadel nad vypočteným radarovým pokrytím. "
-               "Kružnice po 20 NM až do 260 NM.")
+def simulation_tab(result, levels):
+    st.subheader("LIVE SIMULACE")
     if result is None:
         st.info("Nejprve spusť výpočet v NASTAVENÍ.")
         return
-    options=list(levels)
+    options = list(levels)
     if not options:
         st.info("Nejprve vyber letové hladiny v NASTAVENÍ.")
         return
-    selected=st.selectbox("Letová hladina pro vrstvu pokrytí",options,
-                          format_func=core.level_label,key="simulation_level")
-    st.caption("Barva letadla se vyhodnocuje podle jeho aktuální hlášené výšky, "
-               "nikoliv podle zvolené hladiny. Zvolená hladina určuje mapový podklad.")
-    provider = st.selectbox("Zdroj živých ADS-B dat", ["ADSB.lol", "Airplanes.live"],
-                            key="simulation_provider")
-    st.caption("Veřejná API poskytují maximálně 250 NM kolem radaru; kružnice 260 NM "
-               "zůstává orientační. Data nejsou radarové ploty.")
-    st.markdown("**Radarový displej** — otevři jej v samostatné záložce nebo používej náhled níže. "
-                "Mapa zůstává stabilní a aktualizují se pouze cíle každých 5 sekund. "
-                "Trajektorie až 12 NM s postupným fade.")
-    link = radar_window_link(result, selected, provider)
+    selected = st.selectbox("Letová hladina", options,
+                            format_func=core.level_label,
+                            key="simulation_level")
+    link = radar_window_link(result, selected, "ADSB.lol")
     st.markdown(
         f'<a href="{link}" target="_blank" rel="noopener noreferrer" '
         'style="display:inline-block;background:#134d68;color:white;'
-        'padding:12px 18px;border-radius:8px;text-decoration:none;'
-        'font-weight:700;margin:8px 0 12px">'
-        '↗ OTEVŘÍT RADAR V NOVÉ ZÁLOŽCE</a>',
+        'padding:12px 22px;border-radius:8px;text-decoration:none;'
+        'font-weight:700;margin:12px 0">'
+        '▶ SPUSTIT SIMULACI</a>',
         unsafe_allow_html=True)
-    _persistent_display(result, selected, provider)
-    with st.expander("Původní náhled v aplikaci (fullscreen se resetuje)"):
-        if st.button("▶ OTEVŘÍT NÁHLED",key="open_simulation"):
-            simulation_dialog(result,selected,provider)
