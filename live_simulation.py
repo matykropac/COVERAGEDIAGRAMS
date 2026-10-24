@@ -1,6 +1,7 @@
-"""Live OpenSky traffic over a computed radar coverage layer."""
+"""Live ADS-B traffic over computed radar coverage."""
 import json
 import math
+from html import escape
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,7 +21,7 @@ GEOD = Geod(ellps="WGS84")
 NM_M = 1852.0
 MAX_NM = 260
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def _traffic(lat, lon, provider):
     """Return normalized aircraft positions; API radius is limited to 250 NM."""
     hosts = {"ADSB.lol": "https://api.adsb.lol",
@@ -49,6 +50,8 @@ def _traffic(lat, lon, provider):
         row[6] = ac["lat"]
         row[7] = altitude_m
         row[13] = altitude_m
+        row[10] = ac.get("track")
+        row[11] = ac.get("gs")
         rows.append(row)
     now = payload.get("now")
     if isinstance(now, (int, float)) and now > 1e11:
@@ -68,7 +71,7 @@ def _sample(result, lat, lon):
         return None
     return float(result["lower"][idx, k]), float(result["upper"][idx, k])
 
-def _render(result, level_ft, traffic):
+def _render(result, level_ft, traffic, trails):
     c = result["config"]
     m = folium.Map(location=[c.lat,c.lon], zoom_start=7, tiles="OpenStreetMap",
                    control_scale=True, prefer_canvas=True)
@@ -107,15 +110,76 @@ def _render(result, level_ft, traffic):
                "unknown":"NEURČENO"}[status]
         popup=(f"<b>{callsign}</b><br>{label}<br>Výška: {alt_text}"
                f"<br>Vzdálenost: {dist/NM_M:.1f} NM<br>Azimut: {az%360:.1f}°")
-        folium.CircleMarker([lat,lon], radius=4, color=color, weight=1,
-                            fill=True,fill_color=color,fill_opacity=0.95,
-                            tooltip=f"{callsign} · {label}",
-                            popup=folium.Popup(popup,max_width=240)).add_to(m)
+        # History-based trail: newer segments brighter, older segments fade away.
+        history = trails.get(str(row[0]), [])
+        for i in range(1, len(history)):
+            older, newer = history[i-1], history[i]
+            opacity = 0.06 + 0.75 * (i / max(1, len(history)-1)) ** 2
+            folium.PolyLine([[older[0],older[1]], [newer[0],newer[1]]],
+                            color=color, weight=2.5, opacity=opacity,
+                            interactive=False).add_to(m)
+        track = row[10]
+        if isinstance(track, (int, float)) and math.isfinite(track):
+            # Up-pointing SVG rotated clockwise by true track (degrees).
+            arrow = (f'<div style="width:20px;height:20px;transform:rotate({track:.1f}deg);'
+                     f'filter:drop-shadow(0 0 2px #000);">'
+                     f'<svg width="20" height="20" viewBox="0 0 20 20">'
+                     f'<path d="M10 1 L17 18 L10 14 L3 18 Z" fill="{color}" '
+                     f'stroke="#10222b" stroke-width="1"/></svg></div>')
+            folium.Marker([lat,lon],
+                          icon=folium.DivIcon(html=arrow, icon_size=(20,20),
+                                              icon_anchor=(10,10)),
+                          tooltip=f"{callsign} · {label}",
+                          popup=folium.Popup(popup,max_width=240)).add_to(m)
+        else:
+            folium.CircleMarker([lat,lon], radius=4, color=color, weight=1,
+                                fill=True,fill_color=color,fill_opacity=0.95,
+                                tooltip=f"{callsign} · {label}",
+                                popup=folium.Popup(popup,max_width=240)).add_to(m)
     folium.LayerControl(collapsed=True).add_to(m)
     Fullscreen().add_to(m)
     return m,counts
 
-@st.fragment(run_every="15s")
+def _update_trails(states, timestamp):
+    """Keep actual observed ADS-B positions, capped to 4 NM of flown path."""
+    history = st.session_state.setdefault("_adsb_trails", {})
+    now = float(timestamp) if isinstance(timestamp, (int, float)) else datetime.now(timezone.utc).timestamp()
+    active = set()
+    for row in states:
+        if not row[0] or row[5] is None or row[6] is None:
+            continue
+        ident = str(row[0])
+        active.add(ident)
+        lat, lon = float(row[6]), float(row[5])
+        points = history.setdefault(ident, [])
+        if points:
+            _, _, movement = GEOD.inv(points[-1][1], points[-1][0], lon, lat)
+            if movement < 15:
+                points[-1] = (lat, lon, now)
+                continue
+            if movement > 15 * NM_M:  # Reject implausible position jumps.
+                points.clear()
+        points.append((lat, lon, now))
+        # Trim to the most recent ~4 NM of actual observed movement.
+        distance = 0.0
+        cut = 0
+        for j in range(len(points)-1, 0, -1):
+            _, _, segment = GEOD.inv(points[j-1][1],points[j-1][0],
+                                     points[j][1],points[j][0])
+            distance += segment
+            if distance > 4 * NM_M:
+                cut = j
+                break
+        if cut:
+            del points[:cut]
+        if len(points) > 100:
+            del points[:-100]
+    for ident in list(history):
+        if ident not in active and (not history[ident] or now-history[ident][-1][2] > 180):
+            del history[ident]
+    return history
+
+@st.fragment(run_every="5s")
 def _live_frame(result, level_ft, provider):
     try:
         timestamp, states = _traffic(round(result["config"].lat,5),round(result["config"].lon,5),provider)
@@ -123,12 +187,14 @@ def _live_frame(result, level_ft, provider):
         st.warning("ADS-B zdroj momentálně nevrací data. Zkus přepnout poskytovatele.")
         st.caption(f"{type(exc).__name__}: {str(exc)[:180]}")
         return
-    m,counts=_render(result,level_ft,states)
+    trails = _update_trails(states, timestamp)
+    m,counts=_render(result,level_ft,states,trails)
     when=datetime.fromtimestamp(timestamp,timezone.utc).strftime("%H:%M:%S UTC") if timestamp else "N/A"
-    st.caption(f"{provider} snapshot: {when} · aktualizace cca 15 s · "
+    st.caption(f"{provider} snapshot: {when} · aktualizace cca 5 s · "
                f"🟢 {counts['visible']} potenciálně viditelných · "
                f"🔴 {counts['hidden']} mimo krytí · 🟡 {counts['unknown']} neurčeno")
     st_folium(m,height=680,use_container_width=True,key=f"simulation_{level_ft}",returned_objects=[])
+    st.caption("Stopy tvoří skutečné po sobě přijaté ADS-B polohy (max. 4 NM); po otevření simulace se teprve začnou sbírat. Šipka ukazuje hlášený kurz letu.")
     st.caption("Simulace, nikoli skutečné radarové detekce. Posouzení využívá výšku letadla "
                "a vypočtenou spodní/horní hranici pokrytí; nezahrnuje RCS, výkon, "
                "maskování provozem ani omezení ADS-B zdroje. Kružnice 20–260 NM, "
