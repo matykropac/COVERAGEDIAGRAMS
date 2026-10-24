@@ -32,7 +32,10 @@ def _number(value):
 
 
 def _records(raw, filename):
-    if filename.lower().endswith(".gz"):\n        raw = gzip.decompress(raw)\n        filename = filename[:-3]\n    if filename.lower().endswith((".geojson", ".json")):
+    if filename.lower().endswith(".gz"):
+        raw = gzip.decompress(raw)
+        filename = filename[:-3]
+    if filename.lower().endswith((".geojson", ".json")):
         data = json.loads(raw.decode("utf-8-sig"))
         for feature in data.get("features", []):
             if feature.get("geometry", {}).get("type") != "Point":
@@ -77,4 +80,7 @@ def select_turbines(raw, filename, lat, lon, radius_m=100_000):
 
 
 def bundled_dataset():
-    compressed = _LOCAL.with_suffix(_LOCAL.suffix + ".gz")\n    if compressed.is_file():\n        return compressed.read_bytes()\n    return _LOCAL.read_bytes() if _LOCAL.is_file() else None
+    compressed = _LOCAL.with_suffix(_LOCAL.suffix + ".gz")
+    if compressed.is_file():
+        return compressed.read_bytes()
+    return _LOCAL.read_bytes() if _LOCAL.is_file() else None
