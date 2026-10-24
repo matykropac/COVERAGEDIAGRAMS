@@ -116,19 +116,19 @@ def _render(result, level_ft, traffic, trails):
             older, newer = history[i-1], history[i]
             opacity = 0.06 + 0.75 * (i / max(1, len(history)-1)) ** 2
             folium.PolyLine([[older[0],older[1]], [newer[0],newer[1]]],
-                            color=color, weight=2.5, opacity=opacity,
+                            color="#000000", weight=2, opacity=opacity,
                             interactive=False).add_to(m)
         track = row[10]
         if isinstance(track, (int, float)) and math.isfinite(track):
             # Up-pointing SVG rotated clockwise by true track (degrees).
-            arrow = (f'<div style="width:20px;height:20px;transform:rotate({track:.1f}deg);'
-                     f'filter:drop-shadow(0 0 2px #000);">'
-                     f'<svg width="20" height="20" viewBox="0 0 20 20">'
-                     f'<path d="M10 1 L17 18 L10 14 L3 18 Z" fill="{color}" '
+            arrow = (f'<div style="width:14px;height:14px;transform:rotate({track:.1f}deg);'
+                     f'filter:drop-shadow(0 0 1px #ffffff);">'
+                     f'<svg width="14" height="14" viewBox="0 0 20 20">'
+                     f'<path d="M10 1 L17 18 L10 14 L3 18 Z" fill="#000000" '
                      f'stroke="#10222b" stroke-width="1"/></svg></div>')
             folium.Marker([lat,lon],
-                          icon=folium.DivIcon(html=arrow, icon_size=(20,20),
-                                              icon_anchor=(10,10)),
+                          icon=folium.DivIcon(html=arrow, icon_size=(14,14),
+                                              icon_anchor=(7,7)),
                           tooltip=f"{callsign} · {label}",
                           popup=folium.Popup(popup,max_width=240)).add_to(m)
         else:
