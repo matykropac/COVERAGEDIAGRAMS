@@ -2,6 +2,7 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
+import base64
 from pathlib import Path
 import tempfile
 import threading
@@ -17,6 +18,7 @@ from matplotlib.colors import to_hex
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit_folium import st_folium
 
 import radar_core as core
@@ -533,14 +535,35 @@ else:
                 _, idx, _ = clicked_point(result, click['lat'], click['lng'], active)
                 if idx is not None:
                     st.session_state.profile_index = idx
-            st.download_button(
-                '↗ Samostatná mapa (HTML)',
-                data=m.get_root().render().encode('utf-8'),
-                file_name='coverage_map.html', mime='text/html',
-                help='Stáhni HTML a otevři jej v samostatném okně prohlížeče.',
-                key='download_standalone_map'
+            # Keep the standalone map in browser memory, not as a downloaded file.
+            # The user-initiated click opens a Blob URL in a new browser tab.
+            standalone_html = m.get_root().render().encode('utf-8')
+            standalone_b64 = base64.b64encode(standalone_html).decode('ascii')
+            components.html(
+                """
+                <style>
+                  body {margin:0;background:transparent;font-family:system-ui,sans-serif}
+                  button {background:#143d55;color:#e7f7ff;border:1px solid #4b92b0;
+                          border-radius:8px;padding:10px 18px;font-size:14px;cursor:pointer}
+                  button:hover {background:#205a79}
+                </style>
+                <button id="open">↗ OTEVŘÍT MAPU V NOVÉM OKNĚ</button>
+                <script>
+                const payload = '""" + standalone_b64 + """';
+                document.getElementById('open').addEventListener('click', () => {
+                    const raw = atob(payload);
+                    const bytes = new Uint8Array(raw.length);
+                    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+                    const url = URL.createObjectURL(new Blob([bytes], {type:'text/html;charset=utf-8'}));
+                    const tab = window.open(url, '_blank');
+                    if (!tab) alert('Pro otevření mapy povol v prohlížeči vyskakovací okna.');
+                    setTimeout(() => URL.revokeObjectURL(url), 120000);
+                });
+                </script>
+                """,
+                height=54, scrolling=False
             )
-            st.caption('Samostatná mapa: otevři stažený HTML soubor v prohlížeči. Podkladové dlaždice vyžadují internet.')
+            st.caption('Mapa se otevře online v novém panelu. Bez stahování souboru a bez přepočtu krytí.')
         with profile:
             st.toggle('Přenášet kliknutí z mapy do diagnostiky (pomalejší)',
                       value=False, key='sync_map_click',
