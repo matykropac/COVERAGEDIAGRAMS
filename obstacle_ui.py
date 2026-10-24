@@ -37,12 +37,10 @@ def render_obstacle_editor(radar_lat, radar_lon):
     obstacles = st.session_state.setdefault('obstacles', [])
     st.caption(f'Zaznamenáno: **{len(obstacles)} / {MAX_OBSTACLES}**')
 
-    # Drawing controls stay compact above the map.
-    controls, wind_control = st.columns([1, 2], gap='medium')
-    with controls:
+    map_panel, table_panel = st.columns([2, 1], gap='medium')
+    with table_panel:
         height = st.number_input('Výška nové překážky [m AGL]', 0.1, 1000.0,
                                  value=20.0, step=1.0, key='obstacle_new_height')
-    with wind_control:
         show_wind = st.checkbox('Zobrazit větrné elektrárny (100 km)',
                                 value=True, key='obstacle_show_wind')
     wind_data = []
@@ -50,10 +48,10 @@ def render_obstacle_editor(radar_lat, radar_lon):
         try:
             wind_data = load_wind_turbines(round(radar_lat, 6), round(radar_lon, 6))
         except Exception:
-            st.warning('Vrstva větrných elektráren není momentálně dostupná.')
+            with table_panel:
+                st.warning('Vrstva větrných elektráren není momentálně dostupná.')
 
     selected_idx = st.session_state.get('obstacle_selected_index', -1)
-    map_panel, table_panel = st.columns([2, 1], gap='medium')
     with map_panel:
         st.markdown('**01 / Mapa překážek**')
         om = folium.Map(location=[radar_lat, radar_lon], zoom_start=11,
