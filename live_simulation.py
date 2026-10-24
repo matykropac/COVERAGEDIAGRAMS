@@ -20,37 +20,40 @@ GEOD = Geod(ellps="WGS84")
 NM_M = 1852.0
 MAX_NM = 260
 
-@st.cache_data(ttl=1500, show_spinner=False)
-def _token(client_id, client_secret):
-    url = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
-    body = urllib.parse.urlencode({"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret}).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=16) as response:
-        return json.load(response)["access_token"]
-
-@st.cache_data(ttl=120, show_spinner=False)
-def _traffic(lat, lon, client_id="", client_secret=""):
-    dlat = MAX_NM * NM_M / 111000
-    dlon = dlat / max(0.15, math.cos(math.radians(lat)))
-    bounds = {"lamin": max(-90, lat-dlat), "lamax": min(90, lat+dlat),
-              "lomin": max(-180, lon-dlon), "lomax": min(180, lon+dlon)}
-    url = "https://opensky-network.org/api/states/all?" + urllib.parse.urlencode(bounds)
-    headers = {"User-Agent": "RadarCoverage-Simulation/1.0", "Accept": "application/json"}
-    if client_id and client_secret:
-        headers["Authorization"] = "Bearer " + _token(client_id, client_secret)
-    req = urllib.request.Request(url, headers=headers)
+@st.cache_data(ttl=55, show_spinner=False)
+def _traffic(lat, lon, provider):
+    """Return normalized aircraft positions; API radius is limited to 250 NM."""
+    hosts = {"ADSB.lol": "https://api.adsb.lol",
+             "Airplanes.live": "https://api.airplanes.live"}
+    url = f"{hosts[provider]}/v2/point/{lat:.5f}/{lon:.5f}/250"
+    req = urllib.request.Request(url, headers={"User-Agent": "COVERAGEDIAGRAMS/1.0",
+                                               "Accept": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=20) as response:
-            data = json.load(response)
+        with urllib.request.urlopen(req, timeout=18) as response:
+            payload = json.load(response)
     except urllib.error.HTTPError as exc:
-        if exc.code == 401:
-            raise RuntimeError("OpenSky HTTP 401: OAuth2 autorizace chybí nebo není platná.") from exc
-        if exc.code == 403:
-            raise RuntimeError("OpenSky HTTP 403: přístup ze serveru je zakázán.") from exc
-        if exc.code == 429:
-            raise RuntimeError("OpenSky HTTP 429: vyčerpán limit API kreditů.") from exc
-        raise RuntimeError(f"OpenSky HTTP {exc.code}: {exc.reason}") from exc
-    return data.get("time"), data.get("states") or []
+        raise RuntimeError(f"{provider}: HTTP {exc.code} ({exc.reason})") from exc
+    raw = payload.get("ac", [])
+    rows = []
+    for ac in raw:
+        if ac.get("lat") is None or ac.get("lon") is None:
+            continue
+        altitude_ft = ac.get("alt_geom")
+        if not isinstance(altitude_ft, (int, float)):
+            altitude_ft = ac.get("alt_baro")
+        altitude_m = float(altitude_ft) * 0.3048 if isinstance(altitude_ft, (int, float)) else None
+        row = [None] * 14
+        row[0] = ac.get("hex", "")
+        row[1] = ac.get("flight", "")
+        row[5] = ac["lon"]
+        row[6] = ac["lat"]
+        row[7] = altitude_m
+        row[13] = altitude_m
+        rows.append(row)
+    now = payload.get("now")
+    if isinstance(now, (int, float)) and now > 1e11:
+        now /= 1000
+    return now, rows
 
 def _sample(result, lat, lon):
     c = result["config"]
@@ -112,34 +115,34 @@ def _render(result, level_ft, traffic):
     Fullscreen().add_to(m)
     return m,counts
 
-@st.fragment(run_every="120s")
-def _live_frame(result, level_ft, client_id, client_secret):
+@st.fragment(run_every="60s")
+def _live_frame(result, level_ft, provider):
     try:
-        timestamp, states = _traffic(round(result["config"].lat,5),round(result["config"].lon,5),client_id,client_secret)
+        timestamp, states = _traffic(round(result["config"].lat,5),round(result["config"].lon,5),provider)
     except Exception as exc:
-        st.warning("OpenSky právě nevrací data (veřejné API může omezovat požadavky).")
+        st.warning("ADS-B zdroj momentálně nevrací data. Zkus přepnout poskytovatele.")
         st.caption(f"{type(exc).__name__}: {str(exc)[:180]}")
         return
     m,counts=_render(result,level_ft,states)
     when=datetime.fromtimestamp(timestamp,timezone.utc).strftime("%H:%M:%S UTC") if timestamp else "N/A"
-    st.caption(f"OpenSky snapshot: {when} · aktualizace cca 120 s · "
+    st.caption(f"{provider} snapshot: {when} · aktualizace cca 60 s · "
                f"🟢 {counts['visible']} potenciálně viditelných · "
                f"🔴 {counts['hidden']} mimo krytí · 🟡 {counts['unknown']} neurčeno")
     st_folium(m,height=680,use_container_width=True,key=f"simulation_{level_ft}",returned_objects=[])
     st.caption("Simulace, nikoli skutečné radarové detekce. Posouzení využívá výšku letadla "
                "a vypočtenou spodní/horní hranici pokrytí; nezahrnuje RCS, výkon, "
-               "maskování provozem ani omezení OpenSky. Kružnice 20–260 NM, "
+               "maskování provozem ani omezení ADS-B zdroje. Kružnice 20–260 NM, "
                "krytí jen do vypočteného dosahu radaru.")
 
 @st.dialog("LIVE TRAFFIC / Simulace radarového pokrytí",width="large")
-def simulation_dialog(result,level_ft,client_id,client_secret):
+def simulation_dialog(result,level_ft,provider):
     st.markdown(f"**Vrstva: {core.level_label(level_ft)}** · radar: "
                 f"{result['config'].lat:.4f}°, {result['config'].lon:.4f}°")
-    _live_frame(result,level_ft,client_id,client_secret)
+    _live_frame(result,level_ft,provider)
 
 def simulation_tab(result,levels):
-    st.subheader("LIVE SIMULATION / OpenSky")
-    st.caption("Živá poloha letadel z OpenSky nad vypočteným radarovým pokrytím. "
+    st.subheader("LIVE SIMULATION / ADS-B")
+    st.caption("Živé ADS-B polohy letadel nad vypočteným radarovým pokrytím. "
                "Kružnice po 20 NM až do 260 NM.")
     if result is None:
         st.info("Nejprve spusť výpočet v NASTAVENÍ.")
@@ -152,10 +155,9 @@ def simulation_tab(result,levels):
                           format_func=core.level_label,key="simulation_level")
     st.caption("Barva letadla se vyhodnocuje podle jeho aktuální hlášené výšky, "
                "nikoliv podle zvolené hladiny. Zvolená hladina určuje mapový podklad.")
-    creds = st.secrets.get("opensky", {})
-    client_id = creds.get("client_id", "")
-    client_secret = creds.get("client_secret", "")
-    if not (client_id and client_secret):
-        st.info("OpenSky anonymní API má omezené kredity a cloudové IP mohou být blokované. Pro spolehlivější přístup nastav OAuth2 client_id a client_secret ve Streamlit Secrets v sekci [opensky].")
+    provider = st.selectbox("Zdroj živých ADS-B dat", ["ADSB.lol", "Airplanes.live"],
+                            key="simulation_provider")
+    st.caption("Veřejná API poskytují maximálně 250 NM kolem radaru; kružnice 260 NM "
+               "zůstává orientační. Data nejsou radarové ploty.")
     if st.button("▶ OTEVŘÍT LIVE SIMULACI",type="primary",key="open_simulation"):
-        simulation_dialog(result,selected,client_id,client_secret)
+        simulation_dialog(result,selected,provider)
