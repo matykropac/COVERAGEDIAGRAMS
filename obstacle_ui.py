@@ -104,7 +104,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
                 st.success(f'Načteno {len(wind_data)} větrných turbín z OpenStreetMap.')
             except Exception as exc:
                 st.warning('Turbíny se nyní nepodařilo načíst. Zkus znovu později.')
-                st.caption(f'Overpass API: {str(exc)[:200]}')
+                st.error(f'Diagnostika Overpass: {str(exc)[:900]}')
             st.caption('Žluté značky jsou pouze informativní; do překážek se nepřidávají.')
         if st.button('🔄 Znovu načíst turbíny', key='refresh_wind_turbines'):
             load_wind_turbines.clear()
