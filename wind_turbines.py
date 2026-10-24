@@ -91,23 +91,13 @@ def add_wind_layer(map_obj, turbines, cluster_points=True, fallback_height=None)
         target = MarkerCluster(name="Větrné turbíny", options={"maxClusterRadius": 45, "disableClusteringAtZoom": 12})
         target.add_to(layer)
     for t in turbines:
-        height = t["height"]
-        if not height and fallback_height is not None:
-            height = f"{fallback_height:g} m (uživatelský předpoklad)"
-        fields = [
-            ("Vzdálenost", f"{t['distance_km']} km"),
-            ("Azimut", f"{t['az']}°"),
-            ("Výška", str(height) if height else "nezjištěna"),
-            ("Výška náboje", str(t["hub_height"]) if t["hub_height"] else "nezjištěna"),
-            ("Průměr rotoru", str(t["rotor"]) if t["rotor"] else "nezjištěn"),
-            ("OSM ID", t["osm_id"]),
-        ]
-        body = "<b>" + escape(t["name"]) + "</b><br>" + "<br>".join(
-            f"{escape(k)}: {escape(v)}" for k, v in fields
-        ) + "<br><small>Informační vrstva OSM · není automaticky překážkou.</small>"
+        body = (
+            f"Vzdálenost: {t['distance_km']} km<br>"
+            f"Azimut: {t['az']}°"
+        )
         folium.CircleMarker(
             [t["lat"], t["lon"]], radius=5, color="#f8e07b", weight=1.5,
             fill=True, fill_color="#f59e0b", fill_opacity=.95,
-            tooltip=escape(t["name"]), popup=folium.Popup(body, max_width=320),
+            tooltip=f"{t['distance_km']} km · {t['az']}°", popup=folium.Popup(body, max_width=200),
         ).add_to(target)
     layer.add_to(map_obj)
