@@ -27,7 +27,6 @@ from obstacles import apply_obstacles, obstacle_polygon, obstacle_signature
 from project_file import save_project, load_project
 from project_widgets import restored_widget_values
 from obstacle_ui import render_obstacle_editor
-from diagnostics_ui import render_diagnostics
 from site_picker import coordinates_from_map_click
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
@@ -248,7 +247,7 @@ def open_project_callback():
 
 
 
-settings, obstacles_tab, analysis, diagnostics_tab, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DIAGNOSTIKA', 'DATA / EXPORTY'])
+settings, obstacles_tab, analysis, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'DATA / EXPORTY'])
 
 with settings:
     location, parameters, preview, execution = st.columns([22, 22, 34, 22], gap='small')
@@ -513,7 +512,7 @@ else:
                 xs, ys, _ = Geod(ellps='WGS84').fwd(np.full(81,rc.lon),np.full(81,rc.lat),bearings,np.full(81,40000.))
                 folium.PolyLine([[rc.lat,rc.lon]]+list(zip(ys,xs))+[[rc.lat,rc.lon]],
                                 color='#8ca4b5',dash_array='5 5',weight=1,tooltip='Sektor PAR-NG ±15° / 40 km').add_to(m)
-            ClickMeasure(rc.lat, rc.lon).add_to(m)
+            ClickMeasure(result).add_to(m)
             # Layer selection is handled by stable Streamlit controls; Leaflet
             # keeps only basemap switching, without coverage layer animations.
             folium.LayerControl(collapsed=True).add_to(m)
@@ -542,7 +541,7 @@ else:
             components.html(
                 """
                 <style>
-                  body {margin:0;background:transparent;font-family:system-ui,sans-serif}
+                  body {margin:0;background:transparent;font-family:system-ui,sans-serif;display:flex;justify-content:center;align-items:center}
                   button {background:#143d55;color:#e7f7ff;border:1px solid #4b92b0;
                           border-radius:8px;padding:10px 18px;font-size:14px;cursor:pointer}
                   button:hover {background:#205a79}
@@ -649,10 +648,3 @@ else:
 **PNG:** tiskový graf krytí při 300 nebo 600 DPI, bez online mapového podkladu.
 
 Přesnost křivek určuje krok výpočtu a rozlišení DEM. Vyšší DPI nezvyšuje přesnost terénu.''')
-
-
-with diagnostics_tab:
-    if result is None:
-        st.info('Nejprve vypočítej krytí nebo načti projekt (.cdproj).')
-    else:
-        render_diagnostics(result)
