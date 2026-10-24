@@ -9,7 +9,6 @@ import threading
 import time
 
 import folium
-from wind_turbines import load_wind_turbines, add_wind_layer
 from branca.element import Element
 from folium.plugins import Fullscreen, MeasureControl
 import matplotlib
@@ -477,21 +476,6 @@ else:
             alphas = {ft: alpha for ft in active}
             st.caption(f'Aktivní vrstvy: {len(active) + int(show_target)}')
             st.caption('Kliknutí měří přímo v mapě, bez překreslení aplikace — funguje i na celou obrazovku.')
-            st.markdown('**Větrné elektrárny / OSM**')
-            show_wind = st.checkbox('Zobrazit turbíny do 300 km', value=True,
-                                    key='show_wind_turbines')
-            wind_data = []
-            if show_wind:
-                try:
-                    with st.spinner('Načítám turbíny z OpenStreetMap (300 km)…'):
-                        wind_data = load_wind_turbines(round(rc.lat, 6), round(rc.lon, 6))
-                    st.caption(f'Nalezeno: {len(wind_data)} turbín · aktualizace cache 24 h.')
-                except Exception as exc:
-                    st.warning('Větrné turbíny se nepodařilo načíst z Overpass API. '
-                               'Radarová mapa funguje dál bez této vrstvy.')
-                    st.caption(str(exc)[:180])
-                st.caption('Pouze informační vrstva. Turbíny se do překážek ani do výpočtu '
-                           'automaticky nepřidávají.')
 
         with mapcol:
             m = folium.Map(location=[rc.lat, rc.lon], zoom_start=8 if rc.range_km<=100 else 7,
@@ -512,8 +496,6 @@ else:
                         style_function=lambda feature, color=color, opacity=opacity:
                             dict(color=color, weight=1.5, fillColor=color, fillOpacity=opacity),
                         tooltip=folium.GeoJsonTooltip(fields=['hladina'], labels=False)).add_to(m)
-            if show_wind and wind_data:
-                add_wind_layer(m, wind_data)
             for obs in result.get('obstacles', []):
                 folium.Polygon(obstacle_polygon(obs, rc.lat, rc.lon), color='#ff7043',
                                weight=1, fill=True, fill_opacity=.65,
