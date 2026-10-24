@@ -86,9 +86,9 @@ function update(ac){
    if(!prev.length||hav(prev[prev.length-1][0],prev[prev.length-1][1],a.lat,a.lon)>15)prev.push([a.lat,a.lon,now]);
    else prev[prev.length-1][2]=now;
    let sum=0,cut=0;
-   for(let i=prev.length-1;i>0;i--){sum+=hav(prev[i][0],prev[i][1],prev[i-1][0],prev[i-1][1]);if(sum>12*nm){cut=i;break;}}
+   for(let i=prev.length-1;i>0;i--){sum+=hav(prev[i][0],prev[i][1],prev[i-1][0],prev[i-1][1]);if(sum>40*nm){cut=i;break;}}
    if(cut)prev.splice(0,cut);
-   if(prev.length>150)prev.splice(0,prev.length-150);
+   if(prev.length>500)prev.splice(0,prev.length-500);
    history.set(a.hex,prev);
    for(let i=1;i<prev.length;i++){
      L.polyline([prev[i-1].slice(0,2),prev[i].slice(0,2)],
