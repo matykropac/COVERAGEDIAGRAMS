@@ -12,10 +12,10 @@ _LOCAL = Path(__file__).resolve().parent / "data" / "wind_turbines.csv"
 
 
 def _pick(record, *keys):
-    normalized = {str(k).lower().replace("_", "").replace(" ", ""): v
+    normalized = {str(k).lower().replace("_", "").replace(" ", "").replace("-", "").replace(":", ""): v
                   for k, v in record.items()}
     for key in keys:
-        val = normalized.get(key.lower().replace("_", "").replace(" ", ""))
+        val = normalized.get(key.lower().replace("_", "").replace(" ", "").replace("-", "").replace(":", ""))
         if val is not None and str(val).strip():
             return val
     return None
@@ -40,7 +40,7 @@ def _records(raw, filename):
             if len(coords) >= 2:
                 yield dict(feature.get("properties") or {}, lon=coords[0], lat=coords[1])
     else:
-        yield from csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+        yield from csv.DictReader(io.StringIO(raw.decode("utf-8-sig")), delimiter=";" if raw[:4096].count(b";") > raw[:4096].count(b",") else ",")
 
 
 def select_turbines(raw, filename, lat, lon, radius_m=100_000):
@@ -58,9 +58,9 @@ def select_turbines(raw, filename, lat, lon, radius_m=100_000):
         if identity in seen:
             continue
         seen.add(identity)
-        hub = _number(_pick(row, "hub_height", "hubheight", "generator:hub_height"))
-        rotor = _number(_pick(row, "rotor_diameter", "rotordiameter", "rotor:diameter"))
-        total = _number(_pick(row, "height", "total_height", "tip_height"))
+        hub = _number(_pick(row, "hub_height", "hubheight", "height:hub", "generator:hub_height"))
+        rotor = _number(_pick(row, "rotor_diameter", "rotordiameter", "rotor:diameter", "diameter"))
+        total = _number(_pick(row, "total_height", "tip_height", "height:total"))
         if total is None and hub is not None and rotor is not None:
             total = hub + rotor / 2
         turbines.append(dict(
