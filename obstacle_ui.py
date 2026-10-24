@@ -32,10 +32,7 @@ def _description(o, radar_lat, radar_lon):
 
 def render_obstacle_editor(radar_lat, radar_lon):
     st.subheader('OBSTACLES / Správa překážek')
-    st.caption('Polygony překážek do 100 km od radaru. Výška v metrech nad místním terénem (AGL). '
-               'Změny se projeví po dalším výpočtu krytí v NASTAVENÍ.')
     obstacles = st.session_state.setdefault('obstacles', [])
-    st.caption(f'Zaznamenáno: **{len(obstacles)} / {MAX_OBSTACLES}**')
 
     map_panel, table_panel = st.columns([2, 1], gap='medium')
     with table_panel:
