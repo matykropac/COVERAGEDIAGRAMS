@@ -32,7 +32,7 @@ def _description(o, radar_lat, radar_lon):
 
 def render_obstacle_editor(radar_lat, radar_lon):
     st.subheader('OBSTACLES / Správa překážek')
-    st.caption('Překážky do 20 km od radaru. Výška v metrech nad místním terénem (AGL). '
+    st.caption('Polygony překážek do 100 km od radaru. Výška v metrech nad místním terénem (AGL). '
                'Změny se projeví po dalším výpočtu krytí v NASTAVENÍ.')
     obstacles = st.session_state.setdefault('obstacles', [])
     st.caption(f'Zaznamenáno: **{len(obstacles)} / {MAX_OBSTACLES}**')
