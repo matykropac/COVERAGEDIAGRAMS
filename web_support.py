@@ -93,38 +93,95 @@ map.on('mousemove', function(e) {
 
 
 class ClickMeasure(MacroElement):
-    """Fast Leaflet-only point selection, including fullscreen and exported HTML."""
-    def __init__(self, lat, lon):
+    """Leaflet-only point selection with compact terrain cross-section (no rerun)."""
+    def __init__(self, result):
         super().__init__()
         self._name = 'ClickMeasure'
-        self.site_lat = float(lat)
-        self.site_lon = float(lon)
+        config = result['config']
+        self.site_lat = float(config.lat)
+        self.site_lon = float(config.lon)
+        # Downsample only for the miniature chart; the calculation is untouched.
+        az = np.asarray(result['az'], dtype=float)
+        distance = np.asarray(result['distance'], dtype=float) / 1000.0
+        terrain = np.asarray(result['terrain'], dtype=float)
+        step = max(1, int(np.ceil(len(distance) / 160)))
+        terrain = terrain[:, ::step]
+        self.profile_data = json.dumps({
+            'az': np.round(az, 3).tolist(),
+            'distance': np.round(distance[::step], 3).tolist(),
+            'terrain': np.where(np.isfinite(terrain), np.round(terrain, 1), None).tolist(),
+        }, separators=(',', ':'), allow_nan=False)
         self._template = Template(r'''
 {% macro script(this, kwargs) %}
 (function() {
  const map = {{this._parent.get_name()}};
  const site = L.latLng({{this.site_lat}}, {{this.site_lon}});
+ const profiles = {{this.profile_data | safe}};
  let marker = null, line = null;
  const panel = L.control({position:'bottomright'});
  panel.onAdd = function() {
    this.box = L.DomUtil.create('div');
-   this.box.style.cssText = 'background:#071b2df2;color:#e9f7ff;padding:12px 15px;border:1px solid #3d7897;border-radius:9px;box-shadow:0 4px 16px #0008;font:13px sans-serif;line-height:1.65;min-width:205px';
-   this.box.innerHTML = '<b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Klikni do mapy pro měření';
+   this.box.style.cssText = 'display:flex;align-items:center;gap:12px;background:#071b2df2;color:#e9f7ff;padding:10px 13px;border:1px solid #3d7897;border-radius:9px;box-shadow:0 4px 16px #0008;font:12px sans-serif;line-height:1.6;max-width:min(650px,85vw)';
+   this.box.innerHTML = '<div id="measure-info" style="min-width:185px"><b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Klikni do mapy pro měření</div><div style="width:265px;max-width:40vw"><div style="color:#5fe3f2;font-weight:bold">PROFIL TERÉNU</div><canvas id="measure-profile" width="265" height="112" style="width:100%;height:112px;display:block"></canvas></div>';
    L.DomEvent.disableClickPropagation(this.box);
+   L.DomEvent.disableScrollPropagation(this.box);
    return this.box;
  };
  panel.addTo(map);
+ const info = panel.box.querySelector('#measure-info');
+ const canvas = panel.box.querySelector('#measure-profile');
+ const ctx = canvas.getContext('2d');
+ function draw(bearing, selectedKm) {
+   const az = profiles.az, dist = profiles.distance;
+   let best = Infinity, index = 0;
+   for(let i=0;i<az.length;i++) {
+     const delta = Math.abs(((bearing-az[i]+540)%360)-180);
+     if(delta<best){best=delta;index=i;}
+   }
+   const values=profiles.terrain[index];
+   ctx.clearRect(0,0,canvas.width,canvas.height);
+   if(!values || !dist.length) return;
+   const valid=values.filter(v=>v!==null && Number.isFinite(v));
+   if(!valid.length) return;
+   const low=Math.min(...valid), high=Math.max(...valid);
+   const min=low-Math.max(20,(high-low)*.12), max=high+Math.max(20,(high-low)*.12);
+   const left=7,right=canvas.width-7,top=10,bottom=canvas.height-20;
+   const maxDist=dist[dist.length-1]||1;
+   const x=d=>left+(right-left)*Math.max(0,Math.min(1,d/maxDist));
+   const y=v=>bottom-(v-min)/(max-min)*(bottom-top);
+   ctx.strokeStyle='#35566b';ctx.lineWidth=1;
+   for(let j=0;j<3;j++){const yy=top+(bottom-top)*j/2;ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(right,yy);ctx.stroke();}
+   ctx.beginPath();let started=false;
+   for(let i=0;i<values.length;i++){
+     const v=values[i];
+     if(v===null || !Number.isFinite(v)){started=false;continue;}
+     if(!started){ctx.moveTo(x(dist[i]),y(v));started=true;}else ctx.lineTo(x(dist[i]),y(v));
+   }
+   ctx.strokeStyle='#5fe3f2';ctx.lineWidth=2;ctx.stroke();
+   const xx=x(selectedKm);
+   ctx.setLineDash([3,3]);ctx.strokeStyle='#ffb454';ctx.beginPath();ctx.moveTo(xx,top);ctx.lineTo(xx,bottom);ctx.stroke();ctx.setLineDash([]);
+   if(selectedKm<=maxDist){
+     let near=0;for(let i=1;i<dist.length;i++)if(Math.abs(dist[i]-selectedKm)<Math.abs(dist[near]-selectedKm))near=i;
+     if(values[near]!==null && Number.isFinite(values[near])){
+       ctx.fillStyle='#ffb454';ctx.beginPath();ctx.arc(xx,y(values[near]),4,0,Math.PI*2);ctx.fill();
+     }
+   }
+   ctx.font='10px sans-serif';ctx.fillStyle='#c4dce9';
+   ctx.fillText('0 km',left,canvas.height-5);
+   ctx.textAlign='right';ctx.fillText(maxDist.toFixed(0)+' km',right,canvas.height-5);ctx.textAlign='left';
+ }
  map.on('click', function(e) {
-   const point = e.latlng;
-   const rad = Math.PI / 180, p1 = site.lat*rad, p2 = point.lat*rad, dl = (point.lng-site.lng)*rad;
-   const a = Math.sin((p2-p1)/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
-   const distance = 6371.0088 * 2 * Math.asin(Math.min(1,Math.sqrt(a)));
-   const azimuth = (Math.atan2(Math.sin(dl)*Math.cos(p2),Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl))/rad+360)%360;
-   if(marker) map.removeLayer(marker);
-   if(line) map.removeLayer(line);
-   marker = L.circleMarker(point,{radius:7,color:'#fff',weight:2,fillColor:'#ffb454',fillOpacity:1}).addTo(map);
-   line = L.polyline([site,point],{color:'#ffb454',weight:2,opacity:.85,dashArray:'6 5',interactive:false}).addTo(map);
-   panel.box.innerHTML = '<b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Vzdálenost od stanoviště: <b>'+distance.toFixed(2)+' km</b><br>Azimut od stanoviště: <b>'+azimuth.toFixed(1)+'°</b><br><small>'+point.lat.toFixed(5)+'°, '+point.lng.toFixed(5)+'°</small>';
+   const point=e.latlng;
+   const rad=Math.PI/180,p1=site.lat*rad,p2=point.lat*rad,dl=(point.lng-site.lng)*rad;
+   const a=Math.sin((p2-p1)/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+   const distance=6371.0088*2*Math.asin(Math.min(1,Math.sqrt(a)));
+   const bearing=(Math.atan2(Math.sin(dl)*Math.cos(p2),Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl))/rad+360)%360;
+   if(marker)map.removeLayer(marker);
+   if(line)map.removeLayer(line);
+   marker=L.circleMarker(point,{radius:7,color:'#fff',weight:2,fillColor:'#ffb454',fillOpacity:1}).addTo(map);
+   line=L.polyline([site,point],{color:'#ffb454',weight:2,opacity:.85,dashArray:'6 5',interactive:false}).addTo(map);
+   info.innerHTML='<b style="color:#5fe3f2">VYBRANÝ BOD</b><br>Vzdálenost od stanoviště:<br><b>'+distance.toFixed(2)+' km</b><br>Azimut od stanoviště:<br><b>'+bearing.toFixed(1)+'°</b><br><small>'+point.lat.toFixed(5)+'°, '+point.lng.toFixed(5)+'°</small>';
+   draw(bearing,distance);
  });
 })();
 {% endmacro %}''')
