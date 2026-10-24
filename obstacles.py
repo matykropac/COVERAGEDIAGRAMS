@@ -90,8 +90,8 @@ def validate_obstacle(o, radar_lat, radar_lon, *, enforce_point_range=True):
             if not all(math.isfinite(v) for v in (lat, lon)) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
                 raise ValueError('Neplatné souřadnice polygonu.')
             az, _, radius = GEOD.inv(radar_lon, radar_lat, lon, lat)
-            if radius > 20000:
-                raise ValueError('Všechny vrcholy musí být do 20 km od radaru.')
+            if radius > 100000:
+                raise ValueError('Všechny vrcholy polygonu musí být do 100 km od radaru.')
             vertices.append((radius*np.sin(np.radians(az)), radius*np.cos(np.radians(az))))
         shape = Polygon(vertices)
         if not shape.is_valid or shape.area < 0.01:
