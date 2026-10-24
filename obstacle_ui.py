@@ -229,7 +229,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
             if st.button('Ano, smazat', type='primary', key='obstacle_delete_confirm'):
                 obstacles.pop(chosen_index)
                 st.session_state.pop('obstacle_confirm_delete', None)
-                        st.session_state['_obstacle_next_selected'] = max(0, chosen_index-1)
+                st.session_state['_obstacle_next_selected'] = max(0, chosen_index-1)
                 st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
                 st.session_state['obstacle_editor_rev'] = revision+1
                 st.rerun()
