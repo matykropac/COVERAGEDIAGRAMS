@@ -41,57 +41,10 @@ def render_obstacle_editor(radar_lat, radar_lon):
     rail, map_panel = st.columns([1, 5], gap='medium')
     with rail:
         st.markdown('**01 / Přidat překážku**')
-        mode = st.radio('Způsob vložení', ['Nakreslit polygon do mapy',
-                                          'Kliknout do mapy · objekt 10 × 10 m',
-                                          'Zadat koncové body · oblouk CW'],
-                        horizontal=True, key='obstacle_insert_mode')
         height = st.number_input('Výška nové překážky [m AGL]', 0.1, 1000.0,
                                  value=20.0, step=1.0, key='obstacle_new_height')
-
-        if mode.startswith('Zadat'):
-            st.caption('Úhlový oblouk od bodu A k B **po směru hodinových ručiček kolem radaru**. '
-                       'Vzdálenost se mezi body lineárně mění; překážka má pás šířky 10 m. '
-                       'Nejde o výseč sahající k radaru.')
-            start_lon, start_lat, _ = GEOD.fwd(radar_lon, radar_lat, 350, 350)
-            end_lon, end_lat, _ = GEOD.fwd(radar_lon, radar_lat, 10, 350)
-            with st.form('new_obstacle_arc', clear_on_submit=False):
-                new_name = st.text_input('Název obloukové překážky', value='Oblouková překážka')
-                a, b = st.columns(2)
-                with a:
-                    st.markdown('**Bod A — začátek**')
-                    a_lat = st.number_input('A · LAT [°]', -90.0, 90.0, float(start_lat),
-                                            format='%.6f')
-                    a_lon = st.number_input('A · LON [°]', -180.0, 180.0, float(start_lon),
-                                            format='%.6f')
-                with b:
-                    st.markdown('**Bod B — konec (CW)**')
-                    b_lat = st.number_input('B · LAT [°]', -90.0, 90.0, float(end_lat),
-                                            format='%.6f')
-                    b_lon = st.number_input('B · LON [°]', -180.0, 180.0, float(end_lon),
-                                            format='%.6f')
-                add_arc = st.form_submit_button('Přidat oblouk', type='primary',
-                                                 disabled=len(obstacles) >= MAX_OBSTACLES)
-            if add_arc:
-                item = dict(kind='arc', name=new_name.strip() or 'Oblouková překážka',
-                            start_lat=a_lat, start_lon=a_lon, end_lat=b_lat,
-                            end_lon=b_lon, height_m=height)
-                try:
-                    validate_obstacle(item, radar_lat, radar_lon)
-                except (ValueError, TypeError, KeyError) as exc:
-                    st.error(str(exc))
-                else:
-                    obstacles.append(item)
-                    st.session_state['obstacle_selected_index'] = len(obstacles)-1
-                    st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
-                    st.session_state.pop('obstacle_confirm_delete', None)
-                    st.rerun()
-        elif mode.startswith('Kliknout'):
-            st.info('Nastav výšku a klikni na mapu. Vloží se překážka 10 × 10 m. '
-                    'Na existující překážku lze kliknout pro zobrazení popisu.')
-
-        else:
-            st.info('V mapě vyber nástroj polygon (ikona pětiúhelníku), naklikej vrcholy a dvojklikem dokonči. '
-                    'Polygon se uloží s výškou nastavenou výše (m AGL).')
+        st.info('V mapě vyber polygon (ikona pětiúhelníku), označ půdorys a '
+                'dvojklikem dokonči. Výška se převezme z pole výše.')
 
         st.markdown('**Větrné elektrárny · 100 km**')
         st.caption('Zdroj turbín: Ventodyne · offline soubor data/wind_turbines.csv.gz')
@@ -159,17 +112,16 @@ def render_obstacle_editor(radar_lat, radar_lon):
                                    max_width=320),
                 bubbling_mouse_events=False
             ).add_to(om)
-        if mode.startswith('Nakreslit'):
-            Draw(export=False, draw_options={'polyline': False, 'rectangle': False,
-                 'circle': False, 'circlemarker': False, 'marker': False,
-                 'polygon': {'allowIntersection': False, 'showArea': True}},
-                 edit_options={'edit': False, 'remove': False}).add_to(om)
+        Draw(export=False, draw_options={'polyline': False, 'rectangle': False,
+             'circle': False, 'circlemarker': False, 'marker': False,
+             'polygon': {'allowIntersection': False, 'showArea': True}},
+             edit_options={'edit': False, 'remove': False}).add_to(om)
         folium.LayerControl().add_to(om)
         Fullscreen().add_to(om)
         map_data = st_folium(om, height=690, use_container_width=True,
                              key='obstacle_map', returned_objects=['last_clicked', 'last_active_drawing'])
         drawing = (map_data or {}).get('last_active_drawing')
-        if mode.startswith('Nakreslit') and drawing and drawing.get('geometry', {}).get('type') == 'Polygon':
+        if drawing and drawing.get('geometry', {}).get('type') == 'Polygon':
             ring = drawing['geometry']['coordinates'][0]
             coords = [[float(lat), float(lon)] for lon, lat in ring[:-1] if len(ring) > 1]
             signature = tuple(tuple(pair) for pair in coords)
@@ -189,33 +141,14 @@ def render_obstacle_editor(radar_lat, radar_lon):
                         st.session_state['obstacle_selected_index'] = len(obstacles)-1
                         st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
                         st.rerun()
-        clicked = (map_data or {}).get('last_clicked')
-        if mode.startswith('Kliknout') and clicked and clicked != st.session_state.get('obstacle_last_click'):
-            st.session_state['obstacle_last_click'] = clicked
-            if len(obstacles) >= MAX_OBSTACLES:
-                st.error('Nejvýše 100 překážek.')
-            else:
-                item = dict(kind='point', name=f'Překážka {len(obstacles)+1:02d}',
-                            lat=float(clicked['lat']), lon=float(clicked['lng']),
-                            height_m=float(height))
-                try:
-                    validate_obstacle(item, radar_lat, radar_lon)
-                except (ValueError, TypeError, KeyError) as exc:
-                    st.error(str(exc))
-                else:
-                    obstacles.append(item)
-                    st.session_state['obstacle_selected_index'] = len(obstacles)-1
-                    st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
-                    st.rerun()
-
     st.markdown('**02 / Seznam uložených překážek**')
     if not obstacles:
-        st.info('Zatím žádné překážky. Klikni na mapu nebo vlož dva koncové body.')
+        st.info('Zatím žádné překážky. Nakresli polygon do mapy.')
         return
     rows = [{
         '#': i+1,
         'Název': _label(o, i),
-        'Typ': 'Polygon' if o.get('kind') == 'polygon' else ('Oblouk CW' if o.get('kind') == 'arc' else 'Objekt 10×10 m'),
+        'Typ': 'Polygon' if o.get('kind') == 'polygon' else 'Starší typ',
         'Výška [m AGL]': float(o['height_m']),
         'Poloha vzhledem k radaru': _description(o, radar_lat, radar_lon),
     } for i, o in enumerate(obstacles)]
@@ -296,8 +229,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
             if st.button('Ano, smazat', type='primary', key='obstacle_delete_confirm'):
                 obstacles.pop(chosen_index)
                 st.session_state.pop('obstacle_confirm_delete', None)
-                st.session_state.pop('obstacle_last_click', None)
-                st.session_state['_obstacle_next_selected'] = max(0, chosen_index-1)
+                        st.session_state['_obstacle_next_selected'] = max(0, chosen_index-1)
                 st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
                 st.session_state['obstacle_editor_rev'] = revision+1
                 st.rerun()
