@@ -8,6 +8,7 @@ import streamlit as st
 from folium.plugins import Fullscreen
 from pyproj import Geod
 from web_support import coverage_geojson
+import radar_core as core
 
 GEOD = Geod(ellps="WGS84")
 
@@ -16,18 +17,24 @@ def open_display(result, level_ft, provider, traffic=None):
     m = folium.Map(location=[c.lat,c.lon], zoom_start=7, tiles="https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
                    attr="Tiles © Esri and its data providers",
                    control_scale=True, prefer_canvas=True)
-    geo = coverage_geojson(result, level_ft)
-    if geo.get("features"):
-        folium.GeoJson(geo, name="Radar coverage", style_function=lambda _:
+    # Toggle each available calculated altitude slice independently.
+    for flight_level in core.flight_levels_for(c.radar_mode):
+        geo = coverage_geojson(result, flight_level)
+        if not geo.get("features"):
+            continue
+        layer = folium.FeatureGroup(name=core.level_label(flight_level),
+                                    show=flight_level == level_ft)
+        folium.GeoJson(geo, style_function=lambda _:
                        {"color":"#12b9aa","weight":1,"fillColor":"#12b9aa",
-                        "fillOpacity":0.22}).add_to(m)
+                        "fillOpacity":0.22}).add_to(layer)
+        layer.add_to(m)
     for nm in range(20,261,20):
         folium.Circle([c.lat,c.lon], radius=nm*1852, color="#8498ac",
                       weight=1, opacity=.65, fill=False,
                       tooltip=f"{nm} NM").add_to(m)
     folium.Marker([c.lat,c.lon],tooltip="RADAR",
                   icon=folium.Icon(color="orange",icon="signal")).add_to(m)
-    folium.LayerControl().add_to(m)
+    folium.LayerControl(collapsed=False).add_to(m)
     Fullscreen(position="topright", title="Celá obrazovka", title_cancel="Zavřít fullscreen").add_to(m)
     # Keep the base map mounted; only update a dedicated aircraft layer.
     az = np.asarray(result["az"],dtype=float)
@@ -95,17 +102,18 @@ function update(ac){
      L.polyline([prev[i-1].slice(0,2),prev[i].slice(0,2)],
        {color:'#000',weight:2,opacity:0.04+0.8*Math.pow(i/(prev.length-1),2),interactive:false}).addTo(targets);
    }
+   const status=classify(a);
+   const outline=status==='visible'?'#19e68c':status==='hidden'?'#ff405a':'#ffc857';
    const track=typeof a.track==='number'?a.track:0;
-   const svg='<div style="width:14px;height:14px;transform:rotate('+track+'deg)"><svg width="14" height="14" viewBox="0 0 20 20"><path d="M10 1 L17 18 L10 14 L3 18 Z" fill="black" stroke="white" stroke-width=".7"/></svg></div>';
+   const svg='<div style="width:14px;height:14px;transform:rotate('+track+'deg)"><svg width="14" height="14" viewBox="0 0 20 20"><path d="M10 1 L17 18 L10 14 L3 18 Z" fill="black" stroke="'+outline+'" stroke-width="2.7"/></svg></div>';
    const icon=L.divIcon({html:svg,className:'aircraft-arrow',iconSize:[14,14],iconAnchor:[7,7]});
    const callsign=(a.flight||a.hex).trim(), alt=typeof a.alt_geom==='number'?a.alt_geom:a.alt_baro;
-   const status=classify(a);
    const popup=document.createElement('div');
-   popup.textContent=callsign+' · '+status+' · '+(typeof alt==='number'?alt+' ft':'N/A')+' · '+(hav(cfg.lat,cfg.lon,a.lat,a.lon)/nm).toFixed(1)+' NM';
+   popup.textContent=callsign+' · '+(status==='visible'?'V KRYTÍ':status==='hidden'?'MIMO KRYTÍ':'NEURČENO')+' · '+(typeof alt==='number'?alt+' ft':'N/A')+' · '+(hav(cfg.lat,cfg.lon,a.lat,a.lon)/nm).toFixed(1)+' NM';
    L.marker([a.lat,a.lon],{icon}).bindTooltip(callsign).bindPopup(popup).addTo(targets);
   }
   for(const [id,pts] of history){if(!seen.has(id)&&now-pts[pts.length-1][2]>180)history.delete(id);}
-  title.textContent='RADAR LIVE · '+cfg.provider+' · '+count+' targets · '+new Date().toLocaleTimeString()+' · 5 s';
+  title.textContent='RADAR LIVE · '+cfg.provider+' · '+count+' targets · zelená: v krytí / červená: mimo / žlutá: neurčeno · '+new Date().toLocaleTimeString()+' · 5 s';
  }catch(err){title.textContent='ADS-B connection: '+err.message+' · retry 5 s';}
 }
 window.addEventListener('message',event=>{if(event.data?.type==='radar-targets')update(event.data.aircraft||[]);});
