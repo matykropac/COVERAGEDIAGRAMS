@@ -23,7 +23,7 @@ EXPORTS = ('QuickReport · ZIP (600 DPI)', 'KML · všechny vrstvy (polygony)', 
 def coverage_geojson(result, ft):
     status = result['status'] if ft is None else core.status_at_height(result, ft * core.FT_TO_M)
     project = Transformer.from_crs(core.local_crs(result['config']), 'EPSG:4326', always_xy=True)
-    label = 'Krytí cíle' if ft is None else core.level_label(ft)
+    label = 'Target coverage' if ft is None else core.level_label(ft)
     return {'type': 'FeatureCollection', 'features': [
         {'type': 'Feature', 'geometry': mapping(transform(project.transform, poly)),
          'properties': {'hladina': label}}
@@ -327,13 +327,13 @@ def export_range_rings_kml(result):
     geod = Geod(ellps='WGS84')
     root = ET.Element('{' + KML_NS + '}kml')
     doc = _kml_element(root, 'Document')
-    _kml_element(doc, 'name', 'Radar · kružnice 20–260 NM')
+    _kml_element(doc, 'name', 'Radar · 20–260 NM range rings')
     folder = _kml_element(doc, 'Folder')
-    _kml_element(folder, 'name', 'Dosahové kružnice · 20 NM')
+    _kml_element(folder, 'name', 'Range rings · 20 NM intervals')
     for nm in range(20, 261, 20):
         pm = _kml_element(folder, 'Placemark')
         _kml_element(pm, 'name', f'{nm} NM')
-        _kml_element(pm, 'description', f'{nm} námořních mil od stanoviště radaru')
+        _kml_element(pm, 'description', f'{nm} nautical miles from radar site')
         style = _kml_element(pm, 'Style')
         line_style = _kml_element(style, 'LineStyle')
         _kml_element(line_style, 'color', 'ffb89884')
@@ -356,11 +356,11 @@ def export_kml(result, levels):
     from matplotlib.colors import to_hex
     root = ET.Element('{' + KML_NS + '}kml')
     doc = _kml_element(root, 'Document')
-    _kml_element(doc, 'name', 'COVERAGEDIAGRAMS · všechny vrstvy')
+    _kml_element(doc, 'name', 'COVERAGEDIAGRAMS · All layers')
     _kml_element(doc, 'description',
-                 'Polygonové krytí WGS84, přepínatelné hladiny; vodorovné plochy, ne 3D objemy.')
+                 'WGS84 coverage polygons and selectable altitude layers; horizontal footprints, not 3D volumes.')
     for flight_level in [None] + list(dict.fromkeys(levels)):
-        label = 'Krytí cíle' if flight_level is None else core.level_label(flight_level)
+        label = 'Target coverage' if flight_level is None else core.level_label(flight_level)
         folder = _kml_element(doc, 'Folder')
         _kml_element(folder, 'name', label)
         color = '#22d3c5' if flight_level is None else to_hex(core.level_color(flight_level))
@@ -372,12 +372,12 @@ def export_kml(result, levels):
             _kml_geometry(pm, feature['geometry'])
     if result.get('obstacles'):
         folder = _kml_element(doc, 'Folder')
-        _kml_element(folder, 'name', 'Překážky')
+        _kml_element(folder, 'name', 'Obstacles')
         c = result['config']
         for i, o in enumerate(result['obstacles'], 1):
             pm = _kml_element(folder, 'Placemark')
-            _kml_element(pm, 'name', o.get('name') or f'Překážka {i}')
-            _kml_element(pm, 'description', f'{o["height_m"]:g} m AGL · půdorys překážky')
+            _kml_element(pm, 'name', o.get('name') or f'Obstacle {i}')
+            _kml_element(pm, 'description', f'{o["height_m"]:g} m AGL · obstacle footprint')
             _kml_style(pm, '#ff7043', 'bb')
             latlon = obstacle_polygon(o, c.lat, c.lon)
             ring = [[lon, lat] for lat, lon in latlon]
@@ -409,15 +409,15 @@ def export_quickreport(result, *, flight_levels=None):
         'completed_at': result.get('completed_at'),
         'image_dpi': 600,
         'flight_levels_ft_amsl': list(requested),
-        'terrain': '01_Teren/terrain_600dpi.png',
-        'antenna_diagram': '02_Vyzarovaci_diagram/antenna_diagram_600dpi.png',
-        'flight_level_directory': '03_Letove_hladiny/',
+        'terrain': '01_Terrain/terrain_600dpi.png',
+        'antenna_diagram': '02_Antenna_Pattern/antenna_diagram_600dpi.png',
+        'flight_level_directory': '03_Flight_Levels/',
         'coverage_kml': '04_KML/coverage_all_layers.kml',
         'range_rings_kml': '04_KML/radar_range_rings_20NM.kml',
-        'esri_png_directory': '05_ESRI_Mapy/',
+        'esri_png_directory': '05_ESRI_Maps/',
         'esri_provider': 'Esri · Topographic (legacy)',
         'esri_center': [float(c.lat), float(c.lon)],
-        'note': 'Vypočtené geometrické krytí; rozlišení zdrojového DEM se zvýšením DPI nemění.',
+        'note': 'Calculated geometric coverage; higher print DPI does not increase source DEM resolution.',
     }
     with tempfile.TemporaryDirectory(prefix='radar_quickreport_') as directory:
         root = Path(directory)
@@ -425,13 +425,13 @@ def export_quickreport(result, *, flight_levels=None):
         # PNG files are already compressed. Store entries directly without further CPU-heavy ZIP deflation.
         archive_bytes = BytesIO()
         with ZipFile(archive_bytes, 'w', compression=ZIP_STORED, allowZip64=True) as archive:
-            core.export_map_image(png, result, 'Terén', dpi=600, alpha=1.0)
+            core.export_map_image(png, result, 'Terén', dpi=600, alpha=1.0, english=True)
             archive.write(png, manifest['terrain'])
 
             fig = Figure(figsize=(13, 9), dpi=600, facecolor=core.PLOT_BG)
             FigureCanvasAgg(fig)
             try:
-                core.technical_plot(fig, result=result)
+                core.technical_plot(fig, result=result, english=True)
                 fig.text(.07, .975, 'ELDIS · ANTENNA DIAGRAM',
                          color=core.UI_TEXT, fontsize=18, weight='bold', va='top')
                 fig.savefig(png, dpi=600, format='png', facecolor=fig.get_facecolor())
@@ -442,8 +442,8 @@ def export_quickreport(result, *, flight_levels=None):
             for level in requested:
                 # One altitude per page keeps the established print layout and readable legend.
                 core.export_map_image(png, result, 'Vybrané výšky',
-                                      levels_ft=(level,), alpha=0.74, dpi=600)
-                archive.write(png, f'03_Letove_hladiny/{int(level):05d}ft_AMSL_600dpi.png')
+                                      levels_ft=(level,), alpha=0.74, dpi=600, english=True)
+                archive.write(png, f'03_Flight_Levels/{int(level):05d}ft_AMSL_600dpi.png')
             # Load the Esri tiles only once, then reuse the identical radar-centered
             # AEQD extent for every altitude. Both axes span +/- radar range.
             esri = core.load_basemap(c, provider=manifest['esri_provider'],
@@ -451,8 +451,8 @@ def export_quickreport(result, *, flight_levels=None):
             for level in requested:
                 core.export_map_image(png, result, 'Vybrané výšky',
                                       basemap=esri, levels_ft=(level,),
-                                      alpha=0.52, dpi=600)
-                archive.write(png, f"05_ESRI_Mapy/{int(level):05d}ft_AMSL_ESRI_600dpi.png")
+                                      alpha=0.52, dpi=600, english=True)
+                archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI_600dpi.png")
 
             # Include toggleable polygons for the same altitude slices as the PNG report.
             archive.writestr(manifest['coverage_kml'], export_kml(result, requested))
@@ -463,14 +463,14 @@ def export_quickreport(result, *, flight_levels=None):
                 'README.txt',
                 'COVERAGEDIAGRAMS / QuickReport\\n'
                 f'Radar: {c.radar_mode}\\n'
-                '01_Teren: terénní model\\n'
-                '02_Vyzarovaci_diagram: diagram antény a technická obálka\\n'
-                f'03_Letove_hladiny: {len(requested)} jednotlivých hladin ft AMSL\\n'
-                '04_KML: krytí, překážky a dosahové kružnice po 20 NM do 260 NM\\n'
-                '05_ESRI_Mapy: každá hladina zvlášť, Esri Topographic, radar v (0, 0), 600 DPI\\n'
-                'Mapové podklady jsou staženy při exportu; vyžadují dostupnou službu Esri.\\n'
-                'Každá grafika 600 DPI; obrázky nejsou mapová ortofota.\\n'
-                'Vyšší tiskové DPI nezvyšuje přesnost zdrojových dat DEM.\\n'
+                '01_Terrain: terrain elevation model\\n'
+                '02_Antenna_Pattern: antenna pattern and coverage envelope\\n'
+                f'03_Flight_Levels: {len(requested)} individual altitude slices in ft AMSL\\n'
+                '04_KML: coverage, obstacles, and 20 NM range rings up to 260 NM\\n'
+                '05_ESRI_Maps: one map per altitude, Esri Topographic, radar at (0, 0), 600 DPI\\n'
+                'Basemap tiles are downloaded during export; Esri service availability is required.\\n'
+                'All images are 600 DPI; they are not map orthophotos.\\n'
+                'Higher print DPI does not improve the accuracy of source DEM data.\\n'
             )
         return archive_bytes.getvalue()
 
