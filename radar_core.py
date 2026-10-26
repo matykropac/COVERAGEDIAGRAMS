@@ -323,6 +323,18 @@ class AntennaPatternPair:
         high_factor = np.power(10.0, (low_db + high_abs_db) / 40.0)
         return low_factor, high_factor
 
+    def gain_db(self, elevation_rad, tilt_deg=0.0, mode='COMBINED'):
+        """Effective monostatic-equivalent gain for generic plots/exports.
+
+        A dual-beam pair has no single physical gain: LOW is Tx/Rx,
+        HIGH is Rx-only. Convert the selected channel's two-way
+        range factor to the equivalent normalized one-way gain (dB).
+        This preserves the LOW/HIGH link budget and avoids treating
+        the HIGH receive beam as an independent transmitter.
+        """
+        factor = self.range_factor(elevation_rad, tilt_deg, mode)
+        return 20.0 * np.log10(np.maximum(factor, 1e-20))
+
     def range_factor(self, elevation_rad, tilt_deg=0.0, mode='COMBINED'):
         low_factor, high_factor = self.range_factors(elevation_rad, tilt_deg)
         if mode == 'LOW':
