@@ -1715,7 +1715,7 @@ def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None, e
                     xlim=(0, c.range_km), ylim=(0, 70000))
     envelope_ax.grid(alpha=0.2)
     if pair:
-        model_note = ('RL-2000 dual beam: LOW Tx/Rx + HIGH Rx-only · '
+        model_note = ('RL-2000 dual beam: LOW Tx/Rx + HIGH Rx-only · ' +
                       (f'calculation {c.beam_mode}' if english else f'výpočet {c.beam_mode}'))
     elif isinstance(pattern, GenericSSRPattern):
         model_note = ('Generic SSR · 1030/1090 MHz · 256 NM limit\nIdealized assumptions; no multipath / Pd' if english else 'Obecný SSR · 1030/1090 MHz · limit 256 NM\nIdealizované předpoklady; bez multipath / Pd')
