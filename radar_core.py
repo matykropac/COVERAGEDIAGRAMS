@@ -1230,6 +1230,27 @@ BASEMAP_PROVIDERS['Satelitní · Esri'] = {
 }
 
 
+# Esri raster MapServer basemaps usable with Folium/Leaflet.
+# Legacy services are optional and may be retired by Esri.
+_ESRI_RASTER = {
+    'Esri · Topographic (legacy)': ('World_Topo_Map', 19),
+    'Esri · Streets (legacy)': ('World_Street_Map', 19),
+    'Esri · Terrain (legacy)': ('World_Terrain_Base', 13),
+    'Esri · Shaded Relief': ('World_Shaded_Relief', 13),
+    'Esri · Physical': ('World_Physical_Map', 8),
+    'Esri · Ocean': ('Ocean/World_Ocean_Base', 16),
+    'Esri · Hillshade': ('Elevation/World_Hillshade', 16),
+}
+for _label, (_service, _zoom) in _ESRI_RASTER.items():
+    BASEMAP_PROVIDERS[_label] = {
+        'cache': 'esri_' + _service.replace('/', '_').lower(),
+        'url': ('https://services.arcgisonline.com/ArcGIS/rest/services/'
+                + _service + '/MapServer/tile/{z}/{y}/{x}'),
+        'max_zoom': _zoom,
+        'attribution': 'Tiles © Esri and its data providers',
+    }
+
+
 BASEMAP_OPTIONS = (*BASEMAP_PROVIDERS, 'Bez podkladu')
 
 
