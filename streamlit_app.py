@@ -158,7 +158,7 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
     for name, provider in core.BASEMAP_PROVIDERS.items():
         folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                          max_zoom=provider['max_zoom'], overlay=False,
-                         show=name == 'CARTO Voyager').add_to(map_view)
+                         show=name == 'Esri · Topographic (legacy)').add_to(map_view)
     folium.Marker(
         [initial_lat, initial_lon], tooltip='Aktuální stanoviště',
         icon=folium.Icon(color='orange', icon='signal')
@@ -513,7 +513,7 @@ else:
                            zoom_animation=False, fade_animation=False, marker_zoom_animation=False)
             for name, provider in core.BASEMAP_PROVIDERS.items():
                 folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
-                                 max_zoom=provider['max_zoom'], overlay=False, show=name=='CARTO Voyager').add_to(m)
+                                 max_zoom=provider['max_zoom'], overlay=False, show=name=='Esri · Topographic (legacy)').add_to(m)
             # Session-local contours: changes to opacity never repeat the coverage calculation.
             for ft in ([None] if show_target else []) + active:
                 if ft not in st.session_state.geometry:
