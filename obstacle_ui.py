@@ -56,7 +56,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
         for name, provider in core.BASEMAP_PROVIDERS.items():
             folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                              max_zoom=provider['max_zoom'], overlay=False,
-                             show=name == 'CARTO Voyager').add_to(om)
+                             show=name == 'Esri · Topographic (legacy)').add_to(om)
         if show_wind and wind_data:
             add_wind_layer(om, wind_data, cluster_points=False)
         folium.Marker([radar_lat, radar_lon], tooltip='Radar',
