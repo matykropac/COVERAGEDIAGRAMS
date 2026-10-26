@@ -378,6 +378,9 @@ def export_quickreport(result, *, flight_levels=None):
         'antenna_diagram': '02_Vyzarovaci_diagram/antenna_diagram_600dpi.png',
         'flight_level_directory': '03_Letove_hladiny/',
         'coverage_kml': '04_KML/coverage_all_layers.kml',
+        'esri_png_directory': '05_ESRI_Mapy/',
+        'esri_provider': 'Esri · Topographic (legacy)',
+        'esri_center': [float(c.lat), float(c.lon)],
         'note': 'Vypočtené geometrické krytí; rozlišení zdrojového DEM se zvýšením DPI nemění.',
     }
     with tempfile.TemporaryDirectory(prefix='radar_quickreport_') as directory:
@@ -405,6 +408,16 @@ def export_quickreport(result, *, flight_levels=None):
                 core.export_map_image(png, result, 'Vybrané výšky',
                                       levels_ft=(level,), alpha=0.74, dpi=600)
                 archive.write(png, f'03_Letove_hladiny/{int(level):05d}ft_AMSL_600dpi.png')
+            # Load the Esri tiles only once, then reuse the identical radar-centered
+            # AEQD extent for every altitude. Both axes span +/- radar range.
+            esri = core.load_basemap(c, provider=manifest['esri_provider'],
+                                     out_size=(1600, 1600))
+            for level in requested:
+                core.export_map_image(png, result, 'Vybrané výšky',
+                                      basemap=esri, levels_ft=(level,),
+                                      alpha=0.52, dpi=600)
+                archive.write(png, f"05_ESRI_Mapy/{int(level):05d}ft_AMSL_ESRI_600dpi.png")
+
             # Include toggleable polygons for the same altitude slices as the PNG report.
             archive.writestr(manifest['coverage_kml'], export_kml(result, requested))
             archive.writestr('report_manifest.json',
@@ -417,6 +430,8 @@ def export_quickreport(result, *, flight_levels=None):
                 '02_Vyzarovaci_diagram: diagram antény a technická obálka\\n'
                 f'03_Letove_hladiny: {len(requested)} jednotlivých hladin ft AMSL\\n'
                 '04_KML: polygonové krytí všech reportovaných hladin a překážek\\n'
+                '05_ESRI_Mapy: každá hladina zvlášť, Esri Topographic, radar v (0, 0), 600 DPI\\n'
+                'Mapové podklady jsou staženy při exportu; vyžadují dostupnou službu Esri.\\n'
                 'Každá grafika 600 DPI; obrázky nejsou mapová ortofota.\\n'
                 'Vyšší tiskové DPI nezvyšuje přesnost zdrojových dat DEM.\\n'
             )
