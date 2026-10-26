@@ -1435,7 +1435,7 @@ def level_color(ft):
 
 
 def map_plot(fig, result, mode='Krytí cíle', basemap=None, levels_ft=(), alpha=0.42,
-             level_alphas=None):
+             level_alphas=None, english=False):
     from matplotlib.lines import Line2D
     fig.clear()
     ax = fig.add_subplot(111)
@@ -1486,20 +1486,20 @@ def map_plot(fig, result, mode='Krytí cíle', basemap=None, levels_ft=(), alpha
                 ax.contour(xc, yc, np.ma.masked_invalid(padded), levels=[0.5],
                            colors=[level_color(ft)], linewidths=1.4, zorder=4)
             if len(handles) < 7:
-                label = level_label(ft) + ('' if has_coverage else ' — bez krytí')
+                label = level_label(ft) + ('' if has_coverage else (' — no coverage' if english else ' — bez krytí'))
                 handles.append(Line2D([0], [0], color=level_color(ft), lw=2, label=label))
         if len(levels_ft) > 7:
-            handles.append(Line2D([], [], color='none', label=f'+ {len(levels_ft)-7} vrstev; barvy v seznamu'))
+            handles.append(Line2D([], [], color='none', label=(f'+ {len(levels_ft)-7} layers; see legend' if english else f'+ {len(levels_ft)-7} vrstev; barvy v seznamu')))
         style_legend(ax.legend(handles=handles, fontsize=7, loc='upper left', framealpha=0.9))
-        title = f'Výškové řezy · {len(levels_ft)} vybraných · nominální ISA'
+        title = (f'Altitude coverage · {len(levels_ft)} levels · nominal ISA' if english else f'Výškové řezy · {len(levels_ft)} vybraných · nominální ISA')
     elif mode == 'Vybrané výšky':
-        title = 'Zaškrtni hladiny v legendě pod mapou'
+        title = 'Select flight levels in the map legend' if english else 'Zaškrtni hladiny v legendě pod mapou'
     elif mode == 'Krytí cíle':
         cmap = ListedColormap([(0.4, 0.4, 0.4, 0.15), '#12a88a'])
         cmap.set_bad('#555e6c')
         ax.pcolormesh(x, y, np.ma.masked_invalid(result['status']), cmap=cmap,
                       norm=BoundaryNorm([-0.5, 0.5, 1.5], 2), alpha=alpha, shading='flat', rasterized=True)
-        title = f'Cíl {c.target_m:g} m {c.reference} · zelená = krytí'
+        title = (f'Target {c.target_m:g} m {c.reference} · green = covered' if english else f'Cíl {c.target_m:g} m {c.reference} · zelená = krytí')
     else:
         data = result['lower'] if mode == 'Spodní hranice' else result['terrain']
         cmap = __import__('matplotlib').colormaps['viridis' if mode == 'Spodní hranice' else 'terrain'].copy()
@@ -1507,18 +1507,18 @@ def map_plot(fig, result, mode='Krytí cíle', basemap=None, levels_ft=(), alpha
         mesh = ax.pcolormesh(x, y, np.ma.masked_invalid(data), cmap=cmap, alpha=max(0.25, alpha),
                              shading='flat', rasterized=True)
         fig.colorbar(mesh, ax=ax, pad=0.025, shrink=0.7, label='m AMSL')
-        title = 'Spodní hranice krytí' if mode == 'Spodní hranice' else 'Vzorkovaný výškový model'
+        title = ('Lower coverage boundary' if mode == 'Spodní hranice' else 'Sampled terrain elevation') if english else ('Spodní hranice krytí' if mode == 'Spodní hranice' else 'Vzorkovaný výškový model')
     if sector:
         outline = np.deg2rad(np.linspace(c.bearing_deg-15, c.bearing_deg+15, 161))
         ax.plot(np.r_[0, np.sin(outline)*40, 0], np.r_[0, np.cos(outline)*40, 0],
                 color=UI_MUTED, linestyle='--', linewidth=0.8, zorder=5)
         title += f' · PAR-NG {c.bearing_deg:g}° ±15° / 40 km'
     ax.scatter([0], [0], marker='+', s=140, c=UI_TARGET, linewidths=2, zorder=5)
-    ax.set(xlabel='Východ [km]', ylabel='Sever [km]', title=title, aspect='equal',
+    ax.set(xlabel='East [km]' if english else 'Východ [km]', ylabel='North [km]' if english else 'Sever [km]', title=title, aspect='equal',
            xlim=(-c.range_km, c.range_km), ylim=(-c.range_km, c.range_km))
     ax.grid(alpha=0.15)
     if result.get('source') == 'SYNTHETIC DEMO':
-        ax.text(0.5, 0.98, 'SYNTETICKÝ TERÉN — NE SKUTEČNÉ KRYTÍ', transform=ax.transAxes,
+        ax.text(0.5, 0.98, 'SYNTHETIC TERRAIN — NOT ACTUAL COVERAGE' if english else 'SYNTETICKÝ TERÉN — NE SKUTEČNÉ KRYTÍ', transform=ax.transAxes,
                 ha='center', va='top', fontsize=8, color='#a32020',
                 bbox=dict(facecolor=UI_PANEL, alpha=0.92, edgecolor=UI_BORDER))
     style_plot_axis(ax)
@@ -1569,7 +1569,7 @@ def point_detail(result, x_km, y_km, levels_ft=()):
 
 
 def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
-                     level_alphas=None, limits=None, dpi=300):
+                     level_alphas=None, limits=None, dpi=300, english=False):
     """Render a fresh print-size figure, not a screen capture."""
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.lines import Line2D
@@ -1578,7 +1578,7 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
     fig = Figure(figsize=(13, 9), dpi=dpi, facecolor=PLOT_BG)
     FigureCanvasAgg(fig)
     try:
-        ax = map_plot(fig, result, mode, basemap, levels_ft, alpha, level_alphas)
+        ax = map_plot(fig, result, mode, basemap, levels_ft, alpha, level_alphas, english=english)
         if limits is not None:
             ax.set_xlim(limits[0])
             ax.set_ylim(limits[1])
@@ -1589,35 +1589,35 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
         if mode == 'Vybrané výšky':
             handles = [Line2D([], [], color=level_color(ft), lw=3, label=level_label(ft)) for ft in levels_ft]
         elif mode == 'Krytí cíle':
-            handles = [Line2D([], [], color='#12a88a', lw=5, label='Geometrické krytí'),
-                       Line2D([], [], color='#777777', lw=5, label='Neznámá data')]
+            handles = [Line2D([], [], color='#12a88a', lw=5, label='Geometric coverage' if english else 'Geometrické krytí'),
+                       Line2D([], [], color='#777777', lw=5, label='Unknown data' if english else 'Neznámá data')]
         if handles:
             legend = fig.legend(handles=handles, loc='upper left',
-                                bbox_to_anchor=(0.77, 0.88), fontsize=9, title='Legenda')
+                                bbox_to_anchor=(0.77, 0.88), fontsize=9, title='Legend' if english else 'Legenda')
             style_legend(legend)
             legend.get_title().set_color(UI_TEXT)
         c = result['config']
         fig.text(0.075, 0.955, 'ELDIS · RADAR COVERAGE', color=UI_TEXT, fontsize=18, weight='bold')
         fig.text(0.075, 0.105,
-                 f'Radar: {c.lat:.6f}°, {c.lon:.6f}°  |  Anténa: {c.antenna_agl:g} m AGL  |  Dosah: {c.range_km:g} km\n'
-                 f'k = {c.k:.3f}  |  Elevace: {c.min_elev:g}–{c.max_elev:g}°  |  Tilt: {c.antenna_tilt_deg:g}°  |  '
-                 f'Síť: {c.step_m:g} m / {actual_azimuth_step(result):g}°\n'
-                 f'Geometrický model · výškové řezy AMSL · {dpi} DPI · 330 × 229 mm',
+                 f'Radar: {c.lat:.6f}°, {c.lon:.6f}°  |  Antenna: {c.antenna_agl:g} m AGL  |  Range: {c.range_km:g} km\n' if english else f'Radar: {c.lat:.6f}°, {c.lon:.6f}°  |  Anténa: {c.antenna_agl:g} m AGL  |  Dosah: {c.range_km:g} km\n'
+                 f'k = {c.k:.3f}  |  Elevation: {c.min_elev:g}–{c.max_elev:g}°  |  Tilt: {c.antenna_tilt_deg:g}°  |  ' if english else f'k = {c.k:.3f}  |  Elevace: {c.min_elev:g}–{c.max_elev:g}°  |  Tilt: {c.antenna_tilt_deg:g}°  |  '
+                 f'Grid: {c.step_m:g} m / {actual_azimuth_step(result):g}°\n' if english else f'Síť: {c.step_m:g} m / {actual_azimuth_step(result):g}°\n'
+                 (f'Geometric model · AMSL altitude slices · {dpi} DPI · 330 × 229 mm' if english else f'Geometrický model · výškové řezy AMSL · {dpi} DPI · 330 × 229 mm'),
                  color=UI_TEXT, fontsize=9, linespacing=1.6)
-        fig.text(0.075, 0.035, 'Rozlišení terénu a mapového podkladu odpovídá zdrojovým datům.',
+        fig.text(0.075, 0.035, 'Terrain and basemap resolution reflect the original source data.' if english else 'Rozlišení terénu a mapového podkladu odpovídá zdrojovým datům.',
                  color=UI_MUTED, fontsize=8)
         fig.savefig(path, dpi=dpi, format='png', facecolor=fig.get_facecolor())
     finally:
         fig.clear()
 
 
-def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None):
+def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None, english=False):
     e = np.linspace(np.deg2rad(c.min_elev), np.deg2rad(c.max_elev), 600)
     pair = isinstance(pattern, AntennaPatternPair)
 
     if pair:
         low_db, high_db = pattern.channel_gain_db(e, c.antenna_tilt_deg)
-        diagram_title = f'Dual beam · {pattern.name}'
+        diagram_title = f('Dual beam · {pattern.name}' if english else 'Dual beam · {pattern.name}')
         detail = (f'mode = {c.beam_mode} · tilt = {c.antenna_tilt_deg:+g}° · '
                   f'L_ref LOW = {c.csc_range_km:g} km\n'
                   f'LOW {pattern.low_peak_dbi:g} dBi Tx/Rx · HIGH {pattern.high_peak_dbi:g} dBi Rx-only')
@@ -1628,7 +1628,7 @@ def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None):
                             high_db[np.isfinite(high_db) & (high_db > -199)]]
     elif pattern is None:
         gain_db = 10 * np.log10(csc_gain(e, c))
-        diagram_title = 'Idealizovaný diagram · csc²'
+        diagram_title = ('Idealized pattern · csc²' if english else 'Idealizovaný diagram · csc²')
         detail = f'e_ref = {c.csc_ref_deg:g}° · L_ref = {c.csc_range_km:g} km'
         gain_ax.axvline(c.csc_ref_deg + c.antenna_tilt_deg,
                         color=UI_MUTED, ls='--', lw=1)
@@ -1641,13 +1641,13 @@ def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None):
         gain_ax.plot(np.rad2deg(e), gain_db, color=UI_ACCENT, lw=2)
         finite_gain = gain_db[np.isfinite(gain_db) & (gain_db > -199)]
 
-    gain_ax.set(title=diagram_title, xlabel='Elevace [°]',
-                ylabel='Normalizovaný zisk [dB]')
+    gain_ax.set(title=diagram_title, xlabel=('Elevation [°]' if english else 'Elevace [°]'),
+                ylabel=('Normalized gain [dB]' if english else 'Normalizovaný zisk [dB]'))
     gain_ax.grid(alpha=0.2)
     if finite_gain.size:
         gain_ax.set_ylim(max(-60, float(np.min(finite_gain)) - 3), 3)
     gain_ax.text(0.03, 0.04, detail + '\n'
-                 + ('DIAGRAM VE VÝPOČTU' if c.csc_enabled else 'POUZE NÁHLED'),
+                 + (('PATTERN USED IN CALCULATION' if english else 'DIAGRAM VE VÝPOČTU') if c.csc_enabled else ('PREVIEW ONLY' if english else 'POUZE NÁHLED')),
                  transform=gain_ax.transAxes, fontsize=8,
                  color=UI_TEXT,
                  bbox=dict(facecolor=UI_PANEL, edgecolor=UI_BORDER, alpha=0.9))
@@ -1703,20 +1703,20 @@ def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None):
                 j = visible_ray[-1]
                 envelope_ax.text(distance[j]/1000, ray[j], f'{angle}°', fontsize=6, color=UI_MUTED,
                                  ha='right', va='bottom')
-    envelope_ax.set(title=('SSR · Blakeův diagram · bez terénu' if isinstance(pattern, GenericSSRPattern)
-                           else 'Použitá anténní obálka bez terénu'),
-                    xlabel='Povrchová vzdálenost [km]', ylabel='Výška [ft AMSL]',
+    envelope_ax.set(title=(('SSR · Blake diagram · without terrain' if english else 'SSR · Blakeův diagram · bez terénu') if isinstance(pattern, GenericSSRPattern)
+                           else ('Antenna coverage envelope without terrain' if english else 'Použitá anténní obálka bez terénu')),
+                    xlabel=('Ground distance [km]' if english else 'Povrchová vzdálenost [km]'), ylabel=('Altitude [ft AMSL]' if english else 'Výška [ft AMSL]'),
                     xlim=(0, c.range_km), ylim=(0, 70000))
     envelope_ax.grid(alpha=0.2)
     if pair:
         model_note = ('RL-2000 dual beam: LOW Tx/Rx + HIGH Rx-only · '
-                      f'výpočet {c.beam_mode}')
+                      f('calculation {c.beam_mode}' if english else 'výpočet {c.beam_mode}'))
     elif isinstance(pattern, GenericSSRPattern):
-        model_note = 'Obecný SSR · 1030/1090 MHz · limit 256 NM\nIdealizované předpoklady; bez multipath / Pd'
+        model_note = ('Generic SSR · 1030/1090 MHz · 256 NM limit\nIdealized assumptions; no multipath / Pd' if english else 'Obecný SSR · 1030/1090 MHz · limit 256 NM\nIdealizované předpoklady; bez multipath / Pd')
     elif pattern is not None:
-        model_note = 'Načtený single-beam diagram · maximum 0 dB'
+        model_note = ('Imported single-beam pattern · 0 dB peak' if english else 'Načtený single-beam diagram · maximum 0 dB')
     else:
-        model_note = 'Idealizovaný single-beam csc² model'
+        model_note = ('Idealized single-beam csc² model' if english else 'Idealizovaný single-beam csc² model')
     envelope_ax.text(0.02, 0.97, model_note, va='top', transform=envelope_ax.transAxes,
                      color=UI_TEXT, fontsize=7,
                      bbox=dict(facecolor=UI_PANEL, edgecolor=UI_BORDER, alpha=0.88))
@@ -1725,7 +1725,7 @@ def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None):
     style_legend(gain_ax.get_legend())
 
 
-def technical_plot(fig, result=None, levels_ft=(), config=None, pattern=None):
+def technical_plot(fig, result=None, levels_ft=(), config=None, pattern=None, english=False):
     """Samostatný technický panel: diagram antény a použitá obálka."""
     fig.clear()
     layout = fig.add_gridspec(2, 1, hspace=0.62)
@@ -1739,7 +1739,7 @@ def technical_plot(fig, result=None, levels_ft=(), config=None, pattern=None):
         antenna = result['antenna']
         pattern = result.get('antenna_pattern')
     antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft,
-                 pattern)
+                 pattern, english=english)
     for ax in (gain_ax, envelope_ax):
         ax.tick_params(labelsize=7)
         ax.title.set_fontsize(10)
