@@ -230,7 +230,7 @@ def simulation_tab(result, levels):
         if result is None:
             st.info("Nejprve spusť výpočet v NASTAVENÍ.")
             return
-        options = list(levels)
+        options = list(core.flight_levels_for(result['config'].radar_mode))
         if not options:
             st.info("Nejprve vyber letové hladiny v NASTAVENÍ.")
             return
