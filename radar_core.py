@@ -1598,12 +1598,18 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
             legend.get_title().set_color(UI_TEXT)
         c = result['config']
         fig.text(0.075, 0.955, 'ELDIS · RADAR COVERAGE', color=UI_TEXT, fontsize=18, weight='bold')
-        fig.text(0.075, 0.105,
-                 f'Radar: {c.lat:.6f}°, {c.lon:.6f}°  |  Antenna: {c.antenna_agl:g} m AGL  |  Range: {c.range_km:g} km\n' if english else f'Radar: {c.lat:.6f}°, {c.lon:.6f}°  |  Anténa: {c.antenna_agl:g} m AGL  |  Dosah: {c.range_km:g} km\n'
-                 f'k = {c.k:.3f}  |  Elevation: {c.min_elev:g}–{c.max_elev:g}°  |  Tilt: {c.antenna_tilt_deg:g}°  |  ' if english else f'k = {c.k:.3f}  |  Elevace: {c.min_elev:g}–{c.max_elev:g}°  |  Tilt: {c.antenna_tilt_deg:g}°  |  '
-                 f'Grid: {c.step_m:g} m / {actual_azimuth_step(result):g}°\n' if english else f'Síť: {c.step_m:g} m / {actual_azimuth_step(result):g}°\n'
-                 (f'Geometric model · AMSL altitude slices · {dpi} DPI · 330 × 229 mm' if english else f'Geometrický model · výškové řezy AMSL · {dpi} DPI · 330 × 229 mm'),
-                 color=UI_TEXT, fontsize=9, linespacing=1.6)
+        footer = (
+            f'Radar: {c.lat:.6f}°, {c.lon:.6f}°  |  '
+            f'{"Antenna" if english else "Anténa"}: {c.antenna_agl:g} m AGL  |  '
+            f'{"Range" if english else "Dosah"}: {c.range_km:g} km\n'
+            f'k = {c.k:.3f}  |  '
+            f'{"Elevation" if english else "Elevace"}: {c.min_elev:g}–{c.max_elev:g}°  |  '
+            f'Tilt: {c.antenna_tilt_deg:g}°  |  '
+            f'{"Grid" if english else "Síť"}: {c.step_m:g} m / {actual_azimuth_step(result):g}°\n'
+            + (f'Geometric model · AMSL altitude slices · {dpi} DPI · 330 × 229 mm'
+               if english else f'Geometrický model · výškové řezy AMSL · {dpi} DPI · 330 × 229 mm')
+        )
+        fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)
         fig.text(0.075, 0.035, 'Terrain and basemap resolution reflect the original source data.' if english else 'Rozlišení terénu a mapového podkladu odpovídá zdrojovým datům.',
                  color=UI_MUTED, fontsize=8)
         fig.savefig(path, dpi=dpi, format='png', facecolor=fig.get_facecolor())
