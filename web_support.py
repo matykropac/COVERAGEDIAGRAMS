@@ -321,6 +321,36 @@ def _kml_style(parent, color, opacity='88'):
     _kml_element(poly, 'color', opacity + color[5:7] + color[3:5] + color[1:3])
 
 
+def export_range_rings_kml(result):
+    """Geodesic 20–260 NM radar-centered range rings, as KML LineStrings."""
+    c = result['config']
+    geod = Geod(ellps='WGS84')
+    root = ET.Element('{' + KML_NS + '}kml')
+    doc = _kml_element(root, 'Document')
+    _kml_element(doc, 'name', 'Radar · kružnice 20–260 NM')
+    folder = _kml_element(doc, 'Folder')
+    _kml_element(folder, 'name', 'Dosahové kružnice · 20 NM')
+    for nm in range(20, 261, 20):
+        pm = _kml_element(folder, 'Placemark')
+        _kml_element(pm, 'name', f'{nm} NM')
+        _kml_element(pm, 'description', f'{nm} námořních mil od stanoviště radaru')
+        style = _kml_element(pm, 'Style')
+        line_style = _kml_element(style, 'LineStyle')
+        _kml_element(line_style, 'color', 'ffb89884')
+        _kml_element(line_style, 'width', '1.5')
+        line = _kml_element(pm, 'LineString')
+        _kml_element(line, 'tessellate', '1')
+        _kml_element(line, 'altitudeMode', 'clampToGround')
+        bearings = np.linspace(0.0, 360.0, 361)
+        lon, lat, _ = geod.fwd(
+            np.full(bearings.shape, float(c.lon)),
+            np.full(bearings.shape, float(c.lat)),
+            bearings, np.full(bearings.shape, nm * 1852.0))
+        _kml_element(line, 'coordinates',
+                     ' '.join(f'{x:.8f},{y:.8f},0' for x, y in zip(lon, lat)))
+    return ET.tostring(root, encoding='utf-8', xml_declaration=True)
+
+
 def export_kml(result, levels):
     """One KML file: separate polygon folders for target + every requested FL + obstacles."""
     from matplotlib.colors import to_hex
@@ -352,6 +382,11 @@ def export_kml(result, levels):
             latlon = obstacle_polygon(o, c.lat, c.lon)
             ring = [[lon, lat] for lat, lon in latlon]
             _kml_polygon(pm, [ring])
+    # Embed the same rings in the standalone all-layers KML as a toggleable folder.
+    rings_root = ET.fromstring(export_range_rings_kml(result))
+    rings_folder = rings_root.find('{' + KML_NS + '}Document/{' + KML_NS + '}Folder')
+    if rings_folder is not None:
+        doc.append(rings_folder)
     return ET.tostring(root, encoding='utf-8', xml_declaration=True)
 
 
@@ -378,6 +413,7 @@ def export_quickreport(result, *, flight_levels=None):
         'antenna_diagram': '02_Vyzarovaci_diagram/antenna_diagram_600dpi.png',
         'flight_level_directory': '03_Letove_hladiny/',
         'coverage_kml': '04_KML/coverage_all_layers.kml',
+        'range_rings_kml': '04_KML/radar_range_rings_20NM.kml',
         'esri_png_directory': '05_ESRI_Mapy/',
         'esri_provider': 'Esri · Topographic (legacy)',
         'esri_center': [float(c.lat), float(c.lon)],
@@ -420,6 +456,7 @@ def export_quickreport(result, *, flight_levels=None):
 
             # Include toggleable polygons for the same altitude slices as the PNG report.
             archive.writestr(manifest['coverage_kml'], export_kml(result, requested))
+            archive.writestr(manifest['range_rings_kml'], export_range_rings_kml(result))
             archive.writestr('report_manifest.json',
                              json.dumps(manifest, ensure_ascii=False, indent=2))
             archive.writestr(
@@ -429,7 +466,7 @@ def export_quickreport(result, *, flight_levels=None):
                 '01_Teren: terénní model\\n'
                 '02_Vyzarovaci_diagram: diagram antény a technická obálka\\n'
                 f'03_Letove_hladiny: {len(requested)} jednotlivých hladin ft AMSL\\n'
-                '04_KML: polygonové krytí všech reportovaných hladin a překážek\\n'
+                '04_KML: krytí, překážky a dosahové kružnice po 20 NM do 260 NM\\n'
                 '05_ESRI_Mapy: každá hladina zvlášť, Esri Topographic, radar v (0, 0), 600 DPI\\n'
                 'Mapové podklady jsou staženy při exportu; vyžadují dostupnou službu Esri.\\n'
                 'Každá grafika 600 DPI; obrázky nejsou mapová ortofota.\\n'
