@@ -13,7 +13,8 @@ GEOD = Geod(ellps="WGS84")
 
 def open_display(result, level_ft, provider, traffic=None):
     c = result["config"]
-    m = folium.Map(location=[c.lat,c.lon], zoom_start=7, tiles="OpenStreetMap",
+    m = folium.Map(location=[c.lat,c.lon], zoom_start=7, tiles="https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+                   attr="© OpenStreetMap contributors · © CARTO",
                    control_scale=True, prefer_canvas=True)
     geo = coverage_geojson(result, level_ft)
     if geo.get("features"):
