@@ -1623,7 +1623,7 @@ def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None, e
 
     if pair:
         low_db, high_db = pattern.channel_gain_db(e, c.antenna_tilt_deg)
-        diagram_title = f('Dual beam · {pattern.name}' if english else 'Dual beam · {pattern.name}')
+        diagram_title = f'Dual beam · {pattern.name}'
         detail = (f'mode = {c.beam_mode} · tilt = {c.antenna_tilt_deg:+g}° · '
                   f'L_ref LOW = {c.csc_range_km:g} km\n'
                   f'LOW {pattern.low_peak_dbi:g} dBi Tx/Rx · HIGH {pattern.high_peak_dbi:g} dBi Rx-only')
@@ -1716,7 +1716,7 @@ def antenna_plot(gain_ax, envelope_ax, c, antenna, levels_ft=(), pattern=None, e
     envelope_ax.grid(alpha=0.2)
     if pair:
         model_note = ('RL-2000 dual beam: LOW Tx/Rx + HIGH Rx-only · '
-                      f('calculation {c.beam_mode}' if english else 'výpočet {c.beam_mode}'))
+                      (f'calculation {c.beam_mode}' if english else f'výpočet {c.beam_mode}'))
     elif isinstance(pattern, GenericSSRPattern):
         model_note = ('Generic SSR · 1030/1090 MHz · 256 NM limit\nIdealized assumptions; no multipath / Pd' if english else 'Obecný SSR · 1030/1090 MHz · limit 256 NM\nIdealizované předpoklady; bez multipath / Pd')
     elif pattern is not None:
