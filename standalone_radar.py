@@ -70,7 +70,7 @@ function classify(a){
  const alt=typeof a.alt_geom==='number'?a.alt_geom:a.alt_baro;
  if(typeof alt!=='number')return 'unknown';
  const d=hav(cfg.lat,cfg.lon,a.lat,a.lon), b=bearing(cfg.lat,cfg.lon,a.lat,a.lon);
- if(d>cfg.dist[cfg.dist.length-1])return 'unknown';
+ if(d>cfg.dist[cfg.dist.length-1])return 'hidden';
  let ai=0,delta=999;
  for(let i=0;i<cfg.az.length;i++){let z=Math.abs(((cfg.az[i]-b+540)%360)-180);if(z<delta){delta=z;ai=i;}}
  let ri=0;while(ri+1<cfg.dist.length&&cfg.dist[ri+1]<d)ri++;
