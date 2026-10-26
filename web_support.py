@@ -377,6 +377,7 @@ def export_quickreport(result, *, flight_levels=None):
         'terrain': '01_Teren/terrain_600dpi.png',
         'antenna_diagram': '02_Vyzarovaci_diagram/antenna_diagram_600dpi.png',
         'flight_level_directory': '03_Letove_hladiny/',
+        'coverage_kml': '04_KML/coverage_all_layers.kml',
         'note': 'Vypočtené geometrické krytí; rozlišení zdrojového DEM se zvýšením DPI nemění.',
     }
     with tempfile.TemporaryDirectory(prefix='radar_quickreport_') as directory:
@@ -404,6 +405,8 @@ def export_quickreport(result, *, flight_levels=None):
                 core.export_map_image(png, result, 'Vybrané výšky',
                                       levels_ft=(level,), alpha=0.74, dpi=600)
                 archive.write(png, f'03_Letove_hladiny/{int(level):05d}ft_AMSL_600dpi.png')
+            # Include toggleable polygons for the same altitude slices as the PNG report.
+            archive.writestr(manifest['coverage_kml'], export_kml(result, requested))
             archive.writestr('report_manifest.json',
                              json.dumps(manifest, ensure_ascii=False, indent=2))
             archive.writestr(
@@ -413,6 +416,7 @@ def export_quickreport(result, *, flight_levels=None):
                 '01_Teren: terénní model\\n'
                 '02_Vyzarovaci_diagram: diagram antény a technická obálka\\n'
                 f'03_Letove_hladiny: {len(requested)} jednotlivých hladin ft AMSL\\n'
+                '04_KML: polygonové krytí všech reportovaných hladin a překážek\\n'
                 'Každá grafika 600 DPI; obrázky nejsou mapová ortofota.\\n'
                 'Vyšší tiskové DPI nezvyšuje přesnost zdrojových dat DEM.\\n'
             )
