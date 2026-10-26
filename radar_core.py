@@ -1215,6 +1215,13 @@ BASEMAP_PROVIDERS = {
 }
 
 
+BASEMAP_PROVIDERS['CARTO Voyager'] = {
+    'cache': 'carto_voyager',
+    'url': 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+    'max_zoom': 19,
+    'attribution': '© OpenStreetMap contributors · © CARTO',
+}
+
 BASEMAP_PROVIDERS['Satelitní · Esri'] = {
     'cache': 'esri_world_imagery',
     'url': 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
