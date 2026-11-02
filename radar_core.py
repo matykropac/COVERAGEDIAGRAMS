@@ -1608,8 +1608,44 @@ def add_export_range_rings(ax, config, *, expand_view=True):
     return rings_nm
 
 
+def style_export_theme(fig, theme='dark'):
+    """Convert a rendered figure to a paper-friendly light theme without touching data."""
+    if theme not in ('dark', 'light'):
+        raise ValueError('Unknown PNG report theme.')
+    if theme == 'dark':
+        return
+    ink, muted, border = '#152333', '#46576a', '#d5dee7'
+    fig.set_facecolor('#ffffff')
+    for ax in fig.axes:
+        ax.set_facecolor('#ffffff')
+        ax.tick_params(colors=muted)
+        ax.xaxis.label.set_color(ink)
+        ax.yaxis.label.set_color(ink)
+        ax.title.set_color(ink)
+        for spine in ax.spines.values():
+            spine.set_color(border)
+        for line in ax.get_xgridlines() + ax.get_ygridlines():
+            line.set_color('#aab7c5')
+            line.set_alpha(0.32)
+        for name in ('basemap-attribution',):
+            for item in ax.texts:
+                if item.get_gid() == name:
+                    item.set_color(ink)
+                    item.get_bbox_patch().set_facecolor('white')
+                    item.get_bbox_patch().set_edgecolor(border)
+    for legend in fig.legends + [ax.get_legend() for ax in fig.axes if ax.get_legend()]:
+        legend.get_frame().set_facecolor('white')
+        legend.get_frame().set_edgecolor(border)
+        for item in legend.get_texts():
+            item.set_color(ink)
+        if legend.get_title():
+            legend.get_title().set_color(ink)
+    for item in fig.texts:
+        item.set_color(ink if item.get_fontsize() >= 10 else muted)
+
+
 def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
-                     level_alphas=None, limits=None, dpi=300, english=False):
+                     level_alphas=None, limits=None, dpi=300, english=False, theme='dark'):
     """Render a fresh print-size figure, not a screen capture."""
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.lines import Line2D
@@ -1623,6 +1659,16 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
             ax.set_xlim(limits[0])
             ax.set_ylim(limits[1])
         add_export_range_rings(ax, result['config'], expand_view=limits is None)
+        if theme == 'light':
+            import matplotlib.patheffects as pe
+            for patch in ax.patches:
+                if (patch.get_gid() or '').startswith('range-ring-'):
+                    patch.set_edgecolor('#293f55')
+                    patch.set_path_effects([pe.Stroke(linewidth=2.3, foreground='#ffffff'), pe.Normal()])
+            for item in ax.texts:
+                if (item.get_gid() or '').startswith('range-ring-label-'):
+                    item.set_color('#18344f')
+                    item.set_path_effects([pe.withStroke(linewidth=3, foreground='#ffffff')])
         if ax.get_legend() is not None:
             ax.get_legend().remove()
         fig.subplots_adjust(left=0.075, right=0.75, bottom=0.25, top=0.90)
@@ -1653,6 +1699,7 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
         fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)
         fig.text(0.075, 0.035, 'Terrain and basemap resolution reflect the original source data.' if english else 'Rozlišení terénu a mapového podkladu odpovídá zdrojovým datům.',
                  color=UI_MUTED, fontsize=8)
+        style_export_theme(fig, theme)
         fig.savefig(path, dpi=dpi, format='png', facecolor=fig.get_facecolor())
     finally:
         fig.clear()
