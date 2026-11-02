@@ -1568,6 +1568,46 @@ def point_detail(result, x_km, y_km, levels_ft=()):
     return location + '\n' + detail + '\n' + state + f'  ·  vzorek {result["az"][ai]:.1f}° / {result["distance"][ri]/1000:.2f} km'
 
 
+def add_export_range_rings(ax, config, *, expand_view=True):
+    """Radar-centred 20 NM reference rings for exported map PNGs.
+
+    PSR: 20–100 NM. SSR: 20–260 NM. PAR is deliberately excluded.
+    Distances are in the map's local AEQD kilometre coordinates; reference
+    rings indicate range only, not guaranteed radar detection/coverage.
+    """
+    from matplotlib.patches import Circle
+    import matplotlib.patheffects as pe
+
+    mode = str(config.radar_mode).upper()
+    if mode == 'PAR-NG':
+        return ()
+    rings_nm = tuple(range(20, 261, 20)) if 'SSR' in mode else tuple(range(20, 101, 20))
+    # Keep the last requested ring completely visible even for a configured
+    # range of 60/80 NM (PSR) or 256 NM (SSR).
+    if expand_view:
+        radius_km = max(float(config.range_km), rings_nm[-1] * 1.852) * 1.035
+        ax.set_xlim(-radius_km, radius_km)
+        ax.set_ylim(-radius_km, radius_km)
+
+    for nm in rings_nm:
+        r = nm * 1.852
+        circle = Circle((0, 0), r, facecolor='none', edgecolor='#f8fafc',
+                        linewidth=0.9, linestyle=(0, (5, 4)), alpha=0.8,
+                        zorder=12)
+        circle.set_path_effects([pe.Stroke(linewidth=2.0, foreground='#182434', alpha=0.85),
+                                 pe.Normal()])
+        circle.set_gid(f'range-ring-{nm}NM')
+        ax.add_patch(circle)
+        theta = np.deg2rad(42)
+        label = ax.text(r * np.sin(theta), r * np.cos(theta), f'{nm} NM',
+                        color='#ffffff', fontsize=7, ha='center', va='center',
+                        rotation=-42, rotation_mode='anchor', zorder=13,
+                        clip_on=True)
+        label.set_path_effects([pe.withStroke(linewidth=2.5, foreground='#182434')])
+        label.set_gid(f'range-ring-label-{nm}NM')
+    return rings_nm
+
+
 def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                      level_alphas=None, limits=None, dpi=300, english=False):
     """Render a fresh print-size figure, not a screen capture."""
@@ -1582,6 +1622,7 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
         if limits is not None:
             ax.set_xlim(limits[0])
             ax.set_ylim(limits[1])
+        add_export_range_rings(ax, result['config'], expand_view=limits is None)
         if ax.get_legend() is not None:
             ax.get_legend().remove()
         fig.subplots_adjust(left=0.075, right=0.75, bottom=0.25, top=0.90)
