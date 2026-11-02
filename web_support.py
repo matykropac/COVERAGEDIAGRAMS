@@ -408,6 +408,8 @@ def export_quickreport(result, *, flight_levels=None):
         'source': result.get('source'),
         'completed_at': result.get('completed_at'),
         'image_dpi': 600,
+        'themes': ['dark', 'light'],
+        'light_suffix': '_LIGHT',
         'flight_levels_ft_amsl': list(requested),
         'terrain': '01_Terrain/terrain_600dpi.png',
         'antenna_diagram': '02_Antenna_Pattern/antenna_diagram_600dpi.png',
@@ -425,34 +427,42 @@ def export_quickreport(result, *, flight_levels=None):
         # PNG files are already compressed. Store entries directly without further CPU-heavy ZIP deflation.
         archive_bytes = BytesIO()
         with ZipFile(archive_bytes, 'w', compression=ZIP_STORED, allowZip64=True) as archive:
-            core.export_map_image(png, result, 'Terén', dpi=600, alpha=1.0, english=True)
-            archive.write(png, manifest['terrain'])
+            for theme in ('dark', 'light'):
+                suffix = '' if theme == 'dark' else '_LIGHT'
+                core.export_map_image(png, result, 'Terén', dpi=600,
+                                      alpha=1.0, english=True, theme=theme)
+                archive.write(png, manifest['terrain'] if theme == 'dark'
+                              else '01_Terrain/terrain_LIGHT_600dpi.png')
 
-            fig = Figure(figsize=(13, 9), dpi=600, facecolor=core.PLOT_BG)
-            FigureCanvasAgg(fig)
-            try:
-                core.technical_plot(fig, result=result, english=True)
-                fig.text(.07, .975, 'ELDIS · ANTENNA DIAGRAM',
-                         color=core.UI_TEXT, fontsize=18, weight='bold', va='top')
-                fig.savefig(png, dpi=600, format='png', facecolor=fig.get_facecolor())
-            finally:
-                fig.clear()
-            archive.write(png, manifest['antenna_diagram'])
+                fig = Figure(figsize=(13, 9), dpi=600, facecolor=core.PLOT_BG)
+                FigureCanvasAgg(fig)
+                try:
+                    core.technical_plot(fig, result=result, english=True)
+                    fig.text(.07, .975, 'ELDIS · ANTENNA DIAGRAM',
+                             color=core.UI_TEXT, fontsize=18, weight='bold', va='top')
+                    core.style_export_theme(fig, theme)
+                    fig.savefig(png, dpi=600, format='png', facecolor=fig.get_facecolor())
+                finally:
+                    fig.clear()
+                archive.write(png, manifest['antenna_diagram'] if theme == 'dark'
+                              else '02_Antenna_Pattern/antenna_diagram_LIGHT_600dpi.png')
 
-            for level in requested:
-                # One altitude per page keeps the established print layout and readable legend.
-                core.export_map_image(png, result, 'Vybrané výšky',
-                                      levels_ft=(level,), alpha=0.74, dpi=600, english=True)
-                archive.write(png, f'03_Flight_Levels/{int(level):05d}ft_AMSL_600dpi.png')
-            # Load the Esri tiles only once, then reuse the identical radar-centered
-            # AEQD extent for every altitude. Both axes span +/- radar range.
+                for level in requested:
+                    core.export_map_image(png, result, 'Vybrané výšky',
+                                          levels_ft=(level,), alpha=0.74,
+                                          dpi=600, english=True, theme=theme)
+                    archive.write(png, f'03_Flight_Levels/{int(level):05d}ft_AMSL{suffix}_600dpi.png')
+
+            # Download Esri once, then reuse for dark and light report variants.
             esri = core.load_basemap(c, provider=manifest['esri_provider'],
                                      out_size=(1600, 1600))
             for level in requested:
-                core.export_map_image(png, result, 'Vybrané výšky',
-                                      basemap=esri, levels_ft=(level,),
-                                      alpha=0.52, dpi=600, english=True)
-                archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI_600dpi.png")
+                for theme in ('dark', 'light'):
+                    suffix = '' if theme == 'dark' else '_LIGHT'
+                    core.export_map_image(png, result, 'Vybrané výšky',
+                                          basemap=esri, levels_ft=(level,),
+                                          alpha=0.52, dpi=600, english=True, theme=theme)
+                    archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI{suffix}_600dpi.png")
 
             # Include toggleable polygons for the same altitude slices as the PNG report.
             archive.writestr(manifest['coverage_kml'], export_kml(result, requested))
@@ -497,10 +507,12 @@ def export_bytes(kind, result, levels, index, dpi, alpha, level_alphas=None):
         elif kind == 'Metadata · JSON':
             path, mime = root/'calculation.json', 'application/json'
             path.write_text(json.dumps(core.calculation_metadata(result), ensure_ascii=False, indent=2), encoding='utf-8')
-        elif kind == 'Obrázek · PNG':
-            path, mime = root/f'coverage_{dpi}dpi.png', 'image/png'
+        elif kind in ('Obrázek · PNG', 'Obrázek · PNG (Light)'):
+            light = kind.endswith('(Light)')
+            path, mime = root/f'coverage_{dpi}dpi' + ('_LIGHT.png' if light else '.png'), 'image/png'
             core.export_map_image(path, result, 'Vybrané výšky' if levels else 'Krytí cíle',
-                                  levels_ft=levels, alpha=alpha, dpi=dpi, level_alphas=level_alphas)
+                                  levels_ft=levels, alpha=alpha, dpi=dpi, level_alphas=level_alphas,
+                                  theme='light' if light else 'dark')
         else:
             raise ValueError('Neznámý formát exportu.')
         return path.read_bytes(), path.name, mime
