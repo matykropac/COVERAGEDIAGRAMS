@@ -17,7 +17,7 @@ import radar_core as core
 from obstacles import obstacle_polygon
 
 EXPORTS = ('QuickReport · ZIP (600 DPI)', 'KML · všechny vrstvy (polygony)', 'GeoPackage · vektory', 'GeoTIFF · rastr', 'RAW · NPZ',
-           'Profil · CSV', 'Metadata · JSON', 'Obrázek · PNG')
+           'Profil · CSV', 'Metadata · JSON', 'Obrázek · PNG', 'Obrázek · PNG (Light)')
 
 
 def coverage_geojson(result, ft):
@@ -509,7 +509,7 @@ def export_bytes(kind, result, levels, index, dpi, alpha, level_alphas=None):
             path.write_text(json.dumps(core.calculation_metadata(result), ensure_ascii=False, indent=2), encoding='utf-8')
         elif kind in ('Obrázek · PNG', 'Obrázek · PNG (Light)'):
             light = kind.endswith('(Light)')
-            path, mime = root/f'coverage_{dpi}dpi' + ('_LIGHT.png' if light else '.png'), 'image/png'
+            path, mime = root / f"coverage_{dpi}dpi{'_LIGHT' if light else ''}.png", 'image/png'
             core.export_map_image(path, result, 'Vybrané výšky' if levels else 'Krytí cíle',
                                   levels_ft=levels, alpha=alpha, dpi=dpi, level_alphas=level_alphas,
                                   theme='light' if light else 'dark')
