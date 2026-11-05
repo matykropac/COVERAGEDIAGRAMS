@@ -43,6 +43,28 @@ _CSS="""
 .cd-terrain-legend i{width:16px;height:3px;display:inline-block;background:#139db2}
 .cd-terrain-legend .cd-lower-swatch{background:#dd8841}
 .cd-terrain-legend .cd-selected-swatch{background:#e34c57}
+/* DAY/NIGHT is a visual filter on persistent tiles, never a reload. */
+#cd-persistent-map{transition:background-color .2s ease}
+#cd-persistent-map.cd-night{background:#090e13}
+#cd-persistent-map.cd-night img.cd-basemap-tile{
+  filter:invert(1) hue-rotate(180deg) brightness(.73) contrast(1.18) saturate(.58)
+}
+#cd-persistent-map.cd-night img.cd-satellite-tile{
+  filter:brightness(.55) contrast(1.16) saturate(.75)
+}
+#cd-persistent-map.cd-night img.cd-aip-tile{
+  filter:brightness(.84) saturate(.95)
+}
+#cd-persistent-map.cd-night .leaflet-control-zoom a,
+#cd-persistent-map.cd-night .leaflet-control-layers,
+#cd-persistent-map.cd-night .leaflet-control-attribution{
+  background:#15202c!important;color:#d7e4f0!important;
+  border-color:#344659!important
+}
+#cd-persistent-map.cd-night .leaflet-control-attribution a{color:#9cc9f6!important}
+#cd-persistent-map.cd-night .leaflet-control-layers label{color:#d7e4f0!important}
+#cd-persistent-map.cd-night .leaflet-popup-content-wrapper,
+#cd-persistent-map.cd-night .leaflet-popup-tip{background:#172331;color:#dce7f2}
 #cd-persistent-map .leaflet-control-layers{border:1px solid #bccbd9;box-shadow:0 2px 9px #202c3820}
 @media(max-width:700px){#cd-persistent-map{height:calc(100dvh - 92px);min-height:420px}}
 """
