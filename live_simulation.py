@@ -224,28 +224,95 @@ def _persistent_display(result, level_ft, provider):
         st.warning(f"ADS-B data nejsou dostupná: {str(exc)[:160]}")
 
 def simulation_tab(result, levels):
-    # Center a compact launch panel instead of stretching controls full width.
-    _, center, _ = st.columns([1.4, 1, 1.4], gap="medium")
-    with center:
-        st.subheader("LIVE SIMULACE")
+    """One workspace for live traffic, captured snapshots, and historical analysis."""
+    st.subheader("PROVOZ")
+    st.caption("ADS-B pozice a provozní analýza vůči vypočtenému radarovému krytí. "
+               "Pozorování nejsou skutečnými radarovými detekcemi.")
+    live_tab, snapshot_tab, history_tab = st.tabs(
+        ["LIVE / SIMULACE", "ADS-B DATA", "HISTORIE / ANALÝZA"])
+
+    with live_tab:
         if result is None:
-            st.info("Nejprve spusť výpočet v NASTAVENÍ.")
-            return
-        options = list(core.flight_levels_for(result['config'].radar_mode))
-        if not options:
-            st.info("Nejprve vyber letové hladiny v NASTAVENÍ.")
-            return
-        selected = st.selectbox("Letová hladina", options,
-                                format_func=core.level_label,
-                                key="simulation_level")
-        link = radar_window_link(result, selected, "ADSB.lol")
-        st.markdown(
-            f'<a href="{link}" target="_blank" rel="noopener noreferrer" '
-            'style="display:block;text-align:center;background:#134d68;color:white;'
-            'padding:12px 16px;border-radius:8px;text-decoration:none;'
-            'font-weight:700;margin:10px 0">'
-            '▶ SPUSTIT SIMULACI</a>',
-            unsafe_allow_html=True)
-    # Historical traffic is a full-width analytical panel, not a narrow launcher widget.
-    from traffic_history import render_history
-    render_history(result)
+            st.info("Nejprve spusť výpočet v NASTAVENÍ pro simulaci radarového krytí.")
+        else:
+            options = list(core.flight_levels_for(result['config'].radar_mode))
+            if not options:
+                st.info("Nejprve vyber letové hladiny v NASTAVENÍ.")
+            else:
+                left, center, right = st.columns([1, 1.25, 1], gap="medium")
+                with center:
+                    selected = st.selectbox("Letová hladina", options,
+                                            format_func=core.level_label,
+                                            key="simulation_level")
+                    link = radar_window_link(result, selected, "ADSB.lol")
+                    st.markdown(
+                        f'<a href="{link}" target="_blank" rel="noopener noreferrer" '
+                        'style="display:block;text-align:center;background:#134d68;color:white;'
+                        'padding:12px 16px;border-radius:8px;text-decoration:none;'
+                        'font-weight:700;margin:10px 0">'
+                        '▶ SPUSTIT ŽIVÝ PROVOZ</a>',
+                        unsafe_allow_html=True)
+                st.caption("Živý provoz běží v samostatném okně; geometrické krytí "
+                           "je porovnáváno s hlášenou výškou letadel.")
+
+    with snapshot_tab:
+        st.markdown("**Aktuální ADS-B snímek**")
+        st.caption("Bezplatný zdroj adsb.lol. Načtení proběhne pouze po kliknutí. "
+                   "Snímky lze postupně ukládat do CSV pro pozdější analýzu.")
+        from traffic_overlay import fetch_snapshot, add_traffic_layer, traffic_csv
+        from datetime import datetime, timezone
+
+        radar_config = result.get("config") if result is not None else None
+        if radar_config is None:
+            st.info("Nejprve vypočítej radarové krytí, aby byl známý střed mapy.")
+        else:
+            left, right = st.columns([1, 3], gap="medium")
+            with left:
+                radius = st.selectbox("Dosah · NM", [25, 50, 100, 150, 200, 250],
+                                      index=2, key="traffic_data_radius")
+                if st.button("NAČÍST PROVOZ", key="traffic_data_fetch",
+                             use_container_width=True, type="primary"):
+                    try:
+                        with st.spinner("Načítám ADS-B pozice…"):
+                            snapshot = fetch_snapshot(radar_config.lat, radar_config.lon, radius)
+                        st.session_state["traffic_data_snapshot"] = snapshot
+                        st.session_state["traffic_data_site"] = (
+                            round(radar_config.lat, 5), round(radar_config.lon, 5), radius)
+                        prev = st.session_state.get("traffic_data_history", [])
+                        st.session_state["traffic_data_history"] = (prev + snapshot)[-25000:]
+                    except (RuntimeError, ValueError) as exc:
+                        st.warning(str(exc))
+                site = (round(radar_config.lat, 5), round(radar_config.lon, 5), radius)
+                current = (st.session_state.get("traffic_data_snapshot", [])
+                           if st.session_state.get("traffic_data_site") == site else [])
+                accumulated = st.session_state.get("traffic_data_history", [])
+                st.metric("Pozice ve snímku", len(current))
+                st.caption(f"Uloženo v relaci: {len(accumulated)} pozorování")
+                if accumulated:
+                    st.download_button("EXPORT CSV", traffic_csv(accumulated),
+                                       file_name="adsb_traffic_history.csv", mime="text/csv",
+                                       use_container_width=True, key="traffic_data_download")
+                st.caption("Historie vzniká z ručně pořízených snímků; "
+                           "nejde o kompletní archiv letů.")
+            with right:
+                if current:
+                    view = folium.Map(location=[radar_config.lat, radar_config.lon],
+                                      zoom_start=8, tiles="OpenStreetMap", control_scale=True)
+                    add_traffic_layer(view, current)
+                    folium.Marker([radar_config.lat, radar_config.lon], tooltip="Radar",
+                                  icon=folium.Icon(color="orange", icon="signal")).add_to(view)
+                    folium.LayerControl(collapsed=True).add_to(view)
+                    st_folium(view, height=450, use_container_width=True,
+                              key="traffic_data_map", returned_objects=[])
+                else:
+                    st.info("Zvol dosah a klikni na NAČÍST PROVOZ. "
+                            "Pohyby letadel se zobrazí na mapě.")
+
+    with history_tab:
+        if result is None:
+            st.info("Pro porovnání historických poloh s krytím nejprve spusť výpočet.")
+        else:
+            st.caption("Nahraj archiv pozorování ve formátu CSV nebo export pořízený "
+                       "na záložce ADS-B DATA.")
+            from traffic_history import render_history
+            render_history(result)
