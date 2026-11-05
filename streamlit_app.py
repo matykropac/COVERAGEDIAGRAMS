@@ -647,11 +647,22 @@ else:
         filtered_env = st.session_state.get("environment_filtered_export", [])
         exported_levels = ([(core.level_label(ft), to_hex(core.level_color(ft))) for ft in active[:10]]
                            if not show_target else [("Target coverage", "#22d3c5")])
-        bundle = env.export_bundle(filtered_env, st.session_state.get("environment_map_html"),
-                                   coverage_layers=exported_levels, canopy_overlay=analysis_canopy)
-        st.download_button("Stáhnout analytickou mapu + GeoJSON/KML/CSV + legendu (ZIP)",
-                           bundle, file_name="COVERAGEDIAGRAMS_map_layers.zip",
-                           mime="application/zip", key="environment_bundle_download")
+        source_bytes = env.geojson_bytes(filtered_env)
+        canopy_bytes = analysis_canopy[0] if analysis_canopy is not None else b""
+        map_bundle_signature = hashlib.sha256(source_bytes + canopy_bytes +
+                                              repr(exported_levels).encode("utf-8")).hexdigest()
+        if st.button("Připravit analytickou mapu + vrstvy + legendu (ZIP)",
+                     key="environment_bundle_prepare"):
+            with st.spinner("Balení mapy a filtrovaných vrstev…"):
+                archive = env.export_bundle(filtered_env,
+                            st.session_state.get("environment_map_html"),
+                            coverage_layers=exported_levels, canopy_overlay=analysis_canopy)
+                st.session_state["environment_bundle_ready"] = (map_bundle_signature, archive)
+        ready_bundle = st.session_state.get("environment_bundle_ready")
+        if ready_bundle and ready_bundle[0] == map_bundle_signature:
+            st.download_button("Stáhnout analytickou mapu (ZIP)",
+                               ready_bundle[1], file_name="COVERAGEDIAGRAMS_map_layers.zip",
+                               mime="application/zip", key="environment_bundle_download")
         st.download_button("Samostatný interaktivní HTML export mapy",
                            st.session_state.get("environment_map_html", b""),
                            file_name="COVERAGEDIAGRAMS_map.html",
