@@ -645,7 +645,7 @@ def _live_map_frame():
         st.session_state["ws_traffic_site"]=(lat,lon)
     except (RuntimeError,ValueError) as exc:
         st.caption(f"ADS-B: poslední dostupný snímek · {exc}")
-    _draw_map()
+    _draw_map_folium()
 
 
 def render_workspace():
