@@ -308,3 +308,21 @@ iframe[title*="streamlit_folium"],iframe[title*="folium"]{
   .cd-overline{font-size:8px}
   .cd-brand-name strong{font-size:14px}
 }
+
+/* Command navigation: restrained engineering glyphs for at-a-glance scanning. */
+@media(min-width:861px){
+ [data-testid="stTabs"] > div [data-baseweb="tab-list"] > [role="tab"]::before{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:25px;height:25px;margin-right:9px;flex:none;border-radius:5px;
+  background:#1b2b3d;border:1px solid #2c3e51;
+  color:#8ca8b8;font:700 11px ui-monospace,SFMono-Regular,Consolas,monospace;
+ }
+ [data-testid="stTabs"] > div [data-baseweb="tab-list"] > [role="tab"]:nth-of-type(1)::before{content:"01"}
+ [data-testid="stTabs"] > div [data-baseweb="tab-list"] > [role="tab"]:nth-of-type(2)::before{content:"02"}
+ [data-testid="stTabs"] > div [data-baseweb="tab-list"] > [role="tab"]:nth-of-type(3)::before{content:"03"}
+ [data-testid="stTabs"] > div [data-baseweb="tab-list"] > [role="tab"]:nth-of-type(4)::before{content:"04"}
+ [data-testid="stTabs"] > div [data-baseweb="tab-list"] > [role="tab"]:nth-of-type(5)::before{content:"05"}
+ [data-testid="stTabs"] > div [data-baseweb="tab-list"] > [role="tab"][aria-selected="true"]::before{
+  border-color:#2c8b97;background:#184451;color:#baf5f3;
+ }
+}
