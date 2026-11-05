@@ -343,6 +343,8 @@ def obstacles_dialog():
                           (x["name"]+" "+x["source"]).casefold())]
             page_size=75
             pages=max(1,(len(matches)+page_size-1)//page_size)
+            if int(st.session_state.get("ws_catalog_page",1))>pages:
+                st.session_state["ws_catalog_page"]=1
             page=st.number_input(f"Strana · {len(matches)} objektů",min_value=1,
                                  max_value=pages,value=1,step=1,key="ws_catalog_page")
             indexes=matches[(page-1)*page_size:page*page_size]
@@ -391,6 +393,9 @@ def obstacles_dialog():
                                 "kind":"polygon","coordinates":item["coordinates"],
                                 "height_m":item["height_m"]},*_cfg_site())
                         changed[index]=item
+                    deleted_ids=set(st.session_state.get("ws_imported_deleted_ids",[]))
+                    deleted_ids.update(catalog[i]["id"] for i in deleted)
+                    st.session_state["ws_imported_deleted_ids"]=list(deleted_ids)
                     updated=[changed.get(i,x) for i,x in enumerate(catalog) if i not in deleted]
                     active,invalid=synchronize(all_items,updated,*_cfg_site(),
                                                auto_enable=False)
@@ -583,20 +588,23 @@ def layers_dialog():
                 # Loaded polygons and turbines become editable immediately.
                 # Keep prior catalog edits for matching items across repeated fetches.
                 previous={x["id"]:x for x in st.session_state.get("ws_imported_catalog",[])}
-                new_catalog=catalog_from_data(
+                deleted_ids=set(st.session_state.get("ws_imported_deleted_ids",[]))
+                new_catalog=[x for x in catalog_from_data(
                     st.session_state.get("ws_environment",[]),
                     st.session_state.get("ws_wind_data",[]))
+                    if x["id"] not in deleted_ids]
                 for item in new_catalog:
                     old=previous.get(item["id"])
                     if old:
                         item.update(name=old["name"],height_m=old["height_m"],
                                     enabled=old["enabled"])
+                    elif item.get("height_m") is not None:
+                        item["enabled"]=True
                 current_manual=st.session_state.setdefault("obstacles",[])
-                # The first load enables known-height items automatically;
-                # reloading preserves existing choices instead.
-                first_load=not bool(previous)
+                # New known-height objects are enabled automatically; previous
+                # user decisions and deletions are retained between imports.
                 actual,invalid=synchronize(current_manual,new_catalog,*site,
-                                           auto_enable=first_load)
+                                           auto_enable=False)
                 st.session_state["ws_imported_catalog"]=new_catalog
                 st.session_state["obstacles"]=actual
                 st.session_state["ws_obstacle_revision"]=st.session_state.get("ws_obstacle_revision",0)+1
