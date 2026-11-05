@@ -14,7 +14,6 @@ from wind_turbines import load_wind_turbines, add_wind_layer
 import environment_layers as env
 import aviation_layers as aviation
 import canopy_layers as canopy
-from traffic_overlay import fetch_snapshot, add_traffic_layer, traffic_csv
 
 GEOD = Geod(ellps='WGS84')
 MAX_OBSTACLES = 1000
@@ -35,7 +34,7 @@ def _description(o, radar_lat, radar_lon):
 
 
 def render_obstacle_editor(radar_lat, radar_lon):
-    st.subheader('OBSTACLES / Překážky a provoz')
+    st.subheader('OBSTACLES / Správa překážek')
     obstacles = st.session_state.setdefault('obstacles', [])
 
     map_panel, table_panel = st.columns([3, 1], gap='small')
@@ -48,42 +47,6 @@ def render_obstacle_editor(radar_lat, radar_lon):
         st.markdown('**ZOBRAZIT V MAPĚ**')
         show_wind = st.checkbox('Větrné elektrárny · 100 km',
                                 value=True, key='obstacle_show_wind')
-        show_traffic = st.checkbox('ADS-B · letecký provoz', value=False,
-                                   key='obstacle_show_traffic')
-        traffic_radius = st.selectbox('Dosah ADS-B · NM', [25, 50, 100, 150, 200, 250],
-                                      index=2, key='obstacle_traffic_radius',
-                                      disabled=not show_traffic)
-        if show_traffic:
-            if st.button('Načíst / obnovit provoz', key='obstacle_fetch_traffic',
-                         use_container_width=True):
-                try:
-                    with st.spinner('Načítám ADS-B polohy…'):
-                        snapshot = fetch_snapshot(radar_lat, radar_lon, traffic_radius)
-                    st.session_state['obstacle_traffic_snapshot'] = snapshot
-                    st.session_state['obstacle_traffic_site'] = (
-                        round(radar_lat, 5), round(radar_lon, 5), traffic_radius)
-                    old = st.session_state.get('obstacle_traffic_history', [])
-                    # Keep finite data in memory; export CSV before closing the session.
-                    st.session_state['obstacle_traffic_history'] = (old + snapshot)[-25000:]
-                except (ValueError, RuntimeError) as exc:
-                    st.warning(str(exc))
-            current_site = (round(radar_lat, 5), round(radar_lon, 5), traffic_radius)
-            if st.session_state.get('obstacle_traffic_site') == current_site:
-                traffic_snapshot = st.session_state.get('obstacle_traffic_snapshot', [])
-            else:
-                traffic_snapshot = []
-            st.caption(f'ADS-B · {len(traffic_snapshot)} aktuálně načtených pozic · adsb.lol')
-            saved = st.session_state.get('obstacle_traffic_history', [])
-            if saved:
-                st.download_button(f'Stáhnout historii pozorování · CSV ({len(saved)})',
-                                   data=traffic_csv(saved),
-                                   file_name='adsb_traffic_history.csv', mime='text/csv',
-                                   use_container_width=True, key='obstacle_traffic_csv')
-            st.caption('Aktualizace pouze na kliknutí. Pozorování se ukládají v relaci, '
-                       'nejde o úplný historický archiv. Zdroj: adsb.lol · ODbL 1.0.')
-        else:
-            traffic_snapshot = []
-
         with st.expander('DALŠÍ MAPOVÁ DATA · budovy, letiště, lesy, canopy', expanded=False):
             visible_environment = env.controls(radar_lat, radar_lon, "obstacle_env")
             airports = aviation.controls(radar_lat, radar_lon, "obstacle_airports")
@@ -160,8 +123,6 @@ def render_obstacle_editor(radar_lat, radar_lon):
                              show=name == 'OpenStreetMap').add_to(om)
         if show_wind and wind_data:
             add_wind_layer(om, wind_data, cluster_points=False)
-        if traffic_snapshot:
-            add_traffic_layer(om, traffic_snapshot)
         if visible_environment:
             env.layer_group(om, visible_environment, "Environment / budovy a lesy")
         if airports:
