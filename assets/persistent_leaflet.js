@@ -71,6 +71,156 @@ function refreshControl(s) {
   s.controls.layers=L.control.layers(bases,overlay,{collapsed:true,position:"topright"});
   s.controls.layers.addTo(s.map);
 }
+// Point inspection is deliberately browser-side: clicking the map must
+// never cause a Streamlit rerun or recreate Leaflet/tile layers.
+function geodesic(site, point){
+  const rad=Math.PI/180;
+  const p1=site[0]*rad,p2=point.lat*rad,dLat=(point.lat-site[0])*rad;
+  const dLon=(point.lng-site[1])*rad;
+  const h=Math.sin(dLat/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dLon/2)**2;
+  const km=6371.0088*2*Math.asin(Math.min(1,Math.sqrt(h)));
+  const y=Math.sin(dLon)*Math.cos(p2);
+  const x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dLon);
+  const az=(Math.atan2(y,x)/rad+360)%360;
+  return {km,az};
+}
+function nearestAzimuth(values,az){
+  let best=Infinity,idx=0;
+  for(let i=0;i<values.length;i++){
+    const delta=Math.abs(((az-values[i]+540)%360)-180);
+    if(delta<best){best=delta;idx=i;}
+  }
+  return {idx,delta:best};
+}
+function nearestDistance(values,km){
+  if(!values.length)return 0;
+  let lo=0,hi=values.length-1;
+  while(lo<hi){
+    const mid=(lo+hi)>>1;
+    if(values[mid]<km)lo=mid+1;else hi=mid;
+  }
+  return lo>0&&Math.abs(values[lo-1]-km)<Math.abs(values[lo]-km)?lo-1:lo;
+}
+function canvasText(ctx,txt,x,y,align="left",color="#60768a",size=11){
+  ctx.fillStyle=color;ctx.textAlign=align;ctx.font=size+"px system-ui";
+  ctx.fillText(txt,x,y);ctx.textAlign="left";
+}
+function drawTerrain(s){
+  const panel=s.profilePanel,canvas=s.profileCanvas,sel=s.selection;
+  const p=s.latest?.profile;
+  if(!panel||!canvas||!sel||!p?.distance?.length||!p.terrain?.length)return;
+  const width=Math.max(260,Math.round(canvas.getBoundingClientRect().width));
+  const height=150,dpr=Math.min(2,window.devicePixelRatio||1);
+  canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);
+  const ctx=canvas.getContext("2d");if(!ctx)return;
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
+  const profileAz=nearestAzimuth(p.az||[],sel.az);
+  const terrain=p.terrain[profileAz.idx]||[];
+  const lower=p.lower?.[profileAz.idx]||[];
+  const dist=p.distance;
+  const maxKm=Math.max(1,Number(p.maxRangeKm)||dist[dist.length-1]||1);
+  const span=Math.max(8,Math.min(maxKm,Math.max(12,maxKm*.32)));
+  // The selected point is always the center of the terrain window.
+  const from=sel.km-span/2,to=sel.km+span/2;
+  const left=52,right=width-18,top=13,bottom=height-30;
+  const entries=[];
+  for(let i=0;i<dist.length;i++){
+    const d=dist[i];
+    if(d<from||d>to)continue;
+    const tr=terrain[i],lo=lower[i];
+    if(Number.isFinite(tr))entries.push(tr);
+    if(Number.isFinite(lo))entries.push(lo);
+  }
+  const x=d=>left+(d-from)/(to-from)*(right-left);
+  if(!entries.length){
+    canvasText(ctx,"Pro toto místo nejsou dostupná data terénu.",left,70);
+    canvasText(ctx,from.toFixed(1)+" km",left,height-8);
+    canvasText(ctx,to.toFixed(1)+" km",right,height-8,"right");
+    return;
+  }
+  let min=Math.min(...entries),max=Math.max(...entries);
+  const pad=Math.max(25,(max-min)*.15);min-=pad;max+=pad;
+  const y=value=>bottom-(value-min)/(max-min)*(bottom-top);
+  ctx.strokeStyle="#e5ecf3";ctx.lineWidth=1;
+  for(let i=0;i<4;i++){
+    const value=min+(max-min)*i/3,yy=y(value);
+    ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(right,yy);ctx.stroke();
+    canvasText(ctx,Math.round(value)+" m",left-7,yy+4,"right","#73869b",10);
+  }
+  ctx.save();ctx.beginPath();ctx.rect(left,top,right-left,bottom-top);ctx.clip();
+  function path(values,color,lineWidth){
+    ctx.beginPath();let started=false;
+    for(let i=0;i<dist.length;i++){
+      const v=values[i],d=dist[i];
+      if(!Number.isFinite(v)){started=false;continue;}
+      if(!started){ctx.moveTo(x(d),y(v));started=true;}else ctx.lineTo(x(d),y(v));
+    }
+    ctx.strokeStyle=color;ctx.lineWidth=lineWidth;ctx.lineJoin="round";ctx.stroke();
+  }
+  // Fill terrain under the plot as a subtle cartographic cross-section.
+  ctx.beginPath();let started=false;
+  for(let i=0;i<dist.length;i++){
+    const v=terrain[i],d=dist[i];
+    if(!Number.isFinite(v))continue;
+    if(!started){ctx.moveTo(x(d),bottom);ctx.lineTo(x(d),y(v));started=true;}
+    else ctx.lineTo(x(d),y(v));
+  }
+  if(started){ctx.lineTo(x(dist[dist.length-1]),bottom);ctx.closePath();
+    ctx.fillStyle="rgba(20,157,178,.09)";ctx.fill();}
+  path(terrain,"#139db2",2);
+  path(lower,"#dd8841",1.7);
+  const sx=x(sel.km);
+  ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(sx,top);ctx.lineTo(sx,bottom);
+  ctx.strokeStyle="#e34c57";ctx.lineWidth=1.3;ctx.stroke();ctx.setLineDash([]);
+  const at=nearestDistance(dist,sel.km);
+  if(Number.isFinite(terrain[at])){
+    ctx.beginPath();ctx.arc(sx,y(terrain[at]),4.2,0,Math.PI*2);
+    ctx.fillStyle="#e34c57";ctx.fill();ctx.strokeStyle="#fff";ctx.lineWidth=1.5;ctx.stroke();
+  }
+  ctx.restore();
+  canvasText(ctx,from.toFixed(1)+" km",left,height-8);
+  canvasText(ctx,sel.km.toFixed(2)+" km",sx,height-8,"center","#d45259",11);
+  canvasText(ctx,to.toFixed(1)+" km",right,height-8,"right");
+}
+function clearTerrainSelection(s){
+  s.selection=null;
+  if(s.selectionMarker){s.map.removeLayer(s.selectionMarker);s.selectionMarker=null;}
+  if(s.selectionLine){s.map.removeLayer(s.selectionLine);s.selectionLine=null;}
+  if(s.profilePanel)s.profilePanel.hidden=true;
+}
+function selectTerrainPoint(s,latlng){
+  const p=s.latest?.profile;
+  if(!p?.site||!p?.terrain?.length)return;
+  const site=p.site;
+  const {km,az}=geodesic(site,latlng);
+  s.selection={lat:latlng.lat,lon:latlng.lng,km,az};
+  if(s.selectionMarker)s.map.removeLayer(s.selectionMarker);
+  if(s.selectionLine)s.map.removeLayer(s.selectionLine);
+  s.selectionMarker=L.circleMarker(latlng,{radius:7,color:"#ffffff",
+    weight:2,fillColor:"#e34c57",fillOpacity:1}).addTo(s.map);
+  s.selectionLine=L.polyline([site,[latlng.lat,latlng.lng]],
+    {color:"#e34c57",weight:2.5,dashArray:"6 5",opacity:.94,
+     interactive:false}).addTo(s.map);
+  const azIndex=nearestAzimuth(p.az||[],az);
+  const sample=nearestDistance(p.distance||[],km);
+  const value=p.terrain[azIndex.idx]?.[sample];
+  const h=Number.isFinite(value)?Math.round(value)+" m AMSL":"bez dat";
+  if(s.profileSummary){
+    s.profileSummary.textContent=km.toFixed(2)+" km · "+az.toFixed(1)+
+      "° · terén "+h+" · "+latlng.lat.toFixed(5)+"°, "+latlng.lng.toFixed(5)+"°"+
+      (km>p.maxRangeKm?" · mimo dosah radaru":"");
+  }
+  if(s.profilePanel)s.profilePanel.hidden=false;
+  drawTerrain(s);
+}
+function updateProfile(s,data){
+  const p=data.profile||null;
+  const signature=p?.version||"none";
+  if(s.profileSignature===signature)return;
+  s.profileSignature=signature;
+  if(!p)clearTerrainSelection(s);
+  else if(s.selection)selectTerrainPoint(s,L.latLng(s.selection.lat,s.selection.lon));
+}
 function init(s) {
   const node=s.node;
   const data=s.latest||{};
@@ -90,10 +240,20 @@ function init(s) {
   s.last={};
   s.map.on("baselayerchange",ev=>{s.activeBaseName=ev.name;});
   s.map.on("click",ev=>{
-    if(s.latest?.tool!=="Radar")return;
-    s.trigger("action",{type:"radar",lat:ev.latlng.lat,lon:ev.latlng.lng,
-                          id:Date.now()+"-"+Math.random().toString(36).slice(2)});
+    const tool=s.latest?.tool;
+    if(tool==="Radar"){
+      s.trigger("action",{type:"radar",lat:ev.latlng.lat,lon:ev.latlng.lng,
+                            id:Date.now()+"-"+Math.random().toString(36).slice(2)});
+    }else if(tool==="Prohlížení"&&s.latest?.profile){
+      selectTerrainPoint(s,ev.latlng);
+    }
   });
+  s.profilePanel=s.root.querySelector("#cd-terrain-panel");
+  s.profileCanvas=s.root.querySelector("#cd-terrain-canvas");
+  s.profileSummary=s.root.querySelector("#cd-terrain-summary");
+  const close=s.root.querySelector("#cd-terrain-close");
+  if(close)close.addEventListener("click",()=>clearTerrainSelection(s));
+
   s.map.on(L.Draw.Event.CREATED,ev=>{
     if(s.latest?.tool!=="Polygon"||ev.layerType!=="polygon")return;
     const points=ev.layer.getLatLngs()[0]||[];
@@ -101,9 +261,13 @@ function init(s) {
     s.trigger("action",{type:"polygon",coordinates:points.map(p=>[p.lat,p.lng]),
                          id:Date.now()+"-"+Math.random().toString(36).slice(2)});
   });
-  const size=()=>s.map&&s.map.invalidateSize({pan:false,animate:false});
+  const size=()=>{
+    if(s.map)s.map.invalidateSize({pan:false,animate:false});
+    if(s.selection)drawTerrain(s);
+  };
   s.resizeObserver=new ResizeObserver(size);
   s.resizeObserver.observe(node);
+  if(s.profilePanel)s.resizeObserver.observe(s.profilePanel);
   s.resizeInterval=setTimeout(size,160);
   s.ready=true;
   update(s);
@@ -249,6 +413,7 @@ function update(s){
   updateCoverage(s,data);
   updateObstacles(s,data);
   updateRadar(s,data);
+  updateProfile(s,data);
   updateEnvironment(s,data);
   updateMode(s,data);
   updateLive(s,data);
@@ -260,7 +425,7 @@ export default function(component){
   if(!node)return;
   let s=INSTANCES.get(node);
   if(!s){
-    s={node,latest:component.data||{},ready:false,trigger:component.setTriggerValue,
+    s={node,root,latest:component.data||{},ready:false,trigger:component.setTriggerValue,
        badge:root.querySelector("#cd-map-status"),timer:null,activeBaseName:"OpenStreetMap"};
     INSTANCES.set(node,s);
     resources().then(()=>{if(node.isConnected)init(s);})
