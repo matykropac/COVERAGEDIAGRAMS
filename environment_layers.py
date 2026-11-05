@@ -261,7 +261,7 @@ def controls(lat, lon, prefix):
             st.warning("OSM nyní nelze načíst: " + str(exc)[:180])
     if st.button("Načíst Microsoft Building Footprints (lokálně, beta)",
                  key=prefix+"_microsoft", use_container_width=True,
-                 help="Otevřená databáze Microsoft 2026. Max. 3 zdrojové dlaždice a 12 000 budov; "
+                 help="Otevřená databáze Microsoft 2026. Max. 3 zdrojové dlaždice a 50 000 budov; "
                       "ve velkých městech může služba vrátit limit nebo chybu."):
         try:
             from microsoft_buildings import fetch_microsoft
