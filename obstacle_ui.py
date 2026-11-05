@@ -11,6 +11,7 @@ from streamlit_folium import st_folium
 import radar_core as core
 from obstacles import arc_parameters, obstacle_polygon, validate_obstacle
 from wind_turbines import load_wind_turbines, add_wind_layer
+import environment_layers as env
 
 GEOD = Geod(ellps='WGS84')
 MAX_OBSTACLES = 100
@@ -38,6 +39,44 @@ def render_obstacle_editor(radar_lat, radar_lon):
     with table_panel:
         height = st.number_input('Výška nové překážky [m AGL]', 0.1, 1000.0,
                                  value=20.0, step=1.0, key='obstacle_new_height')
+        visible_environment = env.controls(radar_lat, radar_lon, "obstacle_env")
+        if visible_environment:
+            with st.expander("Filtrovaná data · přehled", expanded=False):
+                st.dataframe(pd.DataFrame([{
+                    "Objekt": v["name"], "Typ": env.LABELS[v["kind"]],
+                    "Výška AGL [m]": v["height_m"],
+                    "Azimut [°]": v["azimuth_deg"],
+                    "Vzdálenost [km]": v["distance_km"],
+                    "Původ": v["source"]
+                } for v in visible_environment[:1000]]), use_container_width=True, height=300)
+            st.download_button("Export filtrovaných objektů · GeoJSON",
+                               env.geojson_bytes(visible_environment), file_name="environment_layers.geojson",
+                               mime="application/geo+json", key="env_geojson_editor")
+            st.download_button("Export filtrovaných objektů · KML",
+                               env.kml_bytes(visible_environment), file_name="environment_layers.kml",
+                               mime="application/vnd.google-earth.kml+xml", key="env_kml_editor")
+            usable = [x for x in visible_environment if x["height_m"] is not None and
+                      x["kind"] in ("Building", "Tower") and len(x["coordinates"]) >= 3]
+            if st.button(f"Převést známé výšky na překážky ({min(len(usable), 100)})",
+                         key="environment_to_obstacles",
+                         help="Pouze budovy a věže se známou výškou; max 100 objektů. Neprovádí se automaticky."):
+                remaining = MAX_OBSTACLES - len(obstacles)
+                if remaining <= 0:
+                    st.error("Nejdříve uvolni místo v seznamu 100 výpočetních překážek.")
+                else:
+                    added = 0
+                    for entry in usable[:remaining]:
+                        item = dict(kind="polygon", name=entry["name"],
+                                    coordinates=entry["coordinates"], height_m=entry["height_m"])
+                        try:
+                            validate_obstacle(item, radar_lat, radar_lon)
+                        except (ValueError, TypeError, KeyError):
+                            continue
+                        obstacles.append(item)
+                        added += 1
+                    st.session_state["obstacle_list_rev"] = st.session_state.get("obstacle_list_rev", 0)+1
+                    st.success(f"Do výpočetních překážek přidáno {added} objektů. Spusť nový výpočet.")
+                    st.rerun()
         show_wind = st.checkbox('Zobrazit větrné elektrárny (100 km)',
                                 value=True, key='obstacle_show_wind')
     wind_data = []
@@ -59,6 +98,9 @@ def render_obstacle_editor(radar_lat, radar_lon):
                              show=name == 'Esri · Topographic (legacy)').add_to(om)
         if show_wind and wind_data:
             add_wind_layer(om, wind_data, cluster_points=False)
+        if visible_environment:
+            env.layer_group(om, visible_environment, "Environment / budovy a lesy")
+        env.add_legend(om, visible_environment, "Oranžová: aktivní překážky")
         folium.Marker([radar_lat, radar_lon], tooltip='Radar',
                       icon=folium.Icon(color='orange', icon='signal')).add_to(om)
         for i, item in enumerate(obstacles):
