@@ -17,6 +17,7 @@ from streamlit_folium import st_folium
 from standalone_radar import open_display
 from radar_window import radar_window_link
 from web_support import coverage_geojson
+# Historical CSV tool is imported lazily to avoid a circular dependency.
 import radar_core as core
 
 GEOD = Geod(ellps="WGS84")
@@ -245,3 +246,5 @@ def simulation_tab(result, levels):
             'font-weight:700;margin:10px 0">'
             '▶ SPUSTIT SIMULACI</a>',
             unsafe_allow_html=True)
+        from traffic_history import render_history
+        render_history(result)
