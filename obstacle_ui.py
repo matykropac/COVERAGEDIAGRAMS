@@ -58,9 +58,11 @@ def render_obstacle_editor(radar_lat, radar_lon):
                     visible_environment, canopy_overlay=canopy_overlay, airports=airports)
                 st.session_state["obstacle_environment_signature"] = (
                     env.geojson_bytes(visible_environment),
-                    canopy_overlay[0] if canopy_overlay else b"")
+                    canopy_overlay[0] if canopy_overlay else b"",
+                    repr(airports))
             signature_now = (env.geojson_bytes(visible_environment),
-                             canopy_overlay[0] if canopy_overlay else b"")
+                             canopy_overlay[0] if canopy_overlay else b"",
+                    repr(airports))
             if (st.session_state.get("obstacle_environment_zip") is not None
                     and st.session_state.get("obstacle_environment_signature") == signature_now):
                 st.download_button("Stáhnout export vrstev + legenda (ZIP)",
