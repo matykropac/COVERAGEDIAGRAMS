@@ -12,6 +12,7 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 from traffic_overlay import traffic_csv
+from aviation_basemap import configured_key, add_to_map
 
 API = "https://adsb.aero/api/v1"
 
@@ -135,6 +136,7 @@ def render_historical_map(result):
     _, flights, cursor, t0, t1 = saved
     view = folium.Map(location=[c.lat, c.lon], zoom_start=8,
                       tiles="OpenStreetMap", control_scale=True, prefer_canvas=True)
+    add_to_map(view, configured_key())
     folium.Circle([c.lat, c.lon], radius=radius*1000,
                   color="#70a4ce", weight=1, fill=False,
                   tooltip=f"Oblast dotazu {radius} km").add_to(view)
@@ -170,6 +172,7 @@ def render_historical_map(result):
     if cursor:
         st.caption("Zobrazen pouze první výsledek dotazu; další lety mohou být dostupné. "
                    "Pro menší výběr zúž čas nebo oblast.")
+    folium.LayerControl(collapsed=True).add_to(view)
     st_folium(view, height=520, use_container_width=True,
               key="historical_flights_map", returned_objects=[])
     if csv_records:
