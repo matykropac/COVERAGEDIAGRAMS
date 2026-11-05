@@ -603,7 +603,7 @@ def _draw_map_folium():
     m=folium.Map(location=center,zoom_start=zoom,
                  tiles=None,control_scale=True,prefer_canvas=True,
                  zoom_animation=False,fade_animation=False)
-    for name,provider in core.BASEMAP_PROVIDERS.items():
+    for name,provider in _workspace_basemaps().items():
         folium.TileLayer(provider["url"],name=name,attr=provider["attribution"],
                          max_zoom=provider["max_zoom"],overlay=False,
                          show=name=="OpenStreetMap").add_to(m)
@@ -818,6 +818,7 @@ def _draw_map():
                  "label":configured.radar_mode+" · RADAR"},
         "basemaps":basemaps,
         "openaip":openaip,
+        "theme":st.session_state.get("ws_daynight","DAY"),
         "tool":_map_tool(),
         "live":bool(st.session_state.get("ws_live_adsb",False)),
         "coverage":coverage,
@@ -876,6 +877,12 @@ def _live_map_frame():
     _draw_map_folium()
 
 
+def _workspace_basemaps():
+    """Short, dependable basemap menu; OpenAIP stays a separate overlay."""
+    names=("OpenStreetMap","OpenTopoMap","Satelitní · Esri")
+    return {name:core.BASEMAP_PROVIDERS[name] for name in names}
+
+
 def _map_tool():
     """Map editing follows the active workspace section automatically."""
     return {
@@ -893,7 +900,7 @@ def _restore_sidebar_preferences():
     """
     keys=("ws_show_coverage","ws_display_mode","ws_map_level",
           "ws_comparison","ws_map_opacity","ws_openaip",
-          "ws_live_adsb","ws_show_wind")
+          "ws_live_adsb","ws_show_wind","ws_daynight")
     for key in keys:
         saved="_persist_"+key
         if key in st.session_state:
@@ -959,6 +966,11 @@ def render_workspace():
         if section is None:
             section="MAPA"
         if section=="MAPA":
+            st.markdown('<div class="cd-nav-title">VZHLED MAPY</div>',unsafe_allow_html=True)
+            st.segmented_control("Režim",["DAY","NIGHT"],default="DAY",
+                                 key="ws_daynight",width="stretch",
+                                 label_visibility="collapsed")
+            st.caption("3 podklady: OSM · terén · satelit. Přepínají se v mapě vpravo nahoře.")
             st.markdown('<div class="cd-nav-title">VRSTVY KRYTÍ</div>',unsafe_allow_html=True)
             if result is None:
                 st.caption("Nejprve spočítej radarové krytí v sekci RADAR.")
