@@ -43,7 +43,13 @@ def fetch_snapshot(lat, lon, radius_nm=100, *, timeout=12):
             _, _, distance = GEOD.inv(float(lon), float(lat), lo, la)
             if distance > radius_nm * 1852:
                 continue
-            alt = item.get("alt_geom", item.get("alt_baro"))
+            # Skip stale reports; present this layer as a recent snapshot, not a track.
+            seen = item.get("seen_pos")
+            if seen is not None and float(seen) > 120:
+                continue
+            alt = item.get("alt_geom")
+            if alt is None:
+                alt = item.get("alt_baro")
             if alt in (None, "ground"):
                 altitude_ft = None
             else:
