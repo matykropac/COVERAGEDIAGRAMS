@@ -362,41 +362,76 @@ def layers_dialog():
         if not (buildings or airports or wind or microsoft):
             st.warning("Vyber alespoň jeden datový zdroj.")
         else:
+            sources=[
+                ("OpenStreetMap / Overpass",buildings),
+                ("Microsoft Building Footprints",microsoft),
+                ("OurAirports",airports),
+                ("Větrné elektrárny / offline dataset, případně OSM",wind),
+            ]
+            work=[name for name,enabled in sources if enabled]
             loaded=[]
             errors=[]
-            if buildings:
-                try:
-                    with st.spinner("Načítám OpenStreetMap…"):
-                        loaded.extend(env.fetch_osm(*site,radius))
-                except Exception as exc:
-                    errors.append("OSM: "+str(exc)[:135])
-            if microsoft:
-                try:
-                    from microsoft_buildings import fetch_microsoft
-                    with st.spinner("Načítám Microsoft Building Footprints…"):
-                        loaded.extend(fetch_microsoft(*site,radius))
-                except Exception as exc:
-                    errors.append("Microsoft: "+str(exc)[:135])
-            if buildings or microsoft:
-                st.session_state["ws_environment"]=loaded[:env.MAX_ENVIRONMENT_ITEMS]
-            if airports:
-                try:
-                    with st.spinner("Načítám letiště…"):
-                        st.session_state["ws_airports"]=aviation.nearby(*site,120)
-                except Exception as exc:
-                    errors.append("Letiště: "+str(exc)[:135])
-            if wind:
-                try:
-                    with st.spinner("Načítám větrné elektrárny…"):
-                        st.session_state["ws_wind_data"]=load_wind_turbines(*site)
-                except Exception as exc:
-                    errors.append("Větrné elektrárny: "+str(exc)[:135])
-            st.session_state["ws_geodata_site"]=site
-            st.session_state["ws_geodata_errors"]=errors
-            if errors:
-                st.warning("Některé zdroje selhaly: "+" | ".join(errors))
-            else:
-                st.success("Vybraná geodata byla načtena do hlavní mapy.")
+            completed={}
+            started=time.perf_counter()
+            with st.status("⏳ Připravuji načtení geodat…",expanded=True,state="running") as progress:
+                st.caption(f"📍 {site[0]:.5f}°, {site[1]:.5f}° · {len(work)} zdroje · "
+                           "skutečný průběh bez odhadovaných procent")
+                for step,(name,enabled) in enumerate(sources,1):
+                    if not enabled:
+                        continue
+                    current=len(completed)+1
+                    progress.update(label=f"⏳ Pracuji · {current}/{len(work)} · {name}",
+                                    state="running",expanded=True)
+                    st.write(f"**⏳ {name}** — navazuji spojení / zpracovávám data…")
+                    t0=time.perf_counter()
+                    try:
+                        if name.startswith("OpenStreetMap"):
+                            fetched=env.fetch_osm(*site,radius)
+                            loaded.extend(fetched)
+                            count=len(fetched)
+                            detail=f"budovy, lesy, věže · {radius:g} km"
+                        elif name.startswith("Microsoft"):
+                            from microsoft_buildings import fetch_microsoft
+                            fetched=fetch_microsoft(*site,radius)
+                            loaded.extend(fetched)
+                            count=len(fetched)
+                            detail=f"budovy · {radius:g} km"
+                        elif name=="OurAirports":
+                            fetched=aviation.nearby(*site,120)
+                            st.session_state["ws_airports"]=fetched
+                            count=len(fetched)
+                            detail="letiště a heliporty · 120 km"
+                        else:
+                            fetched=load_wind_turbines(*site)
+                            st.session_state["ws_wind_data"]=fetched
+                            count=len(fetched)
+                            detail="větrné elektrárny · 100 km"
+                        completed[name]=count
+                        st.write(f"✅ {name}: **{count:,} objektů** · {detail} · "
+                                 f"{time.perf_counter()-t0:.1f} s")
+                    except Exception as exc:
+                        reason=str(exc)[:155]
+                        errors.append(f"{name}: {reason}")
+                        completed[name]=None
+                        st.write(f"⚠️ {name}: nepodařilo se načíst · "
+                                 f"{time.perf_counter()-t0:.1f} s")
+                        st.caption(reason)
+                if buildings or microsoft:
+                    st.session_state["ws_environment"]=loaded[:env.MAX_ENVIRONMENT_ITEMS]
+                st.session_state["ws_geodata_site"]=site
+                st.session_state["ws_geodata_errors"]=errors
+                total=sum(v for v in completed.values() if v is not None)
+                elapsed=time.perf_counter()-started
+                if errors:
+                    progress.update(
+                        label=f"⚠️ Hotovo s upozorněním · {total:,} objektů · {elapsed:.1f} s",
+                        state="error",expanded=True)
+                else:
+                    progress.update(
+                        label=f"✅ Hotovo · {total:,} objektů · {elapsed:.1f} s",
+                        state="complete",expanded=False)
+            st.caption("Záznam postupu je dostupný rozbalením stavového okénka. "
+                       "Načtené objekty se zobrazí na hlavní mapě.")
 
     if st.session_state.get("ws_geodata_site")!=site:
         if st.session_state.get("ws_geodata_site"):
