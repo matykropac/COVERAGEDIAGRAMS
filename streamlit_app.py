@@ -680,8 +680,7 @@ else:
             for option in ('project', 'html', 'layers', 'terrain', 'antenna',
                            'fl_png', 'png_dark', 'png_light', 'quickreport', *FORMATS):
                 st.session_state['zip_' + option] = desired
-            for altitude in all_levels:
-                st.session_state[f'zip_fl_{altitude}'] = desired
+            st.session_state['zip_selected_levels'] = list(all_levels) if desired else []
 
         # Three concise columns instead of vertically stacked export sections.
         project_col, images_col, data_col = st.columns(3, gap='medium')
@@ -703,16 +702,16 @@ else:
                 st.checkbox(label, key='zip_' + key, value=False)
             st.checkbox('QuickReport · ZIP 600 DPI', key='zip_quickreport', value=False)
 
-        # The flight levels are one clear, visually grouped unit.
-        with st.expander('LETOVÉ HLADINY  ·  ft AMSL  (rozbalit / sbalit)', expanded=True):
-            st.caption('Platí pro PNG hladin, mapy krytí, KML, GeoPackage, GeoTIFF a QuickReport.')
-            level_cols = st.columns(8, gap='small')
-            selected_levels = []
-            for n, altitude in enumerate(all_levels):
-                with level_cols[n % 8]:
-                    if st.checkbox(core.level_label(altitude), key=f'zip_fl_{altitude}',
-                                   value=altitude in levels):
-                        selected_levels.append(altitude)
+        # Single multiselect replaces one checkbox per flight level.
+        selected_levels = st.multiselect(
+            'LETOVÉ HLADINY · ft AMSL',
+            options=all_levels,
+            default=[altitude for altitude in all_levels if altitude in levels],
+            format_func=core.level_label,
+            key='zip_selected_levels',
+            help='Jediný společný výběr hladin pro PNG, KML, GeoPackage, GeoTIFF a QuickReport.',
+            placeholder='Vyber letové hladiny…',
+        )
 
         option_names = ('project', 'html', 'layers', 'terrain', 'antenna',
                         'fl_png', 'png_dark', 'png_light', 'quickreport', *FORMATS)
