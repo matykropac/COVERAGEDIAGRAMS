@@ -6,6 +6,7 @@ processing and application state remain local, served on loopback only.
 from __future__ import annotations
 
 import multiprocessing
+import json
 import os
 from pathlib import Path
 import socket
@@ -104,7 +105,7 @@ def show_failure(message: str) -> None:
         try:
             sp.run(["osascript", "-e",
                     'display alert "COVERAGEDIAGRAMS" message '
-                    + repr(message) + ' as critical'], timeout=10, check=False)
+                    + json.dumps(message) + ' as critical'], timeout=10, check=False)
         except (OSError, sp.TimeoutExpired):
             print(message, file=sys.stderr)
     else:
@@ -119,7 +120,7 @@ def run_desktop() -> None:
         path.rename(path.with_suffix(".previous.log"))
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     with path.open("a", encoding="utf-8") as output:
-        output.write(f"\\n-- Desktop start {time.strftime('%Y-%m-%d %H:%M:%S')} --\\n")
+        output.write(f"\n-- Desktop start {time.strftime('%Y-%m-%d %H:%M:%S')} --\\n")
         output.flush()
         child = subprocess.Popen(
             child_command(port),
