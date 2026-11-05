@@ -194,51 +194,115 @@ def radar_dialog():
 
 
 def _calculate_coverage():
-    """Compute from the shared map workspace without opening another screen."""
-    try:
-        c=_cfg()
-        c.validate()
-        az,distance=core.axes(c)
-        if len(az)*len(distance)>250000:
-            raise ValueError("Výpočet přesahuje 250 000 vzorků. Zvětši krok.")
-        with st.spinner("Načítám terén a počítám krytí…"):
+    """Detailed, live, source-aware status for the synchronous coverage engine."""
+    started=time.perf_counter()
+    events=[]
+    api_key=""
+    def elapsed():
+        return f"{time.perf_counter()-started:.1f} s"
+
+    with st.status("⏳ RADAR ENGINE · Zahajuji výpočet…",
+                   state="running",expanded=True) as panel:
+        live_log=st.empty()
+        def log(message):
+            stamp=datetime.now().strftime("%H:%M:%S")
+            events.append(f"[{stamp}] {message}")
+            # Code log re-renders after actual engine callbacks; no invented percentages.
+            live_log.code("\n".join(events[-18:]),language=None)
+        def phase(title):
+            panel.update(label=f"⏳ {title} · {elapsed()}",
+                         state="running",expanded=True)
+            log(title)
+        def report(message,*args):
+            # Core download/sample callbacks run as data actually arrive.
+            msg=str(message).strip()
+            if api_key:
+                msg=msg.replace(api_key,"[API KEY]")
+            if msg and (not events or msg not in events[-1]):
+                log(msg[:260])
+        try:
+            phase("Kontroluji parametry radaru")
+            c=_cfg()
+            c.validate()
+            az,distance=core.axes(c)
+            samples=len(az)*len(distance)
+            log(f"Radar: {c.radar_mode} · {c.lat:.6f}°, {c.lon:.6f}°")
+            log(f"Výpočetní síť: {len(az)} azimutů × {len(distance)} vzdáleností = {samples:,} vzorků")
+            if samples>250000:
+                raise ValueError("Výpočet přesahuje 250 000 vzorků. Zvětši krok.")
+
             source=st.session_state.get("ws_source","OpenTopography")
             if source=="DEM soubor":
+                phase("Čtu nahraný digitální model terénu")
                 uploaded=st.session_state.get("ws_dem")
                 if uploaded is None:
-                    raise ValueError("Nahraj DEM soubor.")
+                    raise ValueError("Nahraj DEM soubor v nastavení radaru.")
                 with tempfile.TemporaryDirectory(prefix="cd_workspace_") as work:
                     path=Path(work)/("terrain"+Path(uploaded.name).suffix.lower())
                     content=uploaded.getvalue()
                     path.write_bytes(content)
-                    terrain,ground=core.sample(path,c,lambda *args:None)
+                    log(f"Soubor: {uploaded.name} · {len(content)/1048576:.1f} MiB")
+                    phase("Vzorkuji DEM podél radarových paprsků")
+                    terrain,ground=core.sample(path,c,report)
                     provenance="DEM upload · SHA256 "+hashlib.sha256(content).hexdigest()
             else:
+                phase("Připravuji spojení s OpenTopography")
                 import os
                 api_key=os.environ.get("OPENTOPOGRAPHY_API_KEY","")
                 if not api_key:
-                    try: api_key=str(st.secrets.get("OPENTOPOGRAPHY_API_KEY",""))
-                    except (FileNotFoundError,KeyError,OSError): pass
+                    try:
+                        api_key=str(st.secrets.get("OPENTOPOGRAPHY_API_KEY",""))
+                    except (FileNotFoundError,KeyError,OSError):
+                        pass
                 if not api_key:
-                    raise ValueError("OpenTopography vyžaduje klíč v Secrets (OPENTOPOGRAPHY_API_KEY).")
+                    raise ValueError("OpenTopography vyžaduje OPENTOPOGRAPHY_API_KEY ve Streamlit Secrets.")
                 dataset=st.session_state.get("ws_dataset","COP30")
-                path=core.download(c,api_key,dataset,lambda *args:None)
-                terrain,ground=core.sample(path,c,lambda *args:None)
+                log(f"DEM: OpenTopography · {dataset} · vyžádaná oblast kolem radaru")
+                phase("Stahuji digitální model terénu")
+                path=core.download(c,api_key,dataset,report)
+                phase("Vzorkuji terén do radarové mřížky")
+                terrain,ground=core.sample(path,c,report)
                 provenance="OpenTopography · "+dataset
+
+            log(f"Výška stanoviště: {ground:.1f} m AMSL")
+            phase("Počítám radarový horizont a výškové krytí")
+            solve_started=time.perf_counter()
             result=core.solve(c,terrain,ground,_pattern(c))
-            apply_obstacles(result,st.session_state.get("obstacles",[]))
-            result["obstacles_signature"]=obstacle_signature(st.session_state.get("obstacles",[]))
-            result.update(source=provenance,completed_at=datetime.now(timezone.utc).isoformat(),
-                          duration_s=0.0)
+            log(f"Výpočet krytí dokončen · {time.perf_counter()-solve_started:.1f} s")
+
+            obstacles=st.session_state.get("obstacles",[])
+            phase(f"Započítávám překážky · {len(obstacles)} objektů")
+            apply_obstacles(result,obstacles)
+            result["obstacles_signature"]=obstacle_signature(obstacles)
+            log("Překážky byly promítnuty do výsledné geometrie.")
+
+            phase("Ukládám výsledky a připravuji mapové vrstvy")
+            result.update(source=provenance,
+                          completed_at=datetime.now(timezone.utc).isoformat(),
+                          duration_s=round(time.perf_counter()-started,3))
             st.session_state.result=result
             st.session_state.geometry={}
             st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
             st.session_state["ws_result_notice"]="Krytí úspěšně vypočteno."
             st.session_state["ws_next_section"]="MAPA"
-        st.rerun()
-    except Exception as exc:
-        st.error(f"Výpočet se nepodařil: {str(exc)[:360]}")
+            log(f"Hotovo · {elapsed()} · data jsou připravena v mapě")
+            panel.update(label=f"✅ RADAR ENGINE · Hotovo za {elapsed()}",
+                         state="complete",expanded=True)
+        except Exception as exc:
+            message=str(exc)
+            if api_key:
+                message=message.replace(api_key,"[API KEY]")
+            log("CHYBA: "+message[:340])
+            panel.update(label=f"⚠️ RADAR ENGINE · Výpočet se nezdařil · {elapsed()}",
+                         state="error",expanded=True)
+            st.error(message[:340])
+            return
 
+    st.success("Výpočet dokončen. Přepni do MAPA pro zobrazení letových hladin.")
+    if st.button("ZOBRAZIT V MAPĚ",type="primary",key="ws_show_result_map",
+                 use_container_width=True):
+        st.session_state["ws_next_section"]="MAPA"
+        st.rerun()
 
 
 @st.dialog("PŘEKÁŽKY / Seznam a úpravy", width="large")
@@ -776,7 +840,7 @@ def _draw_map():
                         "lat":action["lat"],"lng":action["lon"]})
                     st.session_state["ws_lat"]=lat
                     st.session_state["ws_lon"]=lon
-                    st.session_state["ws_next_map_tool"]="Prohlížení"
+                    st.session_state["ws_next_section"]="MAPA"
                     st.rerun()
                 except (ValueError,TypeError,KeyError) as exc:
                     st.warning("Neplatné stanoviště radaru: "+str(exc))
