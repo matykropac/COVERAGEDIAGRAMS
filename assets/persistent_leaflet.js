@@ -165,9 +165,14 @@ function updateEnvironment(s,data){
   s.last.environment=sig;
   s.groups.environment.clearLayers();
   for(const shape of data.environment||[]){
-    if(!shape.coordinates?.length)continue;
-    L.polygon(shape.coordinates,{color:shape.color||"#7c97ad",weight:1,
-      fillOpacity:.2}).bindTooltip(String(shape.name||"Objekt")).addTo(s.groups.environment);
+    if(shape.type==="point"&&Number.isFinite(shape.lat)&&Number.isFinite(shape.lon)){
+      L.circleMarker([shape.lat,shape.lon],{radius:4,
+        color:shape.color||"#7c97ad",weight:1,fillOpacity:.8})
+        .bindTooltip(String(shape.name||"Objekt")).addTo(s.groups.environment);
+    }else if(shape.coordinates?.length){
+      L.polygon(shape.coordinates,{color:shape.color||"#7c97ad",weight:1,
+        fillOpacity:.2}).bindTooltip(String(shape.name||"Objekt")).addTo(s.groups.environment);
+    }
   }
 }
 function updateMode(s,data) {
