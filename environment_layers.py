@@ -14,6 +14,9 @@ import streamlit as st
 from pyproj import Geod
 
 GEOD = Geod(ellps="WGS84")
+MAX_ENVIRONMENT_ITEMS = 50000
+MAX_MAP_POLYGONS = 6000
+
 COLORS = {"Building": "#e3a64c", "Forest": "#48ae78", "Tower": "#d778ed"}
 LABELS = {"Building": "Budovy", "Forest": "Lesy / porost", "Tower": "Stožáry a věže"}
 SOURCES = (
@@ -114,14 +117,14 @@ def fetch_osm(lat, lon, radius_km):
                         tags, element.get("id", "unknown"))
         if item:
             items.append(item)
-    return items[:12000]
+    return items[:MAX_ENVIRONMENT_ITEMS]
 
 def import_geojson(raw):
     """Accept GeoJSON Polygon/MultiPolygon with optional height and class properties."""
     data = json.loads(raw)
     features = data.get("features", []) if data.get("type") == "FeatureCollection" else [data]
     items = []
-    for i, feature in enumerate(features[:12000]):
+    for i, feature in enumerate(features[:MAX_ENVIRONMENT_ITEMS]):
         geom = feature.get("geometry") or {}
         props = feature.get("properties") or {}
         raw_kind = str(props.get("kind") or props.get("class") or props.get("type") or "Building").lower()
@@ -138,7 +141,7 @@ def import_geojson(raw):
                 item["name"] = str(props.get("name", item["name"]))[:130]
                 item["source"] = "Imported GeoJSON"
                 items.append(item)
-    return items[:12000]
+    return items[:MAX_ENVIRONMENT_ITEMS]
 
 def distance_azimuth(item, lat, lon):
     pts = item["coordinates"]
@@ -170,7 +173,7 @@ def selected(items, lat, lon, kinds, min_height, max_distance, include_unknown,
 
 def layer_group(map_obj, items, name="Environmental objects", visible=True):
     group = folium.FeatureGroup(name=name, show=visible, overlay=True)
-    for item in items[:3500]:
+    for item in items[:MAX_MAP_POLYGONS]:
         color = COLORS.get(item["kind"], "#dddddd")
         h = item.get("height_m")
         label = escape(str(item.get("name", "")))
@@ -272,8 +275,8 @@ def controls(lat, lon, prefix):
     file = st.file_uploader("Import budov / lesů (GeoJSON)", type=["geojson", "json"], key=prefix+"_upload")
     if file is not None and st.button("Použít importovaná data", key=prefix+"_use_import"):
         try:
-            if file.size > 30_000_000:
-                raise ValueError("GeoJSON je větší než 30 MB. Rozděl ho na menší území.")
+            if file.size > 60_000_000:
+                raise ValueError("GeoJSON je větší než 60 MB. Rozděl ho na menší území.")
             st.session_state["environment_items"] = import_geojson(file.getvalue())
             st.session_state["environment_site"] = None
             st.success("GeoJSON byl načten.")
@@ -295,7 +298,7 @@ def controls(lat, lon, prefix):
     subset = selected(items, lat, lon, kinds, minimum, distance, include_unknown,
                       az_start, az_end, search_name)
     st.caption(f"Načteno {len(items)} · filtrem vybráno {len(subset)} · "
-               f"vykresleno {min(len(subset), 3500)} nejbližších objektů")
+               f"vykresleno {min(len(subset), MAX_MAP_POLYGONS)} nejbližších objektů")
     st.caption("Výšky bez atributu OSM zůstávají neznámé; nevstupují automaticky do krytí.")
     return subset
 
