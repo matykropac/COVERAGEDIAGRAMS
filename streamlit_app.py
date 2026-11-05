@@ -66,7 +66,8 @@ if _pending_radar_site is not None:
     st.session_state['project_notice'] = ''
 
 # Centralized ATM stylesheet. Keep widget spacing and colors in one place.
-st.markdown('<style>' + (Path(__file__).resolve().parent / 'assets' / 'atm-theme.css').read_text(encoding='utf-8') + '</style>', unsafe_allow_html=True)
+if st.query_params.get('classic') == '1':
+    st.markdown('<style>' + (Path(__file__).resolve().parent / 'assets' / 'atm-theme.css').read_text(encoding='utf-8') + '</style>', unsafe_allow_html=True)
 
 # The separate radar tab is a lightweight route, not a second dashboard.
 if render_radar_window():
