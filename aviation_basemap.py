@@ -1,46 +1,43 @@
-"""Native aeronautical OpenAIP raster layer for Folium traffic maps.
+"""Shared OpenAIP aviation chart overlay for COVERAGEDIAGRAMS Folium maps.
 
-OpenAIP requires a personal API key. This implementation uses the official tile
-endpoint, not adsb.aero's private proxy. The tile URL is delivered to the user's
-browser as with other Leaflet providers; use a dedicated limited-scope key.
+Set OPENAIP_API_KEY in Streamlit secrets or the server environment.
+Never commit API credentials. Raster requests run in the user's browser;
+the key appears in browser network requests. Use only a key permitted
+for client-side map tiles, ideally domain-restricted by the provider.
 """
+import os
 from urllib.parse import quote
 
 import folium
-import streamlit as st
 
 ATTRIBUTION = 'Aeronautical data © <a href="https://www.openaip.net/">OpenAIP</a>'
 URL = "https://api.tiles.openaip.net/api/data/openaip/{z}/{x}/{y}.png?apiKey={key}"
 
 
-def active_key():
-    return str(st.session_state.get("traffic_openaip_key", "")).strip()
+def configured_key():
+    key = os.environ.get("OPENAIP_API_KEY", "").strip()
+    if key:
+        return key
+    try:
+        import streamlit as st
+        return str(st.secrets.get("OPENAIP_API_KEY", "")).strip() or None
+    except (FileNotFoundError, KeyError, OSError):
+        return None
 
 
 def controls():
-    """Shared setting for all PROVOZ map modes."""
-    with st.expander("LETECKÉ MAPOVÉ VRSTVY · OpenAIP", expanded=False):
-        st.checkbox("Letecká mapa OpenAIP", value=True, key="traffic_openaip_enabled")
-        st.text_input(
-            "Vlastní OpenAIP API klíč",
-            type="password",
-            key="traffic_openaip_key",
-            help="OpenAIP vyžaduje API klíč. Odesílá se poskytovateli "
-                 "v URL mapových dlaždic a je viditelný v síťových požadavcích prohlížeče.")
-        if not active_key():
-            st.caption("Pro zobrazení OpenAIP zadej svůj klíč z openaip.net. "
-                       "Běžná mapová vrstva a radarové krytí fungují i bez něj.")
-        st.caption("Vrstva je přímo součástí mapy, lze ji přepínat v nabídce vrstev. "
-                   "Pouze analytické použití, nikoli certifikovaná navigační mapa.")
+    """Informational status only; map overlay is enabled by default globally."""
+    import streamlit as st
+    if configured_key():
+        st.caption("Letecká mapa OpenAIP je automaticky dostupná ve všech interaktivních mapách.")
+    else:
+        st.caption("OpenAIP: nastav OPENAIP_API_KEY v zabezpečeném nastavení aplikace. "
+                   "Do té doby se používají standardní mapové podklady.")
 
 
-def configured_key():
-    if not st.session_state.get("traffic_openaip_enabled", True):
-        return None
-    return active_key() or None
-
-
-def add_to_map(map_obj, key, *, show=True):
+def add_to_map(map_obj, key=None, *, show=True):
+    """Attach OpenAIP chart as native, switchable Leaflet overlay."""
+    key = key or configured_key()
     if not key:
         return False
     folium.TileLayer(
@@ -51,6 +48,6 @@ def add_to_map(map_obj, key, *, show=True):
         control=True,
         show=show,
         max_zoom=18,
-        opacity=0.9,
+        opacity=0.88,
     ).add_to(map_obj)
     return True
