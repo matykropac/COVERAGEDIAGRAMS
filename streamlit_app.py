@@ -254,6 +254,12 @@ def open_project_callback():
 
 
 
+# New default: map-first workspace. The classic interface is retained as a fallback.
+if st.query_params.get("classic") != "1":
+    from map_workspace import render_workspace
+    render_workspace()
+    st.stop()
+
 # Compact application header; the navigation is styled as a persistent left rail.
 st.markdown(
     """
