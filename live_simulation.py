@@ -246,5 +246,6 @@ def simulation_tab(result, levels):
             'font-weight:700;margin:10px 0">'
             '▶ SPUSTIT SIMULACI</a>',
             unsafe_allow_html=True)
-        from traffic_history import render_history
-        render_history(result)
+    # Historical traffic is a full-width analytical panel, not a narrow launcher widget.
+    from traffic_history import render_history
+    render_history(result)
