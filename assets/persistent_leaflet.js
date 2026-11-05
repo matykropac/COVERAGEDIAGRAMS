@@ -237,7 +237,7 @@ function clearTerrainSelection(s){
   if(s.selectionMarker){s.map.removeLayer(s.selectionMarker);s.selectionMarker=null;}
   if(s.selectionLine){s.map.removeLayer(s.selectionLine);s.selectionLine=null;}
   if(s.profilePanel)s.profilePanel.hidden=true;
-  if(s.root)s.root.id="";
+  if(s.root)s.root.classList.remove("cd-profile-active");
 }
 function selectTerrainPoint(s,latlng){
   const p=s.latest?.profile;
@@ -265,7 +265,7 @@ function selectTerrainPoint(s,latlng){
       (km>p.maxRangeKm?" · mimo dosah radaru":"");
   }
   if(s.profilePanel)s.profilePanel.hidden=false;
-  if(s.root)s.root.id="cd-profile-active";
+  if(s.root)s.root.classList.add("cd-profile-active");
   requestAnimationFrame(()=>s.map.invalidateSize({pan:false,animate:false}));
   drawTerrain(s);
 }
