@@ -1,0 +1,33 @@
+name: Python code smoke check
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile all Python sources
+        run: python -m compileall -q .
+      - name: Install runtime requirements
+        run: python -m pip install -r requirements.txt
+      - name: Import new modules
+        run: |
+          python - <<'PY'
+          import environment_layers as env
+          import aviation_layers
+          import traffic_history
+          assert env.numeric_height("100 ft") is not None
+          assert env.numeric_height("unknown") is None
+          assert env.import_geojson('{"type":"FeatureCollection","features":[]}') == []
+          assert b"FeatureCollection" in env.geojson_bytes([])
+          assert b"<" in env.kml_bytes([])
+          assert len(env.legend_png([])) > 1000
+          assert len(env.export_bundle([])) > 500
+          print("Smoke OK")
+          PY
