@@ -52,14 +52,15 @@ jobs:
       - name: Smoke test packaged local Streamlit server
         run: python desktop_smoke.py --binary "${{ matrix.binary }}"
       - name: Create Windows portable ZIP
-        if: runner.os == 'Windows'
+        if: ${{ always() && runner.os == 'Windows' }}
         shell: pwsh
         run: Compress-Archive -Path dist/COVERAGEDIAGRAMS -DestinationPath ${{ matrix.artifact }}.zip
       - name: Create macOS application ZIP preserving symlinks
-        if: runner.os == 'macOS'
+        if: ${{ always() && runner.os == 'macOS' }}
         shell: bash
         run: ditto -c -k --sequesterRsrc --keepParent dist/COVERAGEDIAGRAMS.app "${{ matrix.artifact }}.zip"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}.zip
