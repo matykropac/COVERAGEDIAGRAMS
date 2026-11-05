@@ -36,6 +36,13 @@ div[data-baseweb="input"] input{min-height:2.2rem!important;color:#e7f6ff!import
 div[data-baseweb="tag"]{background:#164c67!important;color:#dcfaff!important;border-radius:5px!important}
 div[data-baseweb="tag"] span{color:#dcfaff!important}
 div[data-baseweb="slider"] [role="slider"]{background:#3fd0ee!important}
+/* Streamlit Cloud overlay header obscures tabs. Space the tabs themselves,
+   not only .block-container (which newer Streamlit layouts may ignore). */
+[data-testid="stTabs"]{
+    margin-top:110px!important;
+    position:relative!important;
+    z-index:2!important;
+}
 [data-testid="stTabs"] [data-baseweb="tab-list"]{gap:.4rem!important;border-bottom:1px solid #21465f!important;padding-bottom:.4rem!important;margin-bottom:.55rem!important}
 /* Streamlit tabs can be buttons OR divs, depending on frontend version.
    Always style the role rather than relying on the element tag. */
