@@ -214,11 +214,86 @@ def radar_dialog():
             st.error(f"Výpočet se nepodařil: {str(exc)[:360]}")
 
 
-@st.dialog("PŘEKÁŽKY / Editor",width="large")
+@st.dialog("PŘEKÁŽKY / Seznam a úpravy", width="large")
 def obstacles_dialog():
-    c=_cfg()
-    st.caption("Nakresli polygon a nastav jeho výšku. Po úpravě překážek spusť nový výpočet.")
-    render_obstacle_editor(c.lat,c.lon)
+    import pandas as pd
+    from obstacles import validate_obstacle
+    obstacles=st.session_state.setdefault("obstacles",[])
+    st.caption("Novou překážku nakresli na hlavní mapě v režimu POLYGON. "
+               "Tady upravíš výšku, název nebo překážku odstraníš.")
+    st.metric("Výpočetní překážky",len(obstacles))
+    if not obstacles:
+        st.info("Žádné překážky. Zavři dialog, aktivuj POLYGON a zakresli půdorys do mapy.")
+        return
+    table=pd.DataFrame([{
+        "Název":obj.get("name",f"Překážka {i+1}"),
+        "Výška [m AGL]":float(obj["height_m"]),
+        "Smazat":False,
+    } for i,obj in enumerate(obstacles)])
+    rev=st.session_state.get("ws_obstacle_revision",0)
+    edited=st.data_editor(
+        table,key=f"ws_obstacles_table_{rev}",
+        use_container_width=True,hide_index=True,
+        column_config={
+            "Název":st.column_config.TextColumn(required=True),
+            "Výška [m AGL]":st.column_config.NumberColumn(min_value=.1,max_value=1000.,step=1.),
+            "Smazat":st.column_config.CheckboxColumn(),
+        })
+    if st.button("ULOŽIT ZMĚNY",type="primary",use_container_width=True,key="ws_obstacles_save"):
+        updated=[]
+        try:
+            c=_cfg()
+            for i,row in edited.iterrows():
+                if bool(row["Smazat"]):
+                    continue
+                item=dict(obstacles[i])
+                item["name"]=str(row["Název"]).strip() or f"Překážka {i+1}"
+                item["height_m"]=float(row["Výška [m AGL]"])
+                validate_obstacle(item,c.lat,c.lon)
+                updated.append(item)
+        except (ValueError,TypeError,KeyError) as exc:
+            st.error(f"Neplatná úprava: {exc}")
+        else:
+            st.session_state["obstacles"]=updated
+            st.session_state["ws_obstacle_revision"]=rev+1
+            st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
+            st.rerun()
+
+
+@st.dialog("NOVÁ PŘEKÁŽKA / Polygon",width="small")
+def new_obstacle_dialog():
+    from obstacles import validate_obstacle
+    coords=st.session_state.get("ws_pending_polygon")
+    if not coords:
+        st.info("Nejprve nakresli polygon na hlavní mapě.")
+        return
+    st.caption(f"Polygon: {len(coords)} vrcholů · WGS84")
+    count=len(st.session_state.setdefault("obstacles",[]))
+    name=st.text_input("Název",value=f"Překážka {count+1:02d}",key="ws_polygon_name")
+    height=st.number_input("Výška [m AGL]",min_value=.1,max_value=1000.,
+                           value=20.,step=1.,key="ws_polygon_height")
+    left,right=st.columns(2)
+    with left:
+        if st.button("ZRUŠIT",use_container_width=True,key="ws_polygon_cancel"):
+            st.session_state.pop("ws_pending_polygon",None)
+            st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
+            st.rerun()
+    with right:
+        if st.button("PŘIDAT DO MAPY",type="primary",use_container_width=True,key="ws_polygon_confirm"):
+            try:
+                if count>=1000: raise ValueError("Nejvýše 1000 výpočetních překážek.")
+                c=_cfg()
+                item={"kind":"polygon","name":name.strip() or f"Překážka {count+1:02d}",
+                      "coordinates":coords,"height_m":float(height)}
+                validate_obstacle(item,c.lat,c.lon)
+                st.session_state["obstacles"].append(item)
+                st.session_state.pop("ws_pending_polygon",None)
+                st.session_state["ws_obstacle_revision"]=st.session_state.get("ws_obstacle_revision",0)+1
+                st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
+                st.session_state["ws_map_tool"]="Prohlížení"
+                st.rerun()
+            except (ValueError,TypeError,KeyError) as exc:
+                st.error(str(exc))
 
 
 @st.dialog("PROVOZ / Live a historie",width="large")
