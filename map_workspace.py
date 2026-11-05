@@ -553,6 +553,11 @@ def _live_map_frame():
 
 
 def render_workspace():
+    # Migrate an already computed legacy project into this map workspace once.
+    previous=st.session_state.get("result")
+    if previous is not None and "ws_radar" not in st.session_state:
+        _config_state_from_project(previous["config"])
+        st.session_state["ws_levels"]=list(st.session_state.get("levels",[3000,10000]))
     pending_tool=st.session_state.pop("ws_next_map_tool",None)
     if pending_tool is not None:
         st.session_state["ws_map_tool"]=pending_tool
@@ -597,11 +602,11 @@ def render_workspace():
         else:
             age=result.get("completed_at","")
             changed=(result.get("obstacles_signature") != obstacle_signature(
-                st.session_state.get("obstacles",[])))
+                st.session_state.get("obstacles",[])) or current != result["config"])
             st.caption(f"{result['config'].radar_mode} · {current.lat:.6f}°, "
                        f"{current.lon:.6f}° · "
                        f"{len(st.session_state.get('obstacles',[]))} překážek"
-                       +(" · ZMĚNĚNÉ PŘEKÁŽKY — PŘEPOČÍTEJ" if changed else ""))
+                       +(" · NASTAVENÍ SE ZMĚNILO — PŘEPOČÍTEJ" if changed else " · výpočet aktuální"))
     with simulate:
         live=st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
     with calculate:
