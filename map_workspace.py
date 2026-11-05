@@ -555,16 +555,16 @@ def render_workspace():
           background:#ffffff!important;border-right:1px solid #dbe4ee!important}
       [data-testid="stSidebar"] > div:first-child{width:400px!important}
       [data-testid="stSidebarUserContent"]{padding:12px 10px!important}
-      [data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.30rem!important}
+      [data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.62rem!important}
       [data-testid="stSidebar"] [data-testid="stButton"]>button{
           min-height:33px!important;font-size:11px!important;text-align:left!important}
       [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p{font-size:11px!important}
       [data-testid="stSidebar"] [data-testid="stCaptionContainer"]{font-size:10px!important}
       [data-testid="stSidebar"] div[data-baseweb="select"]>div{min-height:32px!important}
       .cd-nav-title{color:#7b8da1;font:700 10px system-ui;letter-spacing:.12em;
-          margin:12px 0 5px;border-bottom:1px solid #e4eaf1;padding-bottom:6px}
+          margin:18px 0 10px;border-bottom:1px solid #e4eaf1;padding-bottom:8px}
       .cd-sidebar-brand{color:#1d3c61;font:800 14px system-ui;line-height:1.3;
-          letter-spacing:.025em;padding:4px 0 6px}
+          letter-spacing:.025em;padding:8px 0 12px}
       .cd-sidebar-brand small{display:block;font-size:9px;letter-spacing:.14em;
           color:#7c90a4;font-weight:650}
       [data-testid="stMainBlockContainer"],.block-container{
