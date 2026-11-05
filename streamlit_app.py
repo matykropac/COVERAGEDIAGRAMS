@@ -31,6 +31,7 @@ from live_simulation import simulation_tab
 from radar_window import render_radar_window
 from wind_turbines import load_wind_turbines, add_wind_layer
 from site_picker import coordinates_from_map_click
+import environment_layers as env
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -481,6 +482,7 @@ else:
             alphas = {ft: alpha for ft in active}
             st.caption(f'Aktivní vrstvy: {len(active) + int(show_target)}')
             st.caption('Kliknutí měří přímo v mapě, bez překreslení aplikace — funguje i na celou obrazovku.')
+            analysis_environment = env.controls(rc.lat, rc.lon, "analysis_env")
             st.markdown('**Větrné turbíny**')
             show_analysis_wind = st.checkbox('Zobrazit jednotlivé turbíny (100 km)',
                                              value=True, key='analysis_show_wind')
@@ -523,6 +525,13 @@ else:
             if show_analysis_wind and analysis_wind_data:
                 add_wind_layer(m, analysis_wind_data, cluster_points=False,
                                fallback_height=assumed_wind_height or None)
+            if analysis_environment:
+                env.layer_group(m, analysis_environment, "Budovy / lesy / věže")
+            legend_levels = ", ".join(core.level_label(ft) for ft in active[:6])
+            env.add_legend(m, analysis_environment,
+                           "Coverage: " + ("Cíl" if show_target else legend_levels) +
+                           " · Oranžová: výpočetní překážky" +
+                           (" · Žlutá: turbíny" if show_analysis_wind else ""))
             for obs in result.get('obstacles', []):
                 folium.Polygon(obstacle_polygon(obs, rc.lat, rc.lon), color='#ff7043',
                                weight=1, fill=True, fill_opacity=.65,
