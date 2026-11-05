@@ -75,8 +75,8 @@ def validate_obstacle(o, radar_lat, radar_lon, *, enforce_point_range=True):
         if not all(math.isfinite(v) for v in (lat, lon)) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
             raise ValueError('Neplatné souřadnice bodové překážky.')
         _, _, radius = GEOD.inv(radar_lon, radar_lat, lon, lat)
-        if enforce_point_range and radius > 20000.0:
-            raise ValueError('Překážky jsou podporovány nejvýše 20 km od radaru.')
+        if enforce_point_range and radius > 300000.0:
+            raise ValueError('Překážky jsou podporovány nejvýše 300 km od radaru.')
     elif kind == 'polygon':
         from shapely.geometry import Polygon
         coords = o.get('coordinates', [])
@@ -90,8 +90,8 @@ def validate_obstacle(o, radar_lat, radar_lon, *, enforce_point_range=True):
             if not all(math.isfinite(v) for v in (lat, lon)) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
                 raise ValueError('Neplatné souřadnice polygonu.')
             az, _, radius = GEOD.inv(radar_lon, radar_lat, lon, lat)
-            if radius > 100000:
-                raise ValueError('Všechny vrcholy polygonu musí být do 100 km od radaru.')
+            if radius > 300000:
+                raise ValueError('Všechny vrcholy polygonu musí být do 300 km od radaru.')
             vertices.append((radius*np.sin(np.radians(az)), radius*np.cos(np.radians(az))))
         shape = Polygon(vertices)
         if not shape.is_valid or shape.area < 0.01:
@@ -125,14 +125,30 @@ def obstacle_polygon(obstacle, radar_lat, radar_lon):
     return [[float(y), float(x)] for y, x in
             zip(np.r_[outer_lat, inner_lat], np.r_[outer_lon, inner_lon])]
 
+def _polygon_ray_indices(azimuths, footprint, vertices):
+    """Preselect rays in a polygon's angular envelope relative to the radar."""
+    from shapely.geometry import Point
+    if footprint.intersects(Point(0, 0)):
+        return range(len(azimuths))
+    xy = np.asarray(vertices)
+    bearings = np.sort(np.degrees(np.arctan2(xy[:, 0], xy[:, 1])) % 360)
+    if not len(bearings):
+        return []
+    gaps = np.diff(np.r_[bearings, bearings[0]+360])
+    i = int(np.argmax(gaps))
+    first = float(bearings[(i+1) % len(bearings)])
+    span = 360.0 - float(gaps[i])
+    return np.flatnonzero((np.asarray(azimuths) - first) % 360 <= span + 1e-5)
+
+
 def apply_obstacles(result, obstacles):
     """Apply obstacle-top horizon to previously solved terrain visibility in place."""
     result['obstacles'] = [dict(o) for o in obstacles]
     if not obstacles:
         return result
     c = result['config']
-    if len(obstacles) > 100:
-        raise ValueError('Nejvýše 100 překážek.')
+    if len(obstacles) > 1000:
+        raise ValueError('Nejvýše 1000 výpočetních překážek; pro větší datové sady použij informativní vrstvy.')
     az, distances = result['az'], result['distance']
     horizon = result['horizon'].copy()
     lower = result['lower'].copy()
@@ -143,6 +159,7 @@ def apply_obstacles(result, obstacles):
         kind = o.get('kind', 'point')
         if kind == 'arc':
             b_start, span, r_start, r_end = arc_parameters(o, c.lat, c.lon)
+            ray_indices = np.flatnonzero(((np.asarray(az) - b_start) % 360) <= span + 1e-5)
         elif kind == 'polygon':
             from shapely.geometry import Polygon, LineString
             vertices = []
@@ -151,11 +168,16 @@ def apply_obstacles(result, obstacles):
                 vertices.append((radius_vertex*np.sin(np.radians(az_vertex)),
                                  radius_vertex*np.cos(np.radians(az_vertex))))
             footprint = Polygon(vertices)
+            ray_indices = _polygon_ray_indices(az, footprint, vertices)
         else:
             bearing, _, radius = GEOD.inv(c.lon, c.lat, float(o['lon']), float(o['lat']))
             ea = radius*np.sin(np.radians(bearing))
             no = radius*np.cos(np.radians(bearing))
-        for j, bearing_ray in enumerate(az):
+            angular_margin = np.degrees(np.arctan2(HALF_SIZE_M * 1.5, max(radius, 0.01)))
+            ray_indices = np.flatnonzero(np.abs((np.asarray(az) - bearing + 180) % 360 - 180)
+                                         <= angular_margin + 1e-5)
+        for j in ray_indices:
+            bearing_ray = az[j]
             if kind == 'polygon':
                 angle_rad = np.radians(bearing_ray)
                 ray = LineString([(0., 0.),
