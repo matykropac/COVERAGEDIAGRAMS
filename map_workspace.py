@@ -327,31 +327,14 @@ def traffic_dialog():
     simulation_tab(st.session_state.get("result"),st.session_state.get("ws_levels",[3000,10000]))
 
 
-@st.dialog("MAPA / Zobrazení vrstev",width="large")
+@st.dialog("DALŠÍ MAPOVÁ DATA",width="large")
 def layers_dialog():
-    result=st.session_state.get("result")
+    """Advanced datasets only; basic coverage layers live in the sidebar."""
     config=_cfg()
-    st.caption("Všechny vrstvy se vykreslují přímo do hlavní mapy. OpenAIP je zapnutý automaticky, je-li dostupný klíč.")
-    st.checkbox("Větrné elektrárny",value=False,key="ws_show_wind")
-    with st.expander("BUDOVY / LESY / LETIŠTĚ / CANOPY",expanded=False):
-        st.session_state["ws_environment"]=env.controls(config.lat,config.lon,"ws_env")
-        st.session_state["ws_airports"]=aviation.controls(config.lat,config.lon,"ws_airports")
-        st.session_state["ws_canopy"]=canopy.controls("ws_canopy")
-    if result is None:
-        st.info("Výběr hladin krytí bude dostupný po výpočtu.")
-        return
-    modes=["Jedna hladina","Porovnání","Cíl"]
-    st.radio("Zobrazení",modes,key="ws_display_mode",horizontal=True)
-    opts=st.session_state.get("ws_levels",list(core.flight_levels_for(result["config"].radar_mode)))
-    available=[int(x) for x in opts if x in core.flight_levels_for(result["config"].radar_mode)]
-    if st.session_state.get("ws_display_mode","Jedna hladina")=="Jedna hladina":
-        if available: st.selectbox("Letová hladina",available,key="ws_map_level",
-                                    format_func=core.level_label)
-    elif st.session_state["ws_display_mode"]=="Porovnání":
-        st.multiselect("Hladiny",available,default=available[:3],
-                       key="ws_comparison",format_func=core.level_label)
-    st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity")
-    st.caption("Viditelnost jednotlivých datových vrstev můžeš měnit i v ovládání přímo na mapě.")
+    st.caption("Letové hladiny, OpenAIP a ADS-B přepínej přímo v levém panelu.")
+    st.session_state["ws_environment"]=env.controls(config.lat,config.lon,"ws_env")
+    st.session_state["ws_airports"]=aviation.controls(config.lat,config.lon,"ws_airports")
+    st.session_state["ws_canopy"]=canopy.controls("ws_canopy")
 
 
 @st.dialog("ANALÝZA / Radarový profil",width="large")
