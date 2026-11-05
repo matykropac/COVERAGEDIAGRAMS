@@ -33,6 +33,7 @@ from wind_turbines import load_wind_turbines, add_wind_layer
 from site_picker import coordinates_from_map_click
 import environment_layers as env
 import aviation_layers as aviation
+import canopy_layers as canopy
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -485,6 +486,7 @@ else:
             st.caption('Kliknutí měří přímo v mapě, bez překreslení aplikace — funguje i na celou obrazovku.')
             analysis_environment = env.controls(rc.lat, rc.lon, "analysis_env")
             analysis_airports = aviation.controls(rc.lat, rc.lon, "analysis_airports")
+            analysis_canopy = canopy.controls("analysis_canopy")
             st.session_state["environment_filtered_export"] = analysis_environment
             st.markdown('**Větrné turbíny**')
             show_analysis_wind = st.checkbox('Zobrazit jednotlivé turbíny (100 km)',
@@ -532,6 +534,8 @@ else:
                 env.layer_group(m, analysis_environment, "Budovy / lesy / věže")
             if analysis_airports:
                 aviation.add_airports(m, analysis_airports)
+            if analysis_canopy is not None:
+                canopy.add_layer(m, analysis_canopy)
             legend_levels = ([(core.level_label(ft), to_hex(core.level_color(ft))) for ft in active[:10]]
                              if not show_target else [("Target coverage", "#22d3c5")])
             level_key = "".join('<div><span style="display:inline-block;width:12px;height:10px;'
