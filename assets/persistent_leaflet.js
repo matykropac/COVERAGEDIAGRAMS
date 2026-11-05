@@ -364,6 +364,21 @@ function updateCoverage(s,data) {
     item.addTo(s.groups.coverage);
   }
 }
+function highlightObstacle(s,layer){
+  if(s.highlightedObstacle && s.highlightedObstacle!==layer){
+    const old=s.highlightedObstacle;
+    if(old.__cdOriginalStyle)old.setStyle(old.__cdOriginalStyle);
+  }
+  if(!layer.__cdOriginalStyle){
+    layer.__cdOriginalStyle={
+      color:layer.options.color,weight:layer.options.weight,
+      fillOpacity:layer.options.fillOpacity
+    };
+  }
+  layer.setStyle({color:"#226be6",weight:4,fillOpacity:.46});
+  if(layer.bringToFront)layer.bringToFront();
+  s.highlightedObstacle=layer;
+}
 function requestObstacleEdit(s,kind,id){
   if(id===null||id===undefined||id==="")return;
   s.trigger("action",{type:"edit_obstacle",kind,obstacle_id:String(id),
@@ -382,6 +397,7 @@ function updateObstacles(s,data) {
     poly.bindTooltip(String(record.name||"Překážka")+" · "+String(record.height_m||0)+" m AGL");
     poly.on("click",ev=>{
       L.DomEvent.stopPropagation(ev);
+      highlightObstacle(s,poly);
       requestObstacleEdit(s,"manual",record.id);
     });
     poly.addTo(s.groups.obstacles);
@@ -414,6 +430,7 @@ function updateEnvironment(s,data){
       if(shape.id){
         p.on("click",ev=>{
           L.DomEvent.stopPropagation(ev);
+          highlightObstacle(s,p);
           requestObstacleEdit(s,"catalog",shape.id);
         });
       }
