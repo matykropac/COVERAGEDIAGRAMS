@@ -1172,7 +1172,10 @@ def render_workspace():
         else:  # PŘEKÁŽKY
             st.markdown('<div class="cd-nav-title">ZAKRESLENÍ PŘEKÁŽEK</div>',unsafe_allow_html=True)
             st.caption("Na hlavní mapě použij nástroj polygon. Po dokončení zadáš výšku a název.")
-            st.metric("Počet překážek",len(st.session_state.get("obstacles",[])))
+            total_catalog=len(st.session_state.get("ws_imported_catalog",[]))
+            st.metric("Výpočetní překážky",len(st.session_state.get("obstacles",[])))
+            st.caption(f"Načtené geodatové objekty v editoru: {total_catalog:,} "
+                       "(včetně neznámých výšek).")
             if st.button("▧ Upravit / odstranit překážky",key="ws_command_obstacles",
                          use_container_width=True):
                 obstacles_dialog()
