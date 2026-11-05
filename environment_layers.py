@@ -84,7 +84,7 @@ def fetch_osm(lat, lon, radius_km):
              ');out geom;')
     payload = urllib.parse.urlencode({"data": query}).encode()
     request = urllib.request.Request(
-        "https://overpass.kumi.systems/api/interpreter", data=payload,
+        "https://overpass-api.de/api/interpreter", data=payload,
         headers={"User-Agent": "COVERAGEDIAGRAMS/2.0 (on-demand geospatial analysis)",
                  "Content-Type": "application/x-www-form-urlencoded"})
     with urllib.request.urlopen(request, timeout=48) as response:
@@ -252,3 +252,38 @@ def controls(lat, lon, prefix):
     st.caption(f"Načteno {len(items)} · filtrem vybráno {len(subset)} · v mapě max. 3500 polygonů")
     st.caption("Výšky bez atributu OSM zůstávají neznámé; nevstupují automaticky do krytí.")
     return subset
+
+def legend_png(items):
+    """Compact printable legend, suitable alongside engineering reports."""
+    from PIL import Image, ImageDraw, ImageFont
+    image = Image.new("RGB", (1250, 330), "#0b2132")
+    d = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    d.text((35, 25), "COVERAGEDIAGRAMS - ENVIRONMENT / LEGEND", font=font, fill="#e9f7ff")
+    y = 82
+    for kind, color in COLORS.items():
+        d.rectangle((35, y, 59, y+24), fill=color)
+        n = sum(x["kind"] == kind for x in items)
+        d.text((78, y+5), f"{kind}: {n} polygons", font=font, fill="white")
+        y += 53
+    unknown = sum(x.get("height_m") is None for x in items)
+    d.text((35, 257), f"Unknown heights: {unknown}. Unknown objects not automatically counted as obstacles.", font=font, fill="#b8d4e2")
+    d.text((35, 282), "Source: OpenStreetMap / imported GeoJSON. Objects are informational overlays unless explicitly applied.", font=font, fill="#b8d4e2")
+    stream = io.BytesIO()
+    image.save(stream, format="PNG")
+    return stream.getvalue()
+
+def export_bundle(items, standalone_map_html=None):
+    """Reproducible bundle of filtered overlay, legend, citation and optional map."""
+    from zipfile import ZipFile, ZIP_DEFLATED
+    output = io.BytesIO()
+    with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("environment/environment.geojson", geojson_bytes(items))
+        archive.writestr("environment/environment.kml", kml_bytes(items))
+        archive.writestr("environment/environment.csv", csv_bytes(items))
+        archive.writestr("environment/legend.png", legend_png(items))
+        archive.writestr("environment/README.txt", SOURCES + "\n"
+                         + "Height unknown != zero. Filtered overlays do not automatically enter coverage calculations.\n")
+        if standalone_map_html:
+            archive.writestr("map/interactive_map.html", standalone_map_html)
+    return output.getvalue()
