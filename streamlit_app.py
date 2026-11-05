@@ -52,7 +52,7 @@ if _missing_core_api:
         )
 from web_support import EXPORTS, HoverDetail, ClickMeasure, clicked_point, coverage_geojson, export_bytes
 
-st.set_page_config(page_title='ELDIS · Radar Coverage', page_icon='📡', layout='wide')
+st.set_page_config(page_title='ELDIS · Radar Coverage', page_icon='📡', layout='wide', initial_sidebar_state='expanded')
 
 # A dialog rerun must stage coordinates until the next whole-app rerun.
 # Mutating the lat/lon widget keys after their rendering raises a Streamlit error.
