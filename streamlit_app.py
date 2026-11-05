@@ -215,12 +215,6 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
         st.rerun()
 
 
-st.markdown('''<div class="atm-hero">
-  <div><div class="atm-eyebrow"></div>
-  <div class="atm-title"></div>
-  <div class="atm-description"></div></div>
-  <div class="atm-brand">ELDIS<small></small></div>
-</div>''', unsafe_allow_html=True)
 def open_project_callback():
     upload = st.session_state.get('project_upload')
     if upload is None:
