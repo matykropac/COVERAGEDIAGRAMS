@@ -19,6 +19,7 @@ from radar_window import radar_window_link
 from web_support import coverage_geojson
 # Historical CSV tool is imported lazily to avoid a circular dependency.
 import radar_core as core
+from aviation_basemap import controls as aviation_controls, configured_key, add_to_map
 
 GEOD = Geod(ellps="WGS84")
 NM_M = 1852.0
@@ -78,6 +79,7 @@ def _render(result, level_ft, traffic, trails):
     c = result["config"]
     m = folium.Map(location=[c.lat,c.lon], zoom_start=7, tiles="OpenStreetMap",
                    control_scale=True, prefer_canvas=True)
+    add_to_map(m, configured_key())
     geo = coverage_geojson(result, level_ft)
     if geo.get("features"):
         folium.GeoJson(geo, name=f"Pokrytí FL {level_ft/100:g}",
@@ -228,6 +230,7 @@ def simulation_tab(result, levels):
     st.subheader("PROVOZ")
     st.caption("ADS-B pozice a provozní analýza vůči vypočtenému radarovému krytí. "
                "Pozorování nejsou skutečnými radarovými detekcemi.")
+    aviation_controls()
     live_tab, snapshot_tab, history_tab = st.tabs(
         ["LIVE / SIMULACE", "ADS-B DATA", "HISTORIE / ANALÝZA"])
 
@@ -244,7 +247,7 @@ def simulation_tab(result, levels):
                     selected = st.selectbox("Letová hladina", options,
                                             format_func=core.level_label,
                                             key="simulation_level")
-                    link = radar_window_link(result, selected, "ADSB.lol")
+                    link = radar_window_link(result, selected, "ADSB.lol", openaip_key=configured_key())
                     st.markdown(
                         f'<a href="{link}" target="_blank" rel="noopener noreferrer" '
                         'style="display:block;text-align:center;background:#134d68;color:white;'
@@ -298,6 +301,7 @@ def simulation_tab(result, levels):
                 if current:
                     view = folium.Map(location=[radar_config.lat, radar_config.lon],
                                       zoom_start=8, tiles="OpenStreetMap", control_scale=True)
+                    add_to_map(view, configured_key())
                     add_traffic_layer(view, current)
                     folium.Marker([radar_config.lat, radar_config.lon], tooltip="Radar",
                                   icon=folium.Icon(color="orange", icon="signal")).add_to(view)
