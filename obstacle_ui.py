@@ -55,7 +55,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
                 } for v in visible_environment[:1000]]), use_container_width=True, height=300)
             if st.button("Připravit export vrstev + legendy (ZIP)", key="env_bundle_prepare"):
                 st.session_state["obstacle_environment_zip"] = env.export_bundle(
-                    visible_environment, canopy_overlay=canopy_overlay)
+                    visible_environment, canopy_overlay=canopy_overlay, airports=airports)
                 st.session_state["obstacle_environment_signature"] = (
                     env.geojson_bytes(visible_environment),
                     canopy_overlay[0] if canopy_overlay else b"")
