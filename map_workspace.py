@@ -503,6 +503,25 @@ def _draw_map():
                     new_obstacle_dialog()
     st.session_state["ws_map_html"]=m.get_root().render().encode("utf-8")
 
+@st.cache_data(ttl=12,show_spinner=False)
+def _traffic_cached(lat,lon):
+    """Avoid repeated API calls when Leaflet generates interaction reruns."""
+    return fetch_snapshot(lat,lon,100)
+
+
+@st.fragment(run_every="15s")
+def _live_map_frame():
+    """Refresh only map/traffic, not the surrounding workspace controls."""
+    configured=_cfg()
+    lat,lon=round(configured.lat,5),round(configured.lon,5)
+    try:
+        st.session_state["ws_traffic_snapshot"]=_traffic_cached(lat,lon)
+        st.session_state["ws_traffic_site"]=(lat,lon)
+    except (RuntimeError,ValueError) as exc:
+        st.caption(f"ADS-B: poslední dostupný snímek · {exc}")
+    _draw_map()
+
+
 def render_workspace():
     pending_tool=st.session_state.pop("ws_next_map_tool",None)
     if pending_tool is not None:
@@ -574,29 +593,15 @@ def render_workspace():
     if st.session_state.pop("ws_result_notice",None):
         st.success("Krytí vypočteno. Výsledné vrstvy jsou přímo v mapě.")
 
-    # On-demand snapshot is immediately drawn on the *same* map.
-    if live:
-        snapshot_site=(round(current.lat,5),round(current.lon,5))
-        if (st.session_state.get("ws_traffic_site")!=snapshot_site or
-                st.session_state.get("ws_refresh_traffic",False)):
-            try:
-                with st.spinner("Načítám ADS-B…"):
-                    st.session_state["ws_traffic_snapshot"]=fetch_snapshot(
-                        current.lat,current.lon,100)
-                    st.session_state["ws_traffic_site"]=snapshot_site
-                    st.session_state.pop("ws_refresh_traffic",None)
-            except (RuntimeError,ValueError) as exc:
-                st.warning(str(exc))
-    _draw_map()
-    if live:
-        lower=st.columns([1,5,1])
-        with lower[0]:
-            if st.button("↻ Obnovit ADS-B",key="ws_reload_adsb",use_container_width=True):
-                st.session_state["ws_refresh_traffic"]=True
-                st.rerun()
-        with lower[1]:
-            st.caption(f"ADS-B · {len(st.session_state.get('ws_traffic_snapshot',[]))} poloh "
-                       "· zdroj adsb.lol · aktualizace ručně")
+    if live and tool=="Prohlížení":
+        _live_map_frame()
+        st.caption("ADS-B LIVE · automatické obnovení přibližně 15 s · zdroj adsb.lol. "
+                   "Při kreslení polygonů a umisťování radaru se obnovování pozastaví.")
+    else:
+        _draw_map()
+        if live:
+            st.caption("ADS-B vrstva zůstává zobrazená; automatické obnovování "
+                       "je pozastaveno během úprav mapy.")
     st.markdown('<div class="cd-workspace-foot">OpenAIP aeronautical chart · '
                 'Geometrický výpočet radarového krytí · Nelze používat pro navigaci</div>',
                 unsafe_allow_html=True)
