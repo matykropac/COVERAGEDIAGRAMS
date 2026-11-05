@@ -41,9 +41,10 @@ def render_obstacle_editor(radar_lat, radar_lon):
     with table_panel:
         height = st.number_input('Výška nové překážky [m AGL]', 0.1, 1000.0,
                                  value=20.0, step=1.0, key='obstacle_new_height')
-        visible_environment = env.controls(radar_lat, radar_lon, "obstacle_env")
-        airports = aviation.controls(radar_lat, radar_lon, "obstacle_airports")
-        canopy_overlay = canopy.controls("obstacle_canopy")
+        with st.expander("GEODATA / Budovy · Lesy · Letiště · Canopy", expanded=False):
+            visible_environment = env.controls(radar_lat, radar_lon, "obstacle_env")
+            airports = aviation.controls(radar_lat, radar_lon, "obstacle_airports")
+            canopy_overlay = canopy.controls("obstacle_canopy")
         if visible_environment:
             with st.expander("Filtrovaná data · přehled", expanded=False):
                 st.dataframe(pd.DataFrame([{
