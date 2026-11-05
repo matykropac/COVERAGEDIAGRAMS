@@ -234,6 +234,7 @@ def _calculate_coverage():
             st.session_state.geometry={}
             st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
             st.session_state["ws_result_notice"]="Krytí úspěšně vypočteno."
+            st.session_state["ws_next_section"]="MAPA"
         st.rerun()
     except Exception as exc:
         st.error(f"Výpočet se nepodařil: {str(exc)[:360]}")
@@ -674,12 +675,31 @@ def _map_tool():
     }.get(st.session_state.get("ws_section","MAPA"),"Prohlížení")
 
 
+def _restore_sidebar_preferences():
+    """Keep options while switching conditional sidebar sections.
+
+    Streamlit removes widget keys when widgets aren't rendered; copy their
+    values to independent session-state keys before leaving the MAPA section.
+    """
+    keys=("ws_show_coverage","ws_display_mode","ws_map_level",
+          "ws_comparison","ws_map_opacity","ws_openaip",
+          "ws_live_adsb","ws_show_wind")
+    for key in keys:
+        saved="_persist_"+key
+        if key in st.session_state:
+            st.session_state[saved]=st.session_state[key]
+        elif saved in st.session_state:
+            st.session_state[key]=st.session_state[saved]
+
+
 def render_workspace():
     """One persistent map; three task-oriented sections in the 400px sidebar."""
     previous=st.session_state.get("result")
     if previous is not None and "ws_radar" not in st.session_state:
         _config_state_from_project(previous["config"])
         st.session_state["ws_levels"]=list(st.session_state.get("levels",[3000,10000]))
+
+    _restore_sidebar_preferences()
 
     next_section=st.session_state.pop("ws_next_section",None)
     if next_section in ("MAPA","RADAR","PŘEKÁŽKY"):
@@ -725,7 +745,7 @@ def render_workspace():
             "Pracovní sekce",
             options=["MAPA","RADAR","PŘEKÁŽKY"],
             default="MAPA",key="ws_section",selection_mode="single",
-            use_container_width=True,label_visibility="collapsed")
+            width="stretch",label_visibility="collapsed")
         if section is None:
             section="MAPA"
         if section=="MAPA":
