@@ -681,7 +681,8 @@ else:
                     with st.spinner('Připravuji soubor…'), plot_lock():
                         blob, filename, mime = export_bytes(kind, result,
                             core.flight_levels_for(rc.radar_mode) if kind.startswith('KML') else export_levels,
-                            index, dpi, alpha, alphas)
+                            index, dpi, alpha, alphas,
+                            environment_items=analysis_environment)
                         st.session_state.export = (blob, filename, mime,
                             (kind, tuple(core.flight_levels_for(rc.radar_mode) if kind.startswith('KML') else export_levels),
                              index, dpi, alpha, tuple(sorted(alphas.items()))))
