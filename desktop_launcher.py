@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.request import build_opener, ProxyHandler
 
 SERVER_FLAG = "--coverage-streamlit-server"
 APP_TITLE = "COVERAGEDIAGRAMS · Radar Coverage"
@@ -93,7 +93,7 @@ def wait_for_server(port: int, process: subprocess.Popen, seconds: float = 110.)
         if process.poll() is not None:
             return False
         try:
-            with urlopen(f"http://127.0.0.1:{port}/_stcore/health", timeout=1.5) as response:
+            with build_opener(ProxyHandler({})).open(f"http://127.0.0.1:{port}/_stcore/health", timeout=1.5) as response:
                 if response.status == 200:
                     return True
         except (OSError, URLError, HTTPError):
