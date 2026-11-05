@@ -1043,6 +1043,37 @@ def _restore_sidebar_preferences():
             st.session_state[key]=st.session_state[saved]
 
 
+def _step_flight_level(direction):
+    """Step between computed levels without rebuilding the Leaflet map."""
+    result=st.session_state.get("result")
+    if result is None:
+        return
+    allowed=tuple(core.flight_levels_for(result["config"].radar_mode))
+    levels=[int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed]
+    if not levels:
+        levels=list(allowed)
+    levels=sorted(set(levels))
+    if not levels:
+        return
+    current=st.session_state.get("ws_map_level",levels[0])
+    try:
+        index=levels.index(current)
+    except ValueError:
+        index=0
+    st.session_state["ws_map_level"]=levels[(index+direction)%len(levels)]
+
+
+def _select_comparison_levels(select_all):
+    result=st.session_state.get("result")
+    if result is None:
+        return
+    allowed=tuple(core.flight_levels_for(result["config"].radar_mode))
+    levels=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed))
+    if not levels:
+        levels=list(allowed)
+    st.session_state["ws_comparison"]=levels if select_all else []
+
+
 def render_workspace():
     """One persistent map; three task-oriented sections in the 400px sidebar."""
     previous=st.session_state.get("result")
@@ -1104,33 +1135,60 @@ def render_workspace():
             st.segmented_control("Režim",["DAY","NIGHT"],default="DAY",
                                  key="ws_daynight",width="stretch",
                                  label_visibility="collapsed")
-            st.caption("3 podklady: OSM · terén · satelit. Přepínají se v mapě vpravo nahoře.")
             st.markdown('<div class="cd-nav-title">VRSTVY KRYTÍ</div>',unsafe_allow_html=True)
             if result is None:
-                st.caption("Nejprve spočítej radarové krytí v sekci RADAR.")
+                st.caption("Po výpočtu zde budeš přepínat jednotlivé letové hladiny.")
             else:
                 supported=tuple(core.flight_levels_for(result["config"].radar_mode))
-                selected=[ft for ft in st.session_state.get("ws_levels",[]) if ft in supported]
+                selected=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[])
+                                    if ft in supported))
                 if not selected:
                     selected=list(supported)
-                st.toggle("Zobrazit krytí",value=True,key="ws_show_coverage")
-                mode=st.selectbox("Režim krytí",["Jedna hladina","Porovnání","Cíl"],
-                                  key="ws_display_mode")
+                st.toggle("Zobrazit radarové krytí",value=True,key="ws_show_coverage")
+                st.segmented_control(
+                    "Zobrazení hladin",["Jedna hladina","Porovnání","Cíl"],
+                    default="Jedna hladina",key="ws_display_mode",width="stretch",
+                    label_visibility="collapsed")
+                mode=st.session_state.get("ws_display_mode","Jedna hladina")
                 if mode=="Jedna hladina":
-                    prev=st.session_state.get("ws_map_level")
-                    if prev not in selected:
+                    previous_level=st.session_state.get("ws_map_level")
+                    if previous_level not in selected:
                         st.session_state["ws_map_level"]=selected[0]
-                    st.selectbox("Letová hladina",selected,key="ws_map_level",
-                                 format_func=core.level_label)
+                    previous_button, level_choice, next_button=st.columns(
+                        [0.65,2.7,0.65],gap="small",vertical_alignment="bottom")
+                    with previous_button:
+                        st.button("◀",key="ws_level_prev",help="Nižší letová hladina",
+                                  use_container_width=True,on_click=_step_flight_level,
+                                  args=(-1,))
+                    with level_choice:
+                        st.selectbox("Aktivní letová hladina",selected,
+                                     key="ws_map_level",format_func=core.level_label)
+                    with next_button:
+                        st.button("▶",key="ws_level_next",help="Vyšší letová hladina",
+                                  use_container_width=True,on_click=_step_flight_level,
+                                  args=(1,))
+                    st.caption(f"Zvolená hladina · {selected.index(st.session_state['ws_map_level'])+1}"
+                               f" z {len(selected)}")
                 elif mode=="Porovnání":
-                    remembered=st.session_state.get("ws_comparison")
-                    if remembered is not None:
-                        st.session_state["ws_comparison"]=[ft for ft in remembered if ft in selected]
-                    st.multiselect("Viditelné hladiny",selected,
+                    current=st.session_state.get("ws_comparison")
+                    if current is not None:
+                        valid=[ft for ft in current if ft in selected]
+                        if valid!=current:
+                            st.session_state["ws_comparison"]=valid
+                    st.multiselect("Hladiny současně v mapě",selected,
                                    default=selected[:3],key="ws_comparison",
                                    format_func=core.level_label)
+                    a,b=st.columns(2,gap="small")
+                    with a:
+                        st.button("Všechny",key="ws_levels_all",use_container_width=True,
+                                  on_click=_select_comparison_levels,args=(True,))
+                    with b:
+                        st.button("Žádná",key="ws_levels_none",use_container_width=True,
+                                  on_click=_select_comparison_levels,args=(False,))
+                    count=len(st.session_state.get("ws_comparison",[]))
+                    st.caption(f"V mapě je vybráno {count} z {len(selected)} hladin.")
                 else:
-                    st.caption("Krytí zadané cílové výšky.")
+                    st.caption("Zobrazuje se pokrytí pro cílovou výšku z nastavení radaru.")
                 with st.expander("Průhlednost krytí",expanded=False):
                     st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity",
                               label_visibility="collapsed")
@@ -1141,9 +1199,6 @@ def render_workspace():
                 if not configured_key():
                     st.caption("OpenAIP vyžaduje OPENAIP_API_KEY v nastavení aplikace.")
             st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
-            if st.button("⬡ Geodata / okolní překážky",key="ws_command_geodata",
-                         use_container_width=True):
-                layers_dialog()
             if st.button("✈ Historie provozu",key="ws_command_traffic",
                          use_container_width=True):
                 traffic_dialog()
@@ -1176,6 +1231,9 @@ def render_workspace():
             st.metric("Výpočetní překážky",len(st.session_state.get("obstacles",[])))
             st.caption(f"Načtené geodatové objekty v editoru: {total_catalog:,} "
                        "(včetně neznámých výšek).")
+            if st.button("⬡ Geodata / okolní překážky",key="ws_command_geodata",
+                         use_container_width=True):
+                layers_dialog()
             if st.button("▧ Upravit / odstranit překážky",key="ws_command_obstacles",
                          use_container_width=True):
                 obstacles_dialog()
