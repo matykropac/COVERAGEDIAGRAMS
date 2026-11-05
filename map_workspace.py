@@ -18,6 +18,8 @@ from matplotlib.colors import to_hex
 
 import radar_core as core
 import environment_layers as env
+import aviation_layers as aviation
+import canopy_layers as canopy
 from aviation_basemap import add_to_map as add_openaip_map
 from web_support import coverage_geojson
 from obstacles import apply_obstacles, obstacle_polygon, obstacle_signature
@@ -328,8 +330,15 @@ def traffic_dialog():
 @st.dialog("MAPA / Zobrazení vrstev",width="large")
 def layers_dialog():
     result=st.session_state.get("result")
+    config=_cfg()
+    st.caption("Všechny vrstvy se vykreslují přímo do hlavní mapy. OpenAIP je zapnutý automaticky, je-li dostupný klíč.")
+    st.checkbox("Větrné elektrárny",value=False,key="ws_show_wind")
+    with st.expander("BUDOVY / LESY / LETIŠTĚ / CANOPY",expanded=False):
+        st.session_state["ws_environment"]=env.controls(config.lat,config.lon,"ws_env")
+        st.session_state["ws_airports"]=aviation.controls(config.lat,config.lon,"ws_airports")
+        st.session_state["ws_canopy"]=canopy.controls("ws_canopy")
     if result is None:
-        st.info("Nejdřív vypočítej krytí. Mapový podklad OpenAIP je aktivní už teď.")
+        st.info("Výběr hladin krytí bude dostupný po výpočtu.")
         return
     modes=["Jedna hladina","Porovnání","Cíl"]
     st.radio("Zobrazení",modes,key="ws_display_mode",horizontal=True)
@@ -342,8 +351,7 @@ def layers_dialog():
         st.multiselect("Hladiny",available,default=available[:3],
                        key="ws_comparison",format_func=core.level_label)
     st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity")
-    st.checkbox("Zobrazit větrné elektrárny",value=False,key="ws_show_wind")
-    st.caption("OpenAIP a další podklady lze zapínat v nabídce vrstev přímo v mapě.")
+    st.caption("Viditelnost jednotlivých datových vrstev můžeš měnit i v ovládání přímo na mapě.")
 
 
 @st.dialog("ANALÝZA / Radarový profil",width="large")
@@ -463,6 +471,12 @@ def _draw_map():
                        tooltip=f"{item.get('name','Překážka')} · {item['height_m']:g} m AGL"
                        ).add_to(obstacle_layer)
     obstacle_layer.add_to(m)
+    if st.session_state.get("ws_environment"):
+        env.layer_group(m,st.session_state["ws_environment"],"Budovy / lesy / věže")
+    if st.session_state.get("ws_airports"):
+        aviation.add_airports(m,st.session_state["ws_airports"])
+    if st.session_state.get("ws_canopy") is not None:
+        canopy.add_layer(m,st.session_state["ws_canopy"])
     if st.session_state.get("ws_show_wind",False):
         try:
             wind=load_wind_turbines(round(configured.lat,6),round(configured.lon,6))
