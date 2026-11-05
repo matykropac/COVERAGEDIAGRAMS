@@ -648,7 +648,7 @@ else:
         exported_levels = ([(core.level_label(ft), to_hex(core.level_color(ft))) for ft in active[:10]]
                            if not show_target else [("Target coverage", "#22d3c5")])
         bundle = env.export_bundle(filtered_env, st.session_state.get("environment_map_html"),
-                                   coverage_layers=exported_levels)
+                                   coverage_layers=exported_levels, canopy_overlay=analysis_canopy)
         st.download_button("Stáhnout analytickou mapu + GeoJSON/KML/CSV + legendu (ZIP)",
                            bundle, file_name="COVERAGEDIAGRAMS_map_layers.zip",
                            mime="application/zip", key="environment_bundle_download")
