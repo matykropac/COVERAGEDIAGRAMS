@@ -58,6 +58,19 @@ STYLES = """
 [data-testid="stDialog"]{color:#253c52}
 [data-testid="stDialog"] [data-testid="stVerticalBlock"]{gap:.55rem!important}
 [data-testid="stExpander"]{border-color:#d8e2eb!important;background:#fff!important}
+
+h1,h2,h3,h4{color:#233c55!important}
+h3{border-bottom:1px solid #dce5ef!important}
+div[data-baseweb="select"]>div,div[data-baseweb="input"]{
+  background:#fff!important;border:1px solid #ccd9e6!important;color:#273c52!important;
+  border-radius:6px!important;min-height:36px!important;box-shadow:none!important}
+div[data-baseweb="input"] input{color:#273c52!important}
+div[data-baseweb="tag"]{background:#dfeafb!important;color:#244d80!important}
+div[data-baseweb="tag"] span{color:#244d80!important}
+[data-testid="stRadio"] label:hover{background:#e8f1fb!important}
+[data-testid="stDialog"] [data-testid="stModal"]{background:#f7f9fc!important}
+[data-testid="stAlert"]{border-color:#d8e4f0!important}
+
 iframe[title*="streamlit_folium"]{border-radius:9px!important;border:1px solid #d0dce8!important}
 @media(max-width:850px){[data-testid="stMainBlockContainer"],.block-container{padding:8px!important}.cd-meta{display:none}}
 </style>
