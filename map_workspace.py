@@ -875,8 +875,13 @@ def _draw_map():
         })
 
     obstacle_data=[]
-    for item in st.session_state.get("obstacles",[]):
+    # A downloaded object's catalog polygon is already rendered in the
+    # environment layer; don't render a second clickable duplicate.
+    manual_obstacles=[o for o in st.session_state.get("obstacles",[])
+                      if not o.get("catalog_id")]
+    for index,item in enumerate(manual_obstacles):
         obstacle_data.append({
+            "id":str(index),
             "name":str(item.get("name","Překážka")),
             "height_m":float(item["height_m"]),
             "coordinates":obstacle_polygon(item,configured.lat,configured.lon),
@@ -889,6 +894,7 @@ def _draw_map():
         for item in catalog[:12000]:
             if item.get("coordinates"):
                 environment_data.append({
+                    "id":str(item["id"]),
                     "coordinates":item["coordinates"],
                     "color":palette.get(item.get("category"),"#8097aa"),
                     "name":str(item.get("name","Objekt")),
@@ -970,7 +976,18 @@ def _draw_map():
         event_id=str(action.get("id",""))
         if event_id and event_id != st.session_state.get("ws_last_map_action_id"):
             st.session_state["ws_last_map_action_id"]=event_id
-            if action.get("type")=="radar" and payload["tool"]=="Radar":
+            if action.get("type")=="edit_obstacle":
+                kind=str(action.get("kind",""))
+                identifier=str(action.get("id",""))
+                valid=(kind=="manual" and identifier.isdigit() and
+                       int(identifier)<len(manual_obstacles))
+                valid=valid or (kind=="catalog" and any(
+                    x["id"]==identifier for x in st.session_state.get("ws_imported_catalog",[])))
+                if valid:
+                    st.session_state["ws_selected_obstacle"]={
+                        "kind":kind,"id":identifier,"token":event_id}
+                    obstacles_dialog()
+            elif action.get("type")=="radar" and payload["tool"]=="Radar":
                 try:
                     lat,lon=coordinates_from_map_click({
                         "lat":action["lat"],"lng":action["lon"]})
