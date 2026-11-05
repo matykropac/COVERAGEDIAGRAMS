@@ -429,6 +429,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                     st.session_state.pop('site_picker_notice', None)
                     st.session_state.geometry = {}
                     st.session_state.pop('export', None)
+                    st.session_state.pop('selected_export_zip', None)
                     st.session_state.pop('selected_point', None)
                     st.session_state.pop('last_map_click', None)
                     st.session_state.profile_index = len(az)//2 if par else 0
