@@ -201,6 +201,14 @@ def kml_bytes(items):
         pm = ET.SubElement(doc, f"{{{ns}}}Placemark")
         ET.SubElement(pm, f"{{{ns}}}name").text = item["name"]
         ET.SubElement(pm, f"{{{ns}}}description").text = f'{item["kind"]}; height AGL: {item["height_m"]}; {item["height_quality"]}; source: {item["source"]}'
+        style = ET.SubElement(pm, f"{{{ns}}}Style")
+        color = COLORS.get(item["kind"], "#dddddd").lstrip("#")
+        # KML colors: aabbggrr; semi-transparent thematic fill.
+        kml_color = "88" + color[4:6] + color[2:4] + color[0:2]
+        poly_style = ET.SubElement(style, f"{{{ns}}}PolyStyle")
+        ET.SubElement(poly_style, f"{{{ns}}}color").text = kml_color
+        line_style = ET.SubElement(style, f"{{{ns}}}LineStyle")
+        ET.SubElement(line_style, f"{{{ns}}}color").text = "ff" + color[4:6] + color[2:4] + color[0:2]
         poly = ET.SubElement(pm, f"{{{ns}}}Polygon")
         outer = ET.SubElement(poly, f"{{{ns}}}outerBoundaryIs")
         lr = ET.SubElement(outer, f"{{{ns}}}LinearRing")
