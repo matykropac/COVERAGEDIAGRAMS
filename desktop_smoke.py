@@ -12,7 +12,7 @@ import socket
 import subprocess
 import time
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import build_opener, ProxyHandler
 
 
 def free_port() -> int:
@@ -36,7 +36,7 @@ def main() -> None:
                 output = process.communicate(timeout=5)[0].decode("utf-8", errors="replace")
                 raise RuntimeError("Desktop server exited during startup:\n" + output[-5000:])
             try:
-                with urlopen(f"http://127.0.0.1:{port}/_stcore/health", timeout=2) as response:
+                with build_opener(ProxyHandler({})).open(f"http://127.0.0.1:{port}/_stcore/health", timeout=2) as response:
                     if response.status == 200:
                         print("PASS: packaged Streamlit loopback health")
                         return
