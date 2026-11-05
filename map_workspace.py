@@ -1053,6 +1053,34 @@ def render_workspace():
                 st.query_params["classic"]="1"
                 st.rerun()
 
+    if st.session_state.get("ws_daynight","DAY")=="NIGHT":
+        st.markdown("""
+        <style>
+        [data-testid="stAppViewContainer"]{background:#0b131e!important;color:#dce8f4!important}
+        [data-testid="stSidebar"]{background:#101a28!important;border-right-color:#26364b!important}
+        [data-testid="stSidebarUserContent"]{background:#101a28!important}
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+        [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+        [data-testid="stSidebar"] label{color:#d4e3f0!important}
+        [data-testid="stSidebar"] .cd-nav-title{color:#8faac5!important;border-bottom-color:#34455a!important}
+        [data-testid="stSidebar"] .cd-sidebar-brand{color:#f0f7ff!important}
+        [data-testid="stSidebar"] .cd-sidebar-brand small{color:#8bb1ce!important}
+        [data-testid="stSidebar"] [data-testid="stButton"]>button{
+          background:#1b2d40!important;color:#e2f0fc!important;border-color:#35516a!important}
+        [data-testid="stSidebar"] [data-testid="stButton"]>button[kind="primary"]{
+          background:#2760b5!important;color:#fff!important}
+        [data-testid="stSidebar"] div[data-baseweb="select"]>div,
+        [data-testid="stSidebar"] div[data-baseweb="input"]{
+          background:#142336!important;color:#e5eff8!important;border-color:#344d64!important}
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p{color:#a3b6c9!important}
+        [data-testid="stSidebar"] [data-testid="stExpander"]{
+          background:#162536!important;border-color:#30435a!important}
+        [data-testid="stSidebar"] [data-testid="stAlert"]{background:#172638!important}
+        </style>
+        """,unsafe_allow_html=True)
+
     # The map is always present and does not change when the sidebar section changes.
     if result is None:
         st.caption(f"RADAR · {config.lat:.6f}°, {config.lon:.6f}° · "
