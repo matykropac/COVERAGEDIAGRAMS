@@ -1,5 +1,6 @@
 """Optional airport reference layer from OurAirports open CSV (not obstacle certification)."""
 import csv
+import json
 import io
 import urllib.request
 from html import escape
@@ -72,3 +73,34 @@ def controls(lat, lon, prefix):
     except Exception as exc:
         st.warning("Databáze letišť není dostupná: " + str(exc)[:130])
         return []
+
+def geojson_bytes(airports):
+    return json.dumps({"type":"FeatureCollection","features":[
+        {"type":"Feature","properties":{k:v for k,v in a.items() if k not in ("lat","lon")},
+         "geometry":{"type":"Point","coordinates":[a["lon"],a["lat"]]}}
+        for a in airports]}, ensure_ascii=False, indent=2).encode("utf-8")
+
+def csv_bytes(airports):
+    output = io.StringIO()
+    columns = ["icao","name","type","lat","lon","elevation_ft","distance_km"]
+    writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(airports)
+    return output.getvalue().encode("utf-8-sig")
+
+def kml_bytes(airports):
+    from xml.etree import ElementTree as ET
+    ns = "http://www.opengis.net/kml/2.2"
+    ET.register_namespace("", ns)
+    root = ET.Element(f"{{{ns}}}kml")
+    doc = ET.SubElement(root, f"{{{ns}}}Document")
+    ET.SubElement(doc, f"{{{ns}}}name").text = "COVERAGEDIAGRAMS / airports"
+    for airport in airports:
+        pm = ET.SubElement(doc, f"{{{ns}}}Placemark")
+        ET.SubElement(pm, f"{{{ns}}}name").text = airport["name"]
+        ET.SubElement(pm, f"{{{ns}}}description").text = (
+            f'{airport["icao"]} · {airport["type"]} · elev {airport["elevation_ft"]} ft AMSL')
+        point = ET.SubElement(pm, f"{{{ns}}}Point")
+        ET.SubElement(point, f"{{{ns}}}coordinates").text = (
+            f'{airport["lon"]:.7f},{airport["lat"]:.7f},0')
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
