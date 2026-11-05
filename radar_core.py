@@ -1671,7 +1671,8 @@ def style_export_theme(fig, theme='dark'):
 
 
 def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
-                     level_alphas=None, limits=None, dpi=300, english=False, theme='dark'):
+                     level_alphas=None, limits=None, dpi=300, english=False, theme='dark',
+                     environment_items=None):
     """Render a fresh print-size figure, not a screen capture."""
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.lines import Line2D
@@ -1685,6 +1686,41 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
             ax.set_xlim(limits[0])
             ax.set_ylim(limits[1])
         add_export_range_rings(ax, result['config'], expand_view=limits is None)
+        # The report renderer does not use Folium. Render environmental polygons
+        # in the same local radar-centred east/north km coordinates as map_plot.
+        environment_items = environment_items or []
+        present_environment = {}
+        if environment_items:
+            from matplotlib.patches import Polygon as MplPolygon
+            from pyproj import Geod
+            from math import radians
+            import numpy as _np
+            _geod = Geod(ellps='WGS84')
+            _colors = {'Building': '#e3a64c', 'Forest': '#48ae78', 'Tower': '#d778ed'}
+            for obj in environment_items[:900]:
+                typ = obj.get('kind')
+                if typ not in _colors:
+                    continue
+                vertices = obj.get('coordinates') or []
+                if not 3 <= len(vertices) <= 1200:
+                    continue
+                try:
+                    lats = _np.asarray([float(p[0]) for p in vertices])
+                    lons = _np.asarray([float(p[1]) for p in vertices])
+                    angles, _, distances = _geod.inv(
+                        _np.full(len(lons), result['config'].lon),
+                        _np.full(len(lats), result['config'].lat), lons, lats)
+                    xs = distances / 1000. * _np.sin(_np.deg2rad(angles))
+                    ys = distances / 1000. * _np.cos(_np.deg2rad(angles))
+                    if not _np.isfinite(xs).all() or not _np.isfinite(ys).all():
+                        continue
+                    ax.add_patch(MplPolygon(
+                        _np.column_stack((xs, ys)), closed=True, fill=True,
+                        facecolor=_colors[typ], edgecolor=_colors[typ],
+                        linewidth=.40, alpha=.42, zorder=9))
+                    present_environment[typ] = _colors[typ]
+                except (ValueError, TypeError, KeyError):
+                    continue
         if theme == 'light':
             import matplotlib.patheffects as pe
             for patch in ax.patches:
@@ -1704,6 +1740,12 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
         elif mode == 'Krytí cíle':
             handles = [Line2D([], [], color='#12a88a', lw=5, label='Geometric coverage' if english else 'Geometrické krytí'),
                        Line2D([], [], color='#777777', lw=5, label='Unknown data' if english else 'Neznámá data')]
+        if present_environment:
+            from matplotlib.patches import Patch
+            labels = {'Building': 'Buildings', 'Forest': 'Forest / woodland', 'Tower': 'Towers / masts'}
+            for typ, color in present_environment.items():
+                handles.append(Patch(facecolor=color, edgecolor=color,
+                                     label=labels[typ]))
         if handles:
             legend = fig.legend(handles=handles, loc='upper left',
                                 bbox_to_anchor=(0.77, 0.88), fontsize=9, title='Legend' if english else 'Legenda')
@@ -1723,6 +1765,12 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                if english else f'Geometrický model · výškové řezy AMSL · {dpi} DPI · 330 × 229 mm')
         )
         fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)
+        if environment_items:
+            fig.text(0.77, 0.24,
+                     f'Objects displayed: {min(len(environment_items), 900)} / {len(environment_items)}'
+                     + '\\nInformational OSM/Microsoft/import layers'
+                     + '\\nNot certified survey data',
+                     color=UI_TEXT, fontsize=8)
         fig.text(0.075, 0.035, 'Terrain and basemap resolution reflect the original source data.' if english else 'Rozlišení terénu a mapového podkladu odpovídá zdrojovým datům.',
                  color=UI_MUTED, fontsize=8)
         style_export_theme(fig, theme)
