@@ -252,11 +252,6 @@ def open_project_callback():
 
 
 
-# Streamlit Cloud's floating header can overlap the first app row.
-# A real Streamlit element reserves vertical space reliably across themes.
-with st.container(height=200, border=False):
-    st.write("")
-
 settings, obstacles_tab, analysis, simulation, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'LIVE SIMULACE', 'DATA / EXPORTY'])
 
 with settings:
