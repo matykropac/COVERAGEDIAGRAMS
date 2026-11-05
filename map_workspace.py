@@ -569,6 +569,23 @@ def _draw_map():
                 "name":str(item.get("name","Objekt")),
             })
 
+    for airport in st.session_state.get("ws_airports",[])[:350]:
+        environment_data.append({
+            "type":"point","lat":float(airport["lat"]),"lon":float(airport["lon"]),
+            "color":"#4a83d1",
+            "name":str(airport.get("icao") or "")+" · "+str(airport.get("name") or "Letiště"),
+        })
+    if st.session_state.get("ws_show_wind",False):
+        try:
+            for turbine in load_wind_turbines(round(configured.lat,6),round(configured.lon,6))[:1500]:
+                environment_data.append({
+                    "type":"point","lat":float(turbine["lat"]),"lon":float(turbine["lon"]),
+                    "color":"#11a2a8",
+                    "name":str(turbine.get("name") or "Větrná turbína"),
+                })
+        except Exception:
+            pass
+
     basemaps=[
         {"name":name,"url":provider["url"],
          "attribution":provider["attribution"],
