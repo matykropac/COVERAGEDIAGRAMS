@@ -310,9 +310,12 @@ def simulation_tab(result, levels):
 
     with history_tab:
         if result is None:
-            st.info("Pro porovnání historických poloh s krytím nejprve spusť výpočet.")
+            st.info("Pro historickou mapu nejprve spusť výpočet, aby byl znám střed radaru.")
         else:
-            st.caption("Nahraj archiv pozorování ve formátu CSV nebo export pořízený "
-                       "na záložce ADS-B DATA.")
-            from traffic_history import render_history
-            render_history(result)
+            from historical_traffic_map import render_historical_map
+            render_historical_map(result)
+            with st.expander("ANALÝZA KRYTÍ · CSV", expanded=False):
+                st.caption("Nahraj historické pozice v CSV (včetně exportu z historické mapy) "
+                           "a porovnej je s vypočteným krytím.")
+                from traffic_history import render_history
+                render_history(result)
