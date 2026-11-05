@@ -252,6 +252,20 @@ def open_project_callback():
 
 
 
+# Physical HTML spacer independent of Streamlit container height, which may be
+# compressed by custom theme styles. Keep it before the entire tab navigation.
+st.markdown(
+    '<div id="coverage-navigation-clearance" '
+    'style="display:block;position:relative;clear:both;'
+    'height:180px;min-height:180px;flex:none;'
+    'visibility:hidden;pointer-events:none"></div>',
+    unsafe_allow_html=True,
+)
+# Deployment diagnostic: open ?debug_ui=1 to confirm the LIVE app has loaded
+# this revision. Hidden during normal usage.
+if st.query_params.get("debug_ui") == "1":
+    st.info("COVERAGEDIAGRAMS UI build 2026-11-05 / navigation spacer 180px")
+
 settings, obstacles_tab, analysis, simulation, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'LIVE SIMULACE', 'DATA / EXPORTY'])
 
 with settings:
