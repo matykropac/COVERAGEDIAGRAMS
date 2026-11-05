@@ -21,7 +21,7 @@ FORMATS = {
 
 def build_selected_zip(result, *, selected, flight_levels, index, alpha,
                        level_alphas, environment_items, project_bytes=None,
-                       map_html=None, map_bundle=None):
+                       map_html=None, map_bundle=None, customer_name="Radar Coverage Study"):
     """Only create entries checked by the user. Preserve original export routines."""
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -90,6 +90,44 @@ def build_selected_zip(result, *, selected, flight_levels, index, alpha,
                             environment_items=environment_items)
                         archive.write(
                             image_path, f"03_Images/Flight_Levels/{int(level):05d}ft_AMSL_600dpi.png")
+
+        # Optional light-only handover products; never alter existing presets.
+        if selected.get("customer_pack"):
+            from customer_delivery import build_customer_pack
+            package=build_customer_pack(result,flight_levels,customer_name)
+            with ZipFile(BytesIO(package),"r") as src:
+                for filename in src.namelist():
+                    if not filename.endswith("/"):
+                        archive.writestr("07_Customer_Delivery/"+filename,src.read(filename))
+
+        if selected.get("customer_maps") or selected.get("customer_terrain") or selected.get("customer_antenna"):
+            with tempfile.TemporaryDirectory(prefix="cd_customer_maps_") as work:
+                img=Path(work)/"customer_export.png"
+                if selected.get("customer_maps"):
+                    for level in flight_levels:
+                        core.export_map_image(
+                            img,result,"Vybrané výšky",levels_ft=(level,),
+                            alpha=.75,dpi=300,english=True,theme="light",
+                            environment_items=environment_items)
+                        archive.write(img,f"07_Customer_Delivery/Customer_Pack/Maps_Light/"
+                                      f"Coverage_{int(level):05d}ft_AMSL_300dpi.png")
+                if selected.get("customer_terrain"):
+                    core.export_map_image(img,result,"Terén",alpha=1.,dpi=300,
+                                          english=True,theme="light",
+                                          environment_items=environment_items)
+                    archive.write(img,"07_Customer_Delivery/Customer_Pack/Maps_Light/"
+                                  "Terrain_300dpi.png")
+                if selected.get("customer_antenna"):
+                    fig=Figure(figsize=(12,8),dpi=300,facecolor="white")
+                    FigureCanvasAgg(fig)
+                    try:
+                        core.technical_plot(fig,result=result,english=True)
+                        core.style_export_theme(fig,"light")
+                        fig.savefig(img,dpi=300,format="png",facecolor="white")
+                    finally:
+                        fig.clear()
+                    archive.write(img,"07_Customer_Delivery/Customer_Pack/Maps_Light/"
+                                  "Antenna_Pattern_300dpi.png")
 
         if selected.get("quickreport"):
             report = export_quickreport(
