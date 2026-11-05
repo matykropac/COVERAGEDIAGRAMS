@@ -46,7 +46,7 @@ def _kind(tags):
     return None
 
 def _height(tags):
-    explicit = numeric_height(tags.get("height") or tags.get("building:height"))
+    explicit = numeric_height(tags.get("height_m") or tags.get("height") or tags.get("building:height"))
     if explicit is not None:
         return explicit, "OSM height"
     if "building" in tags:
@@ -253,10 +253,11 @@ def controls(lat, lon, prefix):
     st.caption("Výšky bez atributu OSM zůstávají neznámé; nevstupují automaticky do krytí.")
     return subset
 
-def legend_png(items):
+def legend_png(items, coverage_layers=None):
     """Compact printable legend, suitable alongside engineering reports."""
     from PIL import Image, ImageDraw, ImageFont
-    image = Image.new("RGB", (1250, 330), "#0b2132")
+    coverage_layers = coverage_layers or []
+    image = Image.new("RGB", (1250, 340 + 30 * len(coverage_layers)), "#0b2132")
     d = ImageDraw.Draw(image)
     font = ImageFont.load_default()
     d.text((35, 25), "COVERAGEDIAGRAMS - ENVIRONMENT / LEGEND", font=font, fill="#e9f7ff")
@@ -267,13 +268,17 @@ def legend_png(items):
         d.text((78, y+5), f"{kind}: {n} polygons", font=font, fill="white")
         y += 53
     unknown = sum(x.get("height_m") is None for x in items)
-    d.text((35, 257), f"Unknown heights: {unknown}. Unknown objects not automatically counted as obstacles.", font=font, fill="#b8d4e2")
-    d.text((35, 282), "Source: OpenStreetMap / imported GeoJSON. Objects are informational overlays unless explicitly applied.", font=font, fill="#b8d4e2")
+    for label, color in coverage_layers:
+        d.rectangle((35, y, 59, y + 19), fill=color)
+        d.text((78, y + 4), str(label), font=font, fill="#ffffff")
+        y += 30
+    d.text((35, y + 8), f"Unknown heights: {unknown}. Unknown objects not automatically counted as obstacles.", font=font, fill="#b8d4e2")
+    d.text((35, y + 34), "Source: OpenStreetMap / imported GeoJSON. Objects are informational overlays unless explicitly applied.", font=font, fill="#b8d4e2")
     stream = io.BytesIO()
     image.save(stream, format="PNG")
     return stream.getvalue()
 
-def export_bundle(items, standalone_map_html=None):
+def export_bundle(items, standalone_map_html=None, coverage_layers=None):
     """Reproducible bundle of filtered overlay, legend, citation and optional map."""
     from zipfile import ZipFile, ZIP_DEFLATED
     output = io.BytesIO()
@@ -281,7 +286,7 @@ def export_bundle(items, standalone_map_html=None):
         archive.writestr("environment/environment.geojson", geojson_bytes(items))
         archive.writestr("environment/environment.kml", kml_bytes(items))
         archive.writestr("environment/environment.csv", csv_bytes(items))
-        archive.writestr("environment/legend.png", legend_png(items))
+        archive.writestr("environment/legend.png", legend_png(items, coverage_layers))
         archive.writestr("environment/README.txt", SOURCES + "\n"
                          + "Height unknown != zero. Filtered overlays do not automatically enter coverage calculations.\n")
         if standalone_map_html:
