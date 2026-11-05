@@ -24,6 +24,7 @@ _CSS="""
     padding:5px 9px;border-radius:5px;background:#fffdeb;color:#38516b;
     font:11px system-ui;box-shadow:0 1px 8px #17263824;display:none}
  
+#cd-profile-active #cd-persistent-map{height:calc(100dvh - 270px);min-height:340px}
 #cd-terrain-panel {position:relative;margin-top:8px;padding:9px 14px 10px;
    border:1px solid #cddae7;border-radius:9px;background:#fff;color:#263d54;
    box-shadow:0 2px 10px #1b365011;font:12px system-ui}
