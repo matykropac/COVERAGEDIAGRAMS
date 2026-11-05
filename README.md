@@ -1,5 +1,21 @@
 # ELDIS · Radar Coverage
 
+## 💻 Nový samostatný desktop klient
+
+**Windows x64 · macOS Apple Silicon · macOS Intel** — stejné rozhraní a radarové
+jádro jako Streamlit web, ale zabalené do vlastní nativní aplikace. Na cílovém
+počítači není nutné instalovat Python.
+
+- [Stáhnout desktop klienta z GitHub Actions](https://github.com/matykropac/COVERAGEDIAGRAMS/actions/workflows/desktop-build.yml) — otevři úspěšné sestavení a stáhni příslušný ZIP.
+- [Postup instalace, offline režim a ruční sestavení](docs/DESKTOP.md)
+- Windows: `build_windows.bat` · Mac: `bash build_mac.sh`.
+
+Krytí a importy DEM běží lokálně. Nové online mapové dlaždice, OpenTopography,
+OSM, Microsoft Building Footprints a ADS-B stále vyžadují připojení k internetu.
+Balíčky nejsou podepsané ani notarizované; na Macu může spuštění vyžadovat
+odsouhlasení v nastavení zabezpečení.
+
+
 Desktopová a webová aplikace pro terénní analýzu geometrického radarového krytí.
 PSR (RL-2000), PAR (PAR-NG) a obecný SSR model s integrovanými diagramy. PAR: azimut osy ±20°,
 dosah 40 km. Web a desktop sdílejí stejné modely a předvolby.
