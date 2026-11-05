@@ -402,7 +402,7 @@ def exports_dialog():
                            use_container_width=True)
 
 
-def _draw_map():
+def _draw_map_folium():
     result=st.session_state.get("result")
     # Editing an uncalculated site must not be confused with the old result's location.
     configured=_cfg()
@@ -516,6 +516,118 @@ def _draw_map():
                     st.session_state["ws_pending_polygon"]=coords
                     new_obstacle_dialog()
     st.session_state["ws_map_html"]=m.get_root().render().encode("utf-8")
+
+def _draw_map():
+    """Render one persistent JS Leaflet instance; Python only sends changed data."""
+    import json
+    from urllib.parse import quote
+    from aviation_basemap import configured_key
+    from persistent_leaflet import show_persistent_map
+
+    result=st.session_state.get("result")
+    configured=_cfg()
+    c=result["config"] if result is not None else configured
+
+    # Map always stays mounted under a stable key; levels are incremental GeoJSON.
+    active=[]
+    if result is not None and st.session_state.get("ws_show_coverage",True):
+        mode=st.session_state.get("ws_display_mode","Jedna hladina")
+        available=[ft for ft in st.session_state.get("ws_levels",[3000,10000])
+                   if ft in core.flight_levels_for(c.radar_mode)]
+        if not available:
+            available=list(core.flight_levels_for(c.radar_mode))
+        if mode=="Cíl":
+            active=[None]
+        elif mode=="Porovnání":
+            active=[ft for ft in st.session_state.get("ws_comparison",[]) if ft in available]
+        elif available:
+            wanted=st.session_state.get("ws_map_level",available[0])
+            active=[wanted if wanted in available else available[0]]
+
+    coverage=[]
+    for level in active:
+        if level not in st.session_state.setdefault("geometry",{}):
+            st.session_state.geometry[level]=coverage_geojson(result,level)
+        coverage.append({
+            "geojson":st.session_state.geometry[level],
+            "color":"#247ad3" if level is None else to_hex(core.level_color(level)),
+        })
+
+    obstacle_data=[]
+    for item in st.session_state.get("obstacles",[]):
+        obstacle_data.append({
+            "name":str(item.get("name","Překážka")),
+            "height_m":float(item["height_m"]),
+            "coordinates":obstacle_polygon(item,configured.lat,configured.lon),
+        })
+    environment_data=[]
+    for item in st.session_state.get("ws_environment",[])[:12000]:
+        if item.get("coordinates"):
+            environment_data.append({
+                "coordinates":item["coordinates"],
+                "color":env.COLORS.get(item.get("kind"),"#8097aa"),
+                "name":str(item.get("name","Objekt")),
+            })
+
+    basemaps=[
+        {"name":name,"url":provider["url"],
+         "attribution":provider["attribution"],
+         "max_zoom":provider["max_zoom"]}
+        for name,provider in core.BASEMAP_PROVIDERS.items()
+    ]
+    key=configured_key() if st.session_state.get("ws_openaip",True) else None
+    openaip={"enabled":bool(key),
+             "url":("https://api.tiles.openaip.net/api/data/openaip/"
+                    "{z}/{x}/{y}.png?apiKey="+quote(key,safe="")) if key else ""}
+    alpha=st.session_state.get("ws_map_opacity",.42)
+    import hashlib
+    def signature(items):
+        return hashlib.sha256(json.dumps(items,sort_keys=True,ensure_ascii=False,
+                                          default=str).encode("utf-8")).hexdigest()[:20]
+    payload={
+        "center":[configured.lat,configured.lon],
+        "zoom":8 if result else 9,
+        "radar":{"lat":configured.lat,"lon":configured.lon,
+                 "label":configured.radar_mode+" · RADAR"},
+        "basemaps":basemaps,
+        "openaip":openaip,
+        "tool":st.session_state.get("ws_map_tool","Prohlížení"),
+        "live":bool(st.session_state.get("ws_live_adsb",False)),
+        "coverage":coverage,
+        "opacity":alpha,
+        "coverageVersion":signature([active,alpha,
+                                      result.get("completed_at") if result else None]),
+        "obstacles":obstacle_data,
+        "obstaclesVersion":signature(obstacle_data),
+        "environment":environment_data,
+        "environmentVersion":signature(environment_data),
+    }
+    action=show_persistent_map(payload)
+    if isinstance(action,dict):
+        event_id=str(action.get("id",""))
+        if event_id and event_id != st.session_state.get("ws_last_map_action_id"):
+            st.session_state["ws_last_map_action_id"]=event_id
+            if action.get("type")=="radar" and payload["tool"]=="Radar":
+                try:
+                    lat,lon=coordinates_from_map_click({
+                        "lat":action["lat"],"lng":action["lon"]})
+                    st.session_state["ws_lat"]=lat
+                    st.session_state["ws_lon"]=lon
+                    st.session_state["ws_next_map_tool"]="Prohlížení"
+                    st.rerun()
+                except (ValueError,TypeError,KeyError) as exc:
+                    st.warning("Neplatné stanoviště radaru: "+str(exc))
+            elif action.get("type")=="polygon" and payload["tool"]=="Polygon":
+                try:
+                    coords=[[float(y),float(x)] for y,x in action["coordinates"]]
+                    if len(coords)>=3:
+                        st.session_state["ws_pending_polygon"]=coords
+                        new_obstacle_dialog()
+                except (ValueError,TypeError,KeyError) as exc:
+                    st.warning("Neplatný polygon: "+str(exc))
+    # HTML ZIP export is still available from the established Folium engine.
+    # Do not overwrite it with a placeholder or untrusted client data.
+
 
 @st.cache_data(ttl=12,show_spinner=False)
 def _traffic_cached(lat,lon):
@@ -647,6 +759,9 @@ def render_workspace():
             exports_dialog()
 
         st.divider()
+        st.toggle("Původní Folium mapa (záloha)",value=False,
+                  key="ws_legacy_map",
+                  help="Pouze pro porovnání a případné problémy s novým frontendem.")
         if st.button("Klasické UI",key="ws_legacy",use_container_width=True):
             st.query_params["classic"]="1"
             st.rerun()
@@ -672,9 +787,12 @@ def render_workspace():
     if st.session_state.pop("ws_result_notice",None):
         st.success("Krytí vypočteno. Přepínání letových hladin najdeš vlevo pod VRSTVY KRYTÍ.")
 
-    if live and tool=="Prohlížení":
-        _live_map_frame()
+    if st.session_state.get("ws_legacy_map",False):
+        if live and tool=="Prohlížení":
+            _live_map_frame()
+        else:
+            _draw_map_folium()
     else:
         _draw_map()
         if live:
-            st.caption("Aktualizace ADS-B je při kreslení pozastavena.")
+            st.caption("ADS-B se obnovuje v prohlížeči každých 15 s bez přepočtu mapy.")
