@@ -286,7 +286,7 @@ def legend_png(items, coverage_layers=None):
     image.save(stream, format="PNG")
     return stream.getvalue()
 
-def export_bundle(items, standalone_map_html=None, coverage_layers=None):
+def export_bundle(items, standalone_map_html=None, coverage_layers=None, canopy_overlay=None):
     """Reproducible bundle of filtered overlay, legend, citation and optional map."""
     from zipfile import ZipFile, ZIP_DEFLATED
     output = io.BytesIO()
@@ -297,6 +297,13 @@ def export_bundle(items, standalone_map_html=None, coverage_layers=None):
         archive.writestr("environment/legend.png", legend_png(items, coverage_layers))
         archive.writestr("environment/README.txt", SOURCES + "\n"
                          + "Height unknown != zero. Filtered overlays do not automatically enter coverage calculations.\n")
+        if canopy_overlay is not None:
+            raster_png, bounds, minimum, maximum = canopy_overlay
+            archive.writestr("environment/canopy_height.png", raster_png)
+            archive.writestr("environment/canopy_bounds.json",
+                             json.dumps({"bounds_wgs84": bounds, "min_m_agl": minimum,
+                                         "max_m_agl": maximum, "note": "Visualization only; source GeoTIFF not included."},
+                                        indent=2))
         if standalone_map_html:
             archive.writestr("map/interactive_map.html", standalone_map_html)
     return output.getvalue()
