@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import multiprocessing
 import json
+import traceback
 import os
 from pathlib import Path
 import socket
@@ -64,14 +65,26 @@ def server_options(port: int) -> dict:
 def run_server(port: int) -> None:
     """Start the same Streamlit app used in Cloud; no separate physics fork."""
     script = app_root() / "streamlit_app.py"
-    if not script.is_file():
-        raise FileNotFoundError(f"Bundled app script is missing: {script}")
-    os.chdir(str(app_root()))
-    from streamlit.web import bootstrap
-
-    # Both current python and frozen child process enter this function.
-    sys.argv = ["streamlit", "run", str(script)]
-    bootstrap.run(str(script), False, [], server_options(port))
+    # PyInstaller --windowed sets sys.stdout/stderr to None on Windows.
+    # Streamlit and Tornado expect valid streams during startup.
+    log = startup_log()
+    stream = open(log, "a", buffering=1, encoding="utf-8")
+    if sys.stdout is None:
+        sys.stdout = stream
+    if sys.stderr is None:
+        sys.stderr = stream
+    stream.write(f"[server] pid={os.getpid()} port={port} root={app_root()} script={script}\\n")
+    try:
+        if not script.is_file():
+            raise FileNotFoundError(f"Bundled app script is missing: {script}")
+        os.chdir(str(app_root()))
+        from streamlit.web import bootstrap
+        stream.write("[server] bootstrap imported\\n")
+        sys.argv = ["streamlit", "run", str(script)]
+        bootstrap.run(str(script), False, [], server_options(port))
+    except BaseException:
+        stream.write("[server] FATAL ERROR\\n" + traceback.format_exc() + "\\n")
+        raise
 
 
 def wait_for_server(port: int, process: subprocess.Popen, seconds: float = 110.) -> bool:
