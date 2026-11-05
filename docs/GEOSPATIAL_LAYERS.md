@@ -11,7 +11,7 @@
 
 ## Filters
 
-Each map has independent type, known-height, unknown-height and distance controls. Source data is cached and is not fetched until requested. A maximum of 3500 environment polygons is drawn per map to keep browsers responsive; the filtered table and exports can contain more. The existing coverage model still supports no more than 100 **active calculation obstacles** and has a manual conversion command for known-height building/tower polygons. The forest polygons and canopy raster are never automatically applied as opaque radar blockers.
+Each map has independent type, known-height, unknown-height and distance controls. Source data is cached and is not fetched until requested. A maximum of 6000 environment polygons is drawn per map to keep browsers responsive; the filtered table and exports can contain more. The existing coverage model still supports no more than 1000 **active calculation obstacles** and has a manual conversion command for known-height building/tower polygons. The forest polygons and canopy raster are never automatically applied as opaque radar blockers.
 
 ## Exports
 
