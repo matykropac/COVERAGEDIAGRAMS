@@ -364,6 +364,11 @@ function updateCoverage(s,data) {
     item.addTo(s.groups.coverage);
   }
 }
+function requestObstacleEdit(s,kind,id){
+  if(id===null||id===undefined||id==="")return;
+  s.trigger("action",{type:"edit_obstacle",kind,id:String(id),
+    token:Date.now()+"-"+Math.random().toString(36).slice(2)});
+}
 function updateObstacles(s,data) {
   const sig=data.obstaclesVersion||"empty";
   if(s.last.obstacles===sig)return;
@@ -373,8 +378,12 @@ function updateObstacles(s,data) {
     const coords=record.coordinates||[];
     if(coords.length<3)continue;
     const poly=L.polygon(coords,{color:"#ee7644",weight:2,
-      fillColor:"#ed7b45",fillOpacity:.32});
+      fillColor:"#ed7b45",fillOpacity:.32,bubblingMouseEvents:false});
     poly.bindTooltip(String(record.name||"Překážka")+" · "+String(record.height_m||0)+" m AGL");
+    poly.on("click",ev=>{
+      L.DomEvent.stopPropagation(ev);
+      requestObstacleEdit(s,"manual",record.id);
+    });
     poly.addTo(s.groups.obstacles);
   }
 }
@@ -399,8 +408,16 @@ function updateEnvironment(s,data){
         color:shape.color||"#7c97ad",weight:1,fillOpacity:.8})
         .bindTooltip(String(shape.name||"Objekt")).addTo(s.groups.environment);
     }else if(shape.coordinates?.length){
-      L.polygon(shape.coordinates,{color:shape.color||"#7c97ad",weight:1,
-        fillOpacity:.2}).bindTooltip(String(shape.name||"Objekt")).addTo(s.groups.environment);
+      const p=L.polygon(shape.coordinates,{color:shape.color||"#7c97ad",weight:1.2,
+        fillOpacity:.22,bubblingMouseEvents:false})
+        .bindTooltip(String(shape.name||"Objekt"));
+      if(shape.id){
+        p.on("click",ev=>{
+          L.DomEvent.stopPropagation(ev);
+          requestObstacleEdit(s,"catalog",shape.id);
+        });
+      }
+      p.addTo(s.groups.environment);
     }
   }
 }
