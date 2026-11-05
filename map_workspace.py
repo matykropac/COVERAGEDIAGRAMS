@@ -298,7 +298,7 @@ def new_obstacle_dialog():
                 st.session_state.pop("ws_pending_polygon",None)
                 st.session_state["ws_obstacle_revision"]=st.session_state.get("ws_obstacle_revision",0)+1
                 st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
-                st.session_state["ws_map_tool"]="Prohlížení"
+                st.session_state["ws_next_map_tool"]="Prohlížení"
                 st.rerun()
             except (ValueError,TypeError,KeyError) as exc:
                 st.error(str(exc))
@@ -486,7 +486,7 @@ def _draw_map():
                 if old!=(lat,lon):
                     st.session_state["ws_lat"]=lat
                     st.session_state["ws_lon"]=lon
-                    st.session_state["ws_map_tool"]="Prohlížení"
+                    st.session_state["ws_next_map_tool"]="Prohlížení"
                     st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
                     st.rerun()
             except (TypeError,ValueError,KeyError) as exc:
@@ -504,6 +504,9 @@ def _draw_map():
     st.session_state["ws_map_html"]=m.get_root().render().encode("utf-8")
 
 def render_workspace():
+    pending_tool=st.session_state.pop("ws_next_map_tool",None)
+    if pending_tool is not None:
+        st.session_state["ws_map_tool"]=pending_tool
     st.markdown(STYLES,unsafe_allow_html=True)
     st.markdown(
        '<div class="cd-topline"><div class="cd-wordmark">'
