@@ -675,6 +675,7 @@ else:
                                           core.flight_levels_for(rc.radar_mode),
                                           default=[v for v in levels if v in core.flight_levels_for(rc.radar_mode)],
                                           format_func=core.level_label, disabled=quickreport)
+            environment_revision = hashlib.sha256(env.geojson_bytes(analysis_environment)).hexdigest()
             if st.button('Vygenerovat QuickReport ZIP' if quickreport else 'Připravit export',
                          key='prepare_export', type='primary' if quickreport else 'secondary'):
                 try:
@@ -685,12 +686,12 @@ else:
                             environment_items=analysis_environment)
                         st.session_state.export = (blob, filename, mime,
                             (kind, tuple(core.flight_levels_for(rc.radar_mode) if kind.startswith('KML') else export_levels),
-                             index, dpi, alpha, tuple(sorted(alphas.items()))))
+                             index, dpi, alpha, tuple(sorted(alphas.items())), environment_revision))
                 except Exception as exc:
                     st.error('Export se nepodařil: '+str(exc))
             export = st.session_state.get('export')
             signature = (kind, tuple(core.flight_levels_for(rc.radar_mode) if kind.startswith('KML') else export_levels),
-                         index, dpi, alpha, tuple(sorted(alphas.items())))
+                         index, dpi, alpha, tuple(sorted(alphas.items())), environment_revision)
             if export and export[3] == signature:
                 st.download_button('Stáhnout '+export[1], export[0], export[1], export[2])
         with right:
