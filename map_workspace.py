@@ -130,6 +130,22 @@ def _config_state_from_project(config):
 
 @st.dialog("RADAR / Nastavení a výpočet", width="large")
 def radar_dialog():
+    with st.expander("OTEVŘÍT EXISTUJÍCÍ PROJEKT · .cdproj",expanded=False):
+        uploaded_project=st.file_uploader("Projekt COVERAGEDIAGRAMS",type=["cdproj"],
+                                          key="ws_project_upload")
+        if uploaded_project is not None and st.button("NAČÍST PROJEKT",key="ws_project_load"):
+            try:
+                result,meta=load_project(uploaded_project.getvalue())
+                _config_state_from_project(result["config"])
+                st.session_state["result"]=result
+                st.session_state["obstacles"]=meta.get("obstacles",[])
+                st.session_state["ws_levels"]=meta.get("levels",[])
+                st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
+                st.session_state["ws_viewport"]={
+                    "lat":result["config"].lat,"lng":result["config"].lon,"zoom":8}
+                st.rerun()
+            except (ValueError,KeyError,TypeError) as exc:
+                st.error(f"Projekt nelze načíst: {exc}")
     st.caption("Nastav stanoviště, parametry a letové hladiny. Výsledek se objeví přímo v mapě.")
     site, settings = st.columns(2, gap="medium")
     with site:
