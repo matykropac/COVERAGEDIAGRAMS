@@ -282,7 +282,7 @@ st.markdown(
 if st.query_params.get("debug_ui") == "1":
     st.info("COVERAGEDIAGRAMS UI build 2026-11-05 / visible banner 180px")
 
-settings, obstacles_tab, analysis, simulation, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'LIVE SIMULACE', 'DATA / EXPORTY'])
+settings, obstacles_tab, analysis, simulation, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'PROVOZ', 'DATA / EXPORTY'])
 
 with settings:
     location, parameters, preview, execution = st.columns([22, 22, 34, 22], gap='small')
