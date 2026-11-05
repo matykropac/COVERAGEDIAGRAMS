@@ -13,6 +13,7 @@ from obstacles import arc_parameters, obstacle_polygon, validate_obstacle
 from wind_turbines import load_wind_turbines, add_wind_layer
 import environment_layers as env
 import aviation_layers as aviation
+import canopy_layers as canopy
 
 GEOD = Geod(ellps='WGS84')
 MAX_OBSTACLES = 100
@@ -42,6 +43,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
                                  value=20.0, step=1.0, key='obstacle_new_height')
         visible_environment = env.controls(radar_lat, radar_lon, "obstacle_env")
         airports = aviation.controls(radar_lat, radar_lon, "obstacle_airports")
+        canopy_overlay = canopy.controls("obstacle_canopy")
         if visible_environment:
             with st.expander("Filtrovaná data · přehled", expanded=False):
                 st.dataframe(pd.DataFrame([{
@@ -108,6 +110,8 @@ def render_obstacle_editor(radar_lat, radar_lon):
             env.layer_group(om, visible_environment, "Environment / budovy a lesy")
         if airports:
             aviation.add_airports(om, airports)
+        if canopy_overlay is not None:
+            canopy.add_layer(om, canopy_overlay)
         env.add_legend(om, visible_environment, "Oranžová: aktivní překážky · Modrá: letiště")
         folium.Marker([radar_lat, radar_lon], tooltip='Radar',
                       icon=folium.Icon(color='orange', icon='signal')).add_to(om)
