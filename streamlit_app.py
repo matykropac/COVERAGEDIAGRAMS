@@ -252,19 +252,35 @@ def open_project_callback():
 
 
 
-# Physical HTML spacer independent of Streamlit container height, which may be
-# compressed by custom theme styles. Keep it before the entire tab navigation.
+# Visible top banner occupies physical layout space before the navigation.
+# This is intentionally a real Streamlit HTML element, not CSS margin.
 st.markdown(
-    '<div id="coverage-navigation-clearance" '
-    'style="display:block;position:relative;clear:both;'
-    'height:180px;min-height:180px;flex:none;'
-    'visibility:hidden;pointer-events:none"></div>',
+    """
+    <div id="coverage-top-banner" style="
+      box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;
+      width:100%;min-height:180px;padding:28px 36px;margin:0 0 18px 0;
+      border:1px solid #315d77;border-radius:12px;
+      background:linear-gradient(110deg,#0d2b44,#103853 55%,#0b2437);
+      color:#eaf8ff;font-family:system-ui,sans-serif;
+      position:relative;z-index:1;">
+      <div>
+        <div style="font-size:12px;letter-spacing:.20em;color:#69dcf3;font-weight:700">
+          RADAR COVERAGE ENGINEERING
+        </div>
+        <div style="font-size:30px;letter-spacing:.045em;font-weight:750;margin-top:8px">
+          COVERAGEDIAGRAMS
+        </div>
+        <div style="font-size:13px;color:#b7d4e5;margin-top:8px">
+          Terrain analysis · Obstacles · Air traffic
+        </div>
+      </div>
+      <div aria-hidden="true" style="font-size:62px;color:#43cbe9;opacity:.8">◎</div>
+    </div>
+    """,
     unsafe_allow_html=True,
 )
-# Deployment diagnostic: open ?debug_ui=1 to confirm the LIVE app has loaded
-# this revision. Hidden during normal usage.
 if st.query_params.get("debug_ui") == "1":
-    st.info("COVERAGEDIAGRAMS UI build 2026-11-05 / navigation spacer 180px")
+    st.info("COVERAGEDIAGRAMS UI build 2026-11-05 / visible banner 180px")
 
 settings, obstacles_tab, analysis, simulation, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'LIVE SIMULACE', 'DATA / EXPORTY'])
 
