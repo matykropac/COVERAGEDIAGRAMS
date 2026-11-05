@@ -763,17 +763,22 @@ def _draw_map_folium():
                        tooltip=f"{item.get('name','Překážka')} · {item['height_m']:g} m AGL"
                        ).add_to(obstacle_layer)
     obstacle_layer.add_to(m)
-    if st.session_state.get("ws_environment"):
+    catalog=st.session_state.get("ws_imported_catalog")
+    if catalog is not None:
+        geodata_layer=folium.FeatureGroup(name="Načtená geodata",show=True)
+        colors={**env.COLORS,"Wind":"#0d9cb0"}
+        for item in catalog[:6000]:
+            folium.Polygon(item["coordinates"],color=colors.get(item["category"],"#859db0"),
+                           weight=1,fill=True,fill_opacity=.18,
+                           tooltip=item["name"]).add_to(geodata_layer)
+        geodata_layer.add_to(m)
+    elif st.session_state.get("ws_environment"):
         env.layer_group(m,st.session_state["ws_environment"],"Budovy / lesy / věže")
     if st.session_state.get("ws_airports"):
         aviation.add_airports(m,st.session_state["ws_airports"])
     if st.session_state.get("ws_canopy") is not None:
         canopy.add_layer(m,st.session_state["ws_canopy"])
-    if st.session_state.get("ws_show_wind",False):
-        try:
-            wind=load_wind_turbines(round(configured.lat,6),round(configured.lon,6))
-            add_wind_layer(m,wind,cluster_points=False)
-        except Exception:pass
+
     if st.session_state.get("ws_live_adsb",False):
         records=st.session_state.get("ws_traffic_snapshot",[])
         site=st.session_state.get("ws_traffic_site")
@@ -869,13 +874,25 @@ def _draw_map():
             "coordinates":obstacle_polygon(item,configured.lat,configured.lon),
         })
     environment_data=[]
-    for item in st.session_state.get("ws_environment",[])[:12000]:
-        if item.get("coordinates"):
-            environment_data.append({
-                "coordinates":item["coordinates"],
-                "color":env.COLORS.get(item.get("kind"),"#8097aa"),
-                "name":str(item.get("name","Objekt")),
-            })
+    catalog=st.session_state.get("ws_imported_catalog")
+    if catalog is not None:
+        # Deleted objects disappear from the map, including wind polygons.
+        palette={**env.COLORS,"Wind":"#0d9cb0"}
+        for item in catalog[:12000]:
+            if item.get("coordinates"):
+                environment_data.append({
+                    "coordinates":item["coordinates"],
+                    "color":palette.get(item.get("category"),"#8097aa"),
+                    "name":str(item.get("name","Objekt")),
+                })
+    else:
+        for item in st.session_state.get("ws_environment",[])[:12000]:
+            if item.get("coordinates"):
+                environment_data.append({
+                    "coordinates":item["coordinates"],
+                    "color":env.COLORS.get(item.get("kind"),"#8097aa"),
+                    "name":str(item.get("name","Objekt")),
+                })
 
     for airport in st.session_state.get("ws_airports",[])[:350]:
         environment_data.append({
@@ -883,16 +900,7 @@ def _draw_map():
             "color":"#4a83d1",
             "name":str(airport.get("icao") or "")+" · "+str(airport.get("name") or "Letiště"),
         })
-    if st.session_state.get("ws_show_wind",False):
-        try:
-            for turbine in load_wind_turbines(round(configured.lat,6),round(configured.lon,6))[:1500]:
-                environment_data.append({
-                    "type":"point","lat":float(turbine["lat"]),"lon":float(turbine["lon"]),
-                    "color":"#11a2a8",
-                    "name":str(turbine.get("name") or "Větrná turbína"),
-                })
-        except Exception:
-            pass
+
 
     basemaps=[
         {"name":name,"url":provider["url"],
