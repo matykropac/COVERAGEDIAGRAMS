@@ -54,7 +54,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
                     "Původ": v["source"]
                 } for v in visible_environment[:1000]]), use_container_width=True, height=300)
             st.download_button("Export vrstev + legenda (ZIP)",
-                               env.export_bundle(visible_environment),
+                               env.export_bundle(visible_environment, canopy_overlay=canopy_overlay),
                                file_name="OBSTACLES_layers.zip",
                                mime="application/zip", key="env_bundle_editor")
             st.download_button("Export filtrovaných objektů · GeoJSON",
