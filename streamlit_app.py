@@ -252,36 +252,26 @@ def open_project_callback():
 
 
 
-# Visible top banner occupies physical layout space before the navigation.
-# This is intentionally a real Streamlit HTML element, not CSS margin.
+# Compact application header; the navigation is styled as a persistent left rail.
 st.markdown(
     """
-    <div id="coverage-top-banner" style="
-      box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;
-      width:100%;min-height:180px;padding:28px 36px;margin:0 0 18px 0;
-      border:1px solid #315d77;border-radius:12px;
-      background:linear-gradient(110deg,#0d2b44,#103853 55%,#0b2437);
-      color:#eaf8ff;font-family:system-ui,sans-serif;
-      position:relative;z-index:1;">
-      <div>
-        <div style="font-size:12px;letter-spacing:.20em;color:#69dcf3;font-weight:700">
-          RADAR COVERAGE ENGINEERING
-        </div>
-        <div style="font-size:30px;letter-spacing:.045em;font-weight:750;margin-top:8px">
-          COVERAGEDIAGRAMS
-        </div>
-        <div style="font-size:13px;color:#b7d4e5;margin-top:8px">
-          Terrain analysis · Obstacles · Air traffic
+    <div id="cd-command-header">
+      <div class="cd-brand-lockup">
+        <span class="cd-radar-emblem" aria-hidden="true"><i></i><b></b></span>
+        <div class="cd-brand-name">
+          <span class="cd-overline">RADAR COVERAGE WORKSPACE</span>
+          <strong>COVERAGEDIAGRAMS</strong>
         </div>
       </div>
-      <div aria-hidden="true" style="font-size:62px;color:#43cbe9;opacity:.8">◎</div>
+      <div class="cd-command-meta">
+        <span class="cd-meta-item">GEOSPATIAL ANALYSIS</span>
+        <span class="cd-meta-separator"></span>
+        <span class="cd-status"><span class="cd-status-dot"></span> ENGINEERING CONSOLE</span>
+      </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
-if st.query_params.get("debug_ui") == "1":
-    st.info("COVERAGEDIAGRAMS UI build 2026-11-05 / visible banner 180px")
-
 settings, obstacles_tab, analysis, simulation, raw = st.tabs(['NASTAVENÍ', 'OBSTACLES', 'MAPA / ANALÝZA', 'PROVOZ', 'DATA / EXPORTY'])
 
 with settings:
