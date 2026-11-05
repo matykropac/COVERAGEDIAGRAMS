@@ -484,9 +484,10 @@ else:
             alphas = {ft: alpha for ft in active}
             st.caption(f'Aktivní vrstvy: {len(active) + int(show_target)}')
             st.caption('Kliknutí měří přímo v mapě, bez překreslení aplikace — funguje i na celou obrazovku.')
-            analysis_environment = env.controls(rc.lat, rc.lon, "analysis_env")
-            analysis_airports = aviation.controls(rc.lat, rc.lon, "analysis_airports")
-            analysis_canopy = canopy.controls("analysis_canopy")
+            with st.expander("GEODATA / Budovy · Lesy · Letiště · Canopy", expanded=False):
+                analysis_environment = env.controls(rc.lat, rc.lon, "analysis_env")
+                analysis_airports = aviation.controls(rc.lat, rc.lon, "analysis_airports")
+                analysis_canopy = canopy.controls("analysis_canopy")
             st.session_state["environment_filtered_export"] = analysis_environment
             st.markdown('**Větrné turbíny**')
             show_analysis_wind = st.checkbox('Zobrazit jednotlivé turbíny (100 km)',
