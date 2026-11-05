@@ -483,6 +483,7 @@ else:
             st.caption(f'Aktivní vrstvy: {len(active) + int(show_target)}')
             st.caption('Kliknutí měří přímo v mapě, bez překreslení aplikace — funguje i na celou obrazovku.')
             analysis_environment = env.controls(rc.lat, rc.lon, "analysis_env")
+            st.session_state["environment_filtered_export"] = analysis_environment
             st.markdown('**Větrné turbíny**')
             show_analysis_wind = st.checkbox('Zobrazit jednotlivé turbíny (100 km)',
                                              value=True, key='analysis_show_wind')
@@ -569,6 +570,7 @@ else:
             # Keep the standalone map in browser memory, not as a downloaded file.
             # The user-initiated click opens a Blob URL in a new browser tab.
             standalone_html = m.get_root().render().encode('utf-8')
+            st.session_state["environment_map_html"] = standalone_html
             standalone_b64 = base64.b64encode(standalone_html).decode('ascii')
             components.html(
                 """
@@ -628,6 +630,18 @@ else:
             st.caption('Po načtení souboru se obnoví vypočtené krytí i podkladový terén bez volání API.')
         except Exception as exc:
             st.error('Projekt nelze uložit: ' + str(exc))
+        st.subheader('Mapový export / vrstvy, filtry a legenda')
+        st.caption('Export zachovává vyfiltrované objekty, jejich atributy, legendu a zdroj dat. '
+                   'HTML obsahuje i zobrazené pokrytí a zvolený mapový podklad.')
+        filtered_env = st.session_state.get("environment_filtered_export", [])
+        bundle = env.export_bundle(filtered_env, st.session_state.get("environment_map_html"))
+        st.download_button("Stáhnout analytickou mapu + GeoJSON/KML/CSV + legendu (ZIP)",
+                           bundle, file_name="COVERAGEDIAGRAMS_map_layers.zip",
+                           mime="application/zip", key="environment_bundle_download")
+        st.download_button("Samostatný interaktivní HTML export mapy",
+                           st.session_state.get("environment_map_html", b""),
+                           file_name="COVERAGEDIAGRAMS_map.html",
+                           mime="text/html", key="environment_html_download")
         st.subheader('Aktuální výpočet')
         st.json(core.calculation_metadata(result), expanded=False)
         st.caption('RAW tabulka obsahuje nezměněné vzorky vybraného radiálního profilu. Celou matici stáhneš jako NPZ.')
