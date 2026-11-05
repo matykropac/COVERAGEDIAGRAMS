@@ -14,6 +14,7 @@ from wind_turbines import load_wind_turbines, add_wind_layer
 import environment_layers as env
 import aviation_layers as aviation
 import canopy_layers as canopy
+from traffic_overlay import fetch_snapshot, add_traffic_layer, traffic_csv
 
 GEOD = Geod(ellps='WGS84')
 MAX_OBSTACLES = 1000
@@ -34,72 +35,112 @@ def _description(o, radar_lat, radar_lon):
 
 
 def render_obstacle_editor(radar_lat, radar_lon):
-    st.subheader('OBSTACLES / Správa překážek')
+    st.subheader('OBSTACLES / Překážky a provoz')
     obstacles = st.session_state.setdefault('obstacles', [])
 
-    map_panel, table_panel = st.columns([2, 1], gap='medium')
+    map_panel, table_panel = st.columns([3, 1], gap='small')
     with table_panel:
-        height = st.number_input('Výška nové překážky [m AGL]', 0.1, 1000.0,
+        st.markdown('**PŘIDAT PŘEKÁŽKU**')
+        height = st.number_input('Výška nového polygonu · m AGL', 0.1, 1000.0,
                                  value=20.0, step=1.0, key='obstacle_new_height')
-        with st.expander("GEODATA / Budovy · Lesy · Letiště · Canopy", expanded=False):
+        st.caption('Nakresli půdorys přímo do mapy vlevo. Výšku a název pak upravíš v tabulce.')
+
+        st.markdown('**ZOBRAZIT V MAPĚ**')
+        show_wind = st.checkbox('Větrné elektrárny · 100 km',
+                                value=True, key='obstacle_show_wind')
+        show_traffic = st.checkbox('ADS-B · letecký provoz', value=False,
+                                   key='obstacle_show_traffic')
+        traffic_radius = st.selectbox('Dosah ADS-B · NM', [25, 50, 100, 150, 200, 250],
+                                      index=2, key='obstacle_traffic_radius',
+                                      disabled=not show_traffic)
+        if show_traffic:
+            if st.button('Načíst / obnovit provoz', key='obstacle_fetch_traffic',
+                         use_container_width=True):
+                try:
+                    with st.spinner('Načítám ADS-B polohy…'):
+                        snapshot = fetch_snapshot(radar_lat, radar_lon, traffic_radius)
+                    st.session_state['obstacle_traffic_snapshot'] = snapshot
+                    st.session_state['obstacle_traffic_site'] = (
+                        round(radar_lat, 5), round(radar_lon, 5), traffic_radius)
+                    old = st.session_state.get('obstacle_traffic_history', [])
+                    # Keep finite data in memory; export CSV before closing the session.
+                    st.session_state['obstacle_traffic_history'] = (old + snapshot)[-25000:]
+                except (ValueError, RuntimeError) as exc:
+                    st.warning(str(exc))
+            current_site = (round(radar_lat, 5), round(radar_lon, 5), traffic_radius)
+            if st.session_state.get('obstacle_traffic_site') == current_site:
+                traffic_snapshot = st.session_state.get('obstacle_traffic_snapshot', [])
+            else:
+                traffic_snapshot = []
+            st.caption(f'ADS-B · {len(traffic_snapshot)} aktuálně načtených pozic · adsb.lol')
+            saved = st.session_state.get('obstacle_traffic_history', [])
+            if saved:
+                st.download_button(f'Stáhnout historii pozorování · CSV ({len(saved)})',
+                                   data=traffic_csv(saved),
+                                   file_name='adsb_traffic_history.csv', mime='text/csv',
+                                   use_container_width=True, key='obstacle_traffic_csv')
+            st.caption('Aktualizace pouze na kliknutí. Pozorování se ukládají v relaci, '
+                       'nejde o úplný historický archiv. Zdroj: adsb.lol · ODbL 1.0.')
+        else:
+            traffic_snapshot = []
+
+        with st.expander('DALŠÍ MAPOVÁ DATA · budovy, letiště, lesy, canopy', expanded=False):
             visible_environment = env.controls(radar_lat, radar_lon, "obstacle_env")
             airports = aviation.controls(radar_lat, radar_lon, "obstacle_airports")
             canopy_overlay = canopy.controls("obstacle_canopy")
+
         if visible_environment:
-            with st.expander("Filtrovaná data · přehled", expanded=False):
+            st.caption(f'Další mapové objekty: {len(visible_environment)}')
+            usable = [x for x in visible_environment if x["height_m"] is not None and
+                      x["kind"] in ("Building", "Tower") and len(x["coordinates"]) >= 3]
+            with st.expander('PŘEVOD A EXPORT DAT', expanded=False):
                 st.dataframe(pd.DataFrame([{
                     "Objekt": v["name"], "Typ": env.LABELS[v["kind"]],
                     "Výška AGL [m]": v["height_m"],
                     "Azimut [°]": v["azimuth_deg"],
                     "Vzdálenost [km]": v["distance_km"],
                     "Původ": v["source"]
-                } for v in visible_environment[:1000]]), use_container_width=True, height=300)
-            if st.button("Připravit export vrstev + legendy (ZIP)", key="env_bundle_prepare"):
-                st.session_state["obstacle_environment_zip"] = env.export_bundle(
-                    visible_environment, canopy_overlay=canopy_overlay, airports=airports)
-                st.session_state["obstacle_environment_signature"] = (
-                    env.geojson_bytes(visible_environment),
-                    canopy_overlay[0] if canopy_overlay else b"",
-                    repr(airports))
-            signature_now = (env.geojson_bytes(visible_environment),
-                             canopy_overlay[0] if canopy_overlay else b"",
-                    repr(airports))
-            if (st.session_state.get("obstacle_environment_zip") is not None
-                    and st.session_state.get("obstacle_environment_signature") == signature_now):
-                st.download_button("Stáhnout export vrstev + legenda (ZIP)",
-                                   st.session_state["obstacle_environment_zip"],
-                                   file_name="OBSTACLES_layers.zip", mime="application/zip",
-                                   key="env_bundle_editor")
-            st.download_button("Export filtrovaných objektů · GeoJSON",
-                               env.geojson_bytes(visible_environment), file_name="environment_layers.geojson",
-                               mime="application/geo+json", key="env_geojson_editor")
-            st.download_button("Export filtrovaných objektů · KML",
-                               env.kml_bytes(visible_environment), file_name="environment_layers.kml",
-                               mime="application/vnd.google-earth.kml+xml", key="env_kml_editor")
-            usable = [x for x in visible_environment if x["height_m"] is not None and
-                      x["kind"] in ("Building", "Tower") and len(x["coordinates"]) >= 3]
-            if st.button(f"Převést známé výšky na překážky ({min(len(usable), MAX_OBSTACLES-len(obstacles))})",
-                         key="environment_to_obstacles",
-                         help="Pouze budovy a věže se známou výškou; max 1000 objektů. Neprovádí se automaticky."):
-                remaining = MAX_OBSTACLES - len(obstacles)
-                if remaining <= 0:
-                    st.error("Nejdříve uvolni místo v seznamu 100 výpočetních překážek.")
-                else:
-                    added = 0
-                    for entry in usable[:remaining]:
-                        item = dict(kind="polygon", name=entry["name"],
-                                    coordinates=entry["coordinates"], height_m=entry["height_m"])
-                        try:
-                            validate_obstacle(item, radar_lat, radar_lon)
-                        except (ValueError, TypeError, KeyError):
-                            continue
-                        obstacles.append(item)
-                        added += 1
-                    st.session_state["obstacle_list_rev"] = st.session_state.get("obstacle_list_rev", 0)+1
-                    st.success(f"Do výpočetních překážek přidáno {added} objektů. Spusť nový výpočet.")
-                    st.rerun()
-        show_wind = st.checkbox('Zobrazit větrné elektrárny (100 km)',
-                                value=True, key='obstacle_show_wind')
+                } for v in visible_environment[:1000]]), use_container_width=True, height=230)
+                if st.button("Připravit export vrstev (ZIP)", key="env_bundle_prepare"):
+                    st.session_state["obstacle_environment_zip"] = env.export_bundle(
+                        visible_environment, canopy_overlay=canopy_overlay, airports=airports)
+                    st.session_state["obstacle_environment_signature"] = (
+                        env.geojson_bytes(visible_environment),
+                        canopy_overlay[0] if canopy_overlay else b"",
+                        repr(airports))
+                signature_now = (env.geojson_bytes(visible_environment),
+                                 canopy_overlay[0] if canopy_overlay else b"", repr(airports))
+                if (st.session_state.get("obstacle_environment_zip") is not None
+                        and st.session_state.get("obstacle_environment_signature") == signature_now):
+                    st.download_button("Stáhnout ZIP", st.session_state["obstacle_environment_zip"],
+                                       file_name="OBSTACLES_layers.zip", mime="application/zip",
+                                       key="env_bundle_editor")
+                st.download_button("GeoJSON", env.geojson_bytes(visible_environment),
+                                   file_name="environment_layers.geojson",
+                                   mime="application/geo+json", key="env_geojson_editor")
+                st.download_button("KML", env.kml_bytes(visible_environment),
+                                   file_name="environment_layers.kml",
+                                   mime="application/vnd.google-earth.kml+xml", key="env_kml_editor")
+                if st.button(f'Převést objekty se známou výškou ({min(len(usable), MAX_OBSTACLES-len(obstacles))})',
+                             key="environment_to_obstacles",
+                             help="Pouze budovy a věže se známou výškou, max. 1000 objektů."):
+                    remaining = MAX_OBSTACLES - len(obstacles)
+                    if remaining <= 0:
+                        st.error("Nejdříve uvolni místo v seznamu 1000 výpočetních překážek.")
+                    else:
+                        added = 0
+                        for entry in usable[:remaining]:
+                            item = dict(kind="polygon", name=entry["name"],
+                                        coordinates=entry["coordinates"], height_m=entry["height_m"])
+                            try:
+                                validate_obstacle(item, radar_lat, radar_lon)
+                            except (ValueError, TypeError, KeyError):
+                                continue
+                            obstacles.append(item)
+                            added += 1
+                        st.session_state["obstacle_list_rev"] = st.session_state.get("obstacle_list_rev", 0)+1
+                        st.success(f'Přidáno {added} objektů. Spusť nový výpočet krytí.')
+                        st.rerun()
     wind_data = []
     if show_wind:
         try:
@@ -110,7 +151,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
 
     selected_idx = st.session_state.get('obstacle_selected_index', -1)
     with map_panel:
-        st.markdown('**01 / Mapa překážek**')
+        st.markdown('**MAPA · kresli polygon pro přidání překážky**')
         om = folium.Map(location=[radar_lat, radar_lon], zoom_start=11,
                         tiles=None, control_scale=True)
         for name, provider in core.BASEMAP_PROVIDERS.items():
@@ -119,6 +160,8 @@ def render_obstacle_editor(radar_lat, radar_lon):
                              show=name == 'OpenStreetMap').add_to(om)
         if show_wind and wind_data:
             add_wind_layer(om, wind_data, cluster_points=False)
+        if traffic_snapshot:
+            add_traffic_layer(om, traffic_snapshot)
         if visible_environment:
             env.layer_group(om, visible_environment, "Environment / budovy a lesy")
         if airports:
@@ -171,9 +214,9 @@ def render_obstacle_editor(radar_lat, radar_lon):
                         st.session_state['obstacle_list_rev'] = st.session_state.get('obstacle_list_rev', 0)+1
                         st.rerun()
     with table_panel:
-        st.markdown('**02 / Překážky · editovatelná tabulka**')
+        st.markdown(f'**MOJE PŘEKÁŽKY · {len(obstacles)}**')
         if not obstacles:
-            st.info('Nakresli první polygon v mapě.')
+            st.caption('Zatím žádná výpočetní překážka. Nakresli polygon v mapě.')
             return
 
         rows = [{
