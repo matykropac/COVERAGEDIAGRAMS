@@ -853,7 +853,7 @@ def render_workspace():
 
         section=st.segmented_control(
             "Pracovní sekce",
-            options=["MAPA","RADAR","PŘEKÁŽKY"],
+            options=["MAPA","PŘEKÁŽKY","RADAR"],
             default="MAPA",key="ws_section",selection_mode="single",
             width="stretch",label_visibility="collapsed")
         if section is None:
@@ -922,6 +922,9 @@ def render_workspace():
             if st.button("⌁ Analýza profilu",key="ws_command_analysis",
                          use_container_width=True):
                 analysis_dialog()
+            st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
+            if st.button("⇩ Export ZIP",key="ws_command_export",use_container_width=True):
+                exports_dialog()
 
         else:  # PŘEKÁŽKY
             st.markdown('<div class="cd-nav-title">ZAKRESLENÍ PŘEKÁŽEK</div>',unsafe_allow_html=True)
@@ -933,10 +936,7 @@ def render_workspace():
             st.caption("Změny překážek vyžadují nový výpočet krytí. "
                        "Přejdi do sekce RADAR a klikni na SPOČÍTAT KRYTÍ.")
 
-        # Shared actions are always available, independent of the active section.
-        st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
-        if st.button("⇩ Export ZIP",key="ws_command_export",use_container_width=True):
-            exports_dialog()
+        # Legacy controls remain available without mixing export tools into obstacles.
         with st.expander("Pokročilé",expanded=False):
             st.toggle("Původní Folium mapa (záloha)",value=False,
                       key="ws_legacy_map",help="Pro kontrolu starého mapového zobrazení.")
