@@ -173,7 +173,13 @@ def run_desktop() -> None:
 
 
 def main() -> None:
+    # Early marker ensures CI can distinguish a bootloader hang from a web
+    # server startup error even for a --windowed frozen executable.
+    with startup_log().open("a", encoding="utf-8") as diagnosis:
+        diagnosis.write(f"[main] argv={sys.argv!r}; frozen={bool(getattr(sys, 'frozen', False))}\\n")
     multiprocessing.freeze_support()
+    with startup_log().open("a", encoding="utf-8") as diagnosis:
+        diagnosis.write("[main] freeze_support returned\\n")
     if len(sys.argv) == 3 and sys.argv[1] == SERVER_FLAG:
         try:
             port = int(sys.argv[2])
