@@ -366,8 +366,8 @@ function updateCoverage(s,data) {
 }
 function requestObstacleEdit(s,kind,id){
   if(id===null||id===undefined||id==="")return;
-  s.trigger("action",{type:"edit_obstacle",kind,id:String(id),
-    token:Date.now()+"-"+Math.random().toString(36).slice(2)});
+  s.trigger("action",{type:"edit_obstacle",kind,obstacle_id:String(id),
+    id:Date.now()+"-"+Math.random().toString(36).slice(2)});
 }
 function updateObstacles(s,data) {
   const sig=data.obstaclesVersion||"empty";
