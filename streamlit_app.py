@@ -532,11 +532,14 @@ else:
                 env.layer_group(m, analysis_environment, "Budovy / lesy / věže")
             if analysis_airports:
                 aviation.add_airports(m, analysis_airports)
-            legend_levels = ", ".join(core.level_label(ft) for ft in active[:6])
+            legend_levels = ([(core.level_label(ft), to_hex(core.level_color(ft))) for ft in active[:10]]
+                             if not show_target else [("Target coverage", "#22d3c5")])
+            level_key = "".join('<div><span style="display:inline-block;width:12px;height:10px;'
+                                'margin-right:6px;background:' + color + '"></span>' +
+                                label + '</div>' for label, color in legend_levels)
             env.add_legend(m, analysis_environment,
-                           "Coverage: " + ("Cíl" if show_target else legend_levels) +
-                           " · Oranžová: výpočetní překážky" +
-                           (" · Žlutá: turbíny" if show_analysis_wind else ""))
+                           level_key + '<div>Orange: calculated obstacles · Blue: airports</div>' +
+                           ('<div>Yellow: wind turbines</div>' if show_analysis_wind else ''))
             for obs in result.get('obstacles', []):
                 folium.Polygon(obstacle_polygon(obs, rc.lat, rc.lon), color='#ff7043',
                                weight=1, fill=True, fill_opacity=.65,
@@ -638,7 +641,10 @@ else:
         st.caption('Export zachovává vyfiltrované objekty, jejich atributy, legendu a zdroj dat. '
                    'HTML obsahuje i zobrazené pokrytí a zvolený mapový podklad.')
         filtered_env = st.session_state.get("environment_filtered_export", [])
-        bundle = env.export_bundle(filtered_env, st.session_state.get("environment_map_html"))
+        exported_levels = ([(core.level_label(ft), to_hex(core.level_color(ft))) for ft in active[:10]]
+                           if not show_target else [("Target coverage", "#22d3c5")])
+        bundle = env.export_bundle(filtered_env, st.session_state.get("environment_map_html"),
+                                   coverage_layers=exported_levels)
         st.download_button("Stáhnout analytickou mapu + GeoJSON/KML/CSV + legendu (ZIP)",
                            bundle, file_name="COVERAGEDIAGRAMS_map_layers.zip",
                            mime="application/zip", key="environment_bundle_download")
