@@ -9,6 +9,9 @@ import folium
 import environment_layers as env
 import aviation_layers as aviation
 import microsoft_buildings as microsoft
+import numpy as np
+from shapely.geometry import Polygon
+from obstacles import _polygon_ray_indices
 
 
 class GeospatialDataTests(unittest.TestCase):
@@ -67,6 +70,19 @@ class GeospatialDataTests(unittest.TestCase):
         self.assertIn(b"LKXX", aviation.geojson_bytes(samples))
         self.assertIn(b"LKXX", aviation.csv_bytes(samples))
         ET.fromstring(aviation.kml_bytes(samples))
+
+    def test_ray_sector_preselection(self):
+        az = np.arange(360, dtype=float)
+        polygon = [(100, 100), (101, 100), (101, 101), (100, 101)]
+        indices = _polygon_ray_indices(az, Polygon(polygon), polygon)
+        self.assertIn(45, list(indices))
+        self.assertLess(len(indices), 5)
+        across_north = [(1, 100), (-1, 100), (-1, 102), (1, 102)]
+        north = _polygon_ray_indices(az, Polygon(across_north), across_north)
+        self.assertIn(0, list(north))
+        around_radar = [(-1,-1),(-1,1),(1,1),(1,-1)]
+        self.assertEqual(len(_polygon_ray_indices(az, Polygon(around_radar),
+                                                  around_radar)), 360)
 
     def test_microsoft_tile_index(self):
         self.assertEqual(len(microsoft.quadkey(50.0, 14.0)), 9)
