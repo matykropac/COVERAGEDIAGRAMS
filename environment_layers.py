@@ -286,7 +286,7 @@ def legend_png(items, coverage_layers=None):
     image.save(stream, format="PNG")
     return stream.getvalue()
 
-def export_bundle(items, standalone_map_html=None, coverage_layers=None, canopy_overlay=None):
+def export_bundle(items, standalone_map_html=None, coverage_layers=None, canopy_overlay=None, airports=None):
     """Reproducible bundle of filtered overlay, legend, citation and optional map."""
     from zipfile import ZipFile, ZIP_DEFLATED
     output = io.BytesIO()
@@ -297,6 +297,11 @@ def export_bundle(items, standalone_map_html=None, coverage_layers=None, canopy_
         archive.writestr("environment/legend.png", legend_png(items, coverage_layers))
         archive.writestr("environment/README.txt", SOURCES + "\n"
                          + "Height unknown != zero. Filtered overlays do not automatically enter coverage calculations.\n")
+        if airports:
+            import aviation_layers as aviation
+            archive.writestr("aviation/airports.geojson", aviation.geojson_bytes(airports))
+            archive.writestr("aviation/airports.kml", aviation.kml_bytes(airports))
+            archive.writestr("aviation/airports.csv", aviation.csv_bytes(airports))
         if canopy_overlay is not None:
             raster_png, bounds, minimum, maximum = canopy_overlay
             archive.writestr("environment/canopy_height.png", raster_png)
