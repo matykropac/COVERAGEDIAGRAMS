@@ -12,7 +12,7 @@ def _registry():
     # Shared between Streamlit browser sessions in the same server process.
     return {}
 
-def radar_window_link(result, level_ft, provider):
+def radar_window_link(result, level_ft, provider, openaip_key=None):
     registry = _registry()
     now = time.time()
     for key, value in list(registry.items()):
@@ -20,7 +20,8 @@ def radar_window_link(result, level_ft, provider):
             registry.pop(key, None)
     token = secrets.token_urlsafe(24)
     registry[token] = {"created": now, "result": result,
-                       "level": int(level_ft), "provider": provider}
+                       "level": int(level_ft), "provider": provider,
+                       "openaip_key": openaip_key}
     return "?radar_display=" + quote(token, safe="")
 
 def render_radar_window():
@@ -40,5 +41,6 @@ def render_radar_window():
     st.markdown('<div style="color:#e5f5ff;font:600 15px system-ui;padding:5px 8px">📡 RADAR LIVE · samostatný displej</div>',
                 unsafe_allow_html=True)
     from live_simulation import _persistent_display
-    _persistent_display(entry["result"], entry["level"], entry["provider"])
+    _persistent_display(entry["result"], entry["level"], entry["provider"],
+                        entry.get("openaip_key"))
     return True
