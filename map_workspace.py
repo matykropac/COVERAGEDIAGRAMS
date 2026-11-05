@@ -581,28 +581,7 @@ def exports_dialog():
                 blob=build_selected_zip(
                     result, selected=selected, flight_levels=chosen,
                     index=st.session_state.get("ws_profile_index",0),
-                    profile=None
-    if result is not None:
-        # Compact browser-side DEM profile. Values are sampled from the exact
-        # matrices used by the coverage solver, not synthetic terrain.
-        arr=np.asarray(result["terrain"],dtype=float)
-        lower=np.asarray(result["lower"],dtype=float)
-        az=np.asarray(result["az"],dtype=float)
-        dist=np.asarray(result["distance"],dtype=float)/1000.
-        stride=max(1,int(np.ceil(len(dist)/280)))
-        az_stride=max(1,int(np.ceil(len(az)/720)))
-        def finite_values(a):
-            return np.where(np.isfinite(a),np.round(a,1),None).tolist()
-        profile={
-            "site":[float(result["config"].lat),float(result["config"].lon)],
-            "az":np.round(az[::az_stride],3).tolist(),
-            "distance":np.round(dist[::stride],4).tolist(),
-            "terrain":finite_values(arr[::az_stride,::stride]),
-            "lower":finite_values(lower[::az_stride,::stride]),
-            "maxRangeKm":float(result["config"].range_km),
-            "version":str(result.get("completed_at","")),
-        }
-    alpha=st.session_state.get("ws_map_opacity",.42),
+                    alpha=st.session_state.get("ws_map_opacity",.42),
                     level_alphas={x:st.session_state.get("ws_map_opacity",.42) for x in chosen},
                     environment_items=[],project_bytes=proj,map_html=html)
                 st.session_state["ws_zip_ready"]=blob
@@ -807,6 +786,26 @@ def _draw_map():
     openaip={"enabled":bool(key),
              "url":("https://api.tiles.openaip.net/api/data/openaip/"
                     "{z}/{x}/{y}.png?apiKey="+quote(key,safe="")) if key else ""}
+    # Browser-side profile sampled from the same DEM matrices as the solver.
+    profile=None
+    if result is not None:
+        arr=np.asarray(result["terrain"],dtype=float)
+        lower=np.asarray(result["lower"],dtype=float)
+        az=np.asarray(result["az"],dtype=float)
+        dist=np.asarray(result["distance"],dtype=float)/1000.
+        stride=max(1,int(np.ceil(len(dist)/280)))
+        az_stride=max(1,int(np.ceil(len(az)/720)))
+        def finite_values(a):
+            return np.where(np.isfinite(a),np.round(a,1),None).tolist()
+        profile={
+            "site":[float(result["config"].lat),float(result["config"].lon)],
+            "az":np.round(az[::az_stride],3).tolist(),
+            "distance":np.round(dist[::stride],4).tolist(),
+            "terrain":finite_values(arr[::az_stride,::stride]),
+            "lower":finite_values(lower[::az_stride,::stride]),
+            "maxRangeKm":float(result["config"].range_km),
+            "version":str(result.get("completed_at","")),
+        }
     alpha=st.session_state.get("ws_map_opacity",.42)
     import hashlib
     def signature(items):
