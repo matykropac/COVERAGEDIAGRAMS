@@ -34,6 +34,7 @@ from site_picker import coordinates_from_map_click
 import environment_layers as env
 import aviation_layers as aviation
 import canopy_layers as canopy
+from aviation_basemap import add_to_map as add_openaip_map
 # Fail with a useful diagnostic if Streamlit Cloud has mixed deployment revisions.
 _REQUIRED_CORE_API = ('PSR_RANGES_NM', 'radar_preset', 'generic_ssr_pattern', 'SSR_RANGE_KM')
 _missing_core_api = [name for name in _REQUIRED_CORE_API if not hasattr(core, name)]
@@ -162,6 +163,7 @@ def choose_radar_site_from_map(initial_lat, initial_lon, map_id):
         folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                          max_zoom=provider['max_zoom'], overlay=False,
                          show=name == 'OpenStreetMap').add_to(map_view)
+    add_openaip_map(map_view)
     folium.Marker(
         [initial_lat, initial_lon], tooltip='Aktuální stanoviště',
         icon=folium.Icon(color='orange', icon='signal')
@@ -537,6 +539,7 @@ else:
             for name, provider in core.BASEMAP_PROVIDERS.items():
                 folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                                  max_zoom=provider['max_zoom'], overlay=False, show=name=='OpenStreetMap').add_to(m)
+            add_openaip_map(m)
             # Session-local contours: changes to opacity never repeat the coverage calculation.
             for ft in ([None] if show_target else []) + active:
                 if ft not in st.session_state.geometry:
