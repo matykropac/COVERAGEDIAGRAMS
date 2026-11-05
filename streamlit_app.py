@@ -663,20 +663,18 @@ else:
         from selected_export import FORMATS, build_selected_zip
 
         st.subheader('DATA / EXPORTY')
-        st.caption('Zaškrtni pouze soubory, které chceš vložit do jednoho ZIP archivu. '
-                   'Všechny obrázky se exportují v 600 DPI.')
         all_levels = tuple(core.flight_levels_for(rc.radar_mode))
 
-        head1, head2, info = st.columns([1, 1, 3])
-        with head1:
+        left_action, right_action, summary = st.columns([1, 1, 5], gap='small')
+        with left_action:
             if st.button('Vybrat vše', key='zip_check_all', use_container_width=True):
                 st.session_state['zip_select_all'] = True
                 st.rerun()
-        with head2:
+        with right_action:
             if st.button('Zrušit výběr', key='zip_check_none', use_container_width=True):
                 st.session_state['zip_select_all'] = False
                 st.rerun()
-        # Update checkbox states before the widgets are instantiated.
+        # Update widget state before creating any checkbox.
         if 'zip_select_all' in st.session_state:
             desired = st.session_state.pop('zip_select_all')
             for option in ('project', 'html', 'layers', 'terrain', 'antenna',
@@ -684,47 +682,37 @@ else:
                 st.session_state['zip_' + option] = desired
             for altitude in all_levels:
                 st.session_state[f'zip_fl_{altitude}'] = desired
-        with info:
-            st.caption('Výběr hladin se použije pro obrázky, KML, GeoPackage, GeoTIFF a QuickReport.')
 
-        st.markdown('#### Projekt a mapové podklady')
-        a, b = st.columns(2)
-        with a:
-            st.checkbox('Kompletní projekt (.cdproj)', key='zip_project', value=False)
-            st.checkbox('Interaktivní mapa (.html)', key='zip_html', value=False)
-        with b:
-            st.checkbox('Analytická mapa, vrstvy a legenda', key='zip_layers', value=False)
-
-        st.markdown('#### Obrázky · PNG 600 DPI')
-        a, b = st.columns(2)
-        with a:
+        # Three concise columns instead of vertically stacked export sections.
+        project_col, images_col, data_col = st.columns(3, gap='medium')
+        with project_col:
+            st.markdown('**PROJEKT / MAPY**')
+            st.checkbox('Projekt · CDPROJ', key='zip_project', value=False)
+            st.checkbox('Interaktivní mapa · HTML', key='zip_html', value=False)
+            st.checkbox('Analytické mapové vrstvy', key='zip_layers', value=False)
+        with images_col:
+            st.markdown('**OBRÁZKY · 600 DPI**')
             st.checkbox('Mapa terénu', key='zip_terrain', value=False)
-            st.checkbox('Vyzařovací diagram antény', key='zip_antenna', value=False)
-            st.checkbox('Každá zaškrtnutá letová hladina zvlášť', key='zip_fl_png', value=True)
-        with b:
-            st.checkbox('Souhrnný obrázek krytí · Dark', key='zip_png_dark', value=False)
-            st.checkbox('Souhrnný obrázek krytí · Light', key='zip_png_light', value=False)
-
-        st.markdown('#### Letové hladiny · ft AMSL')
-        level_cols = st.columns(5)
-        selected_levels = []
-        for n, altitude in enumerate(all_levels):
-            with level_cols[n % 5]:
-                if st.checkbox(core.level_label(altitude), key=f'zip_fl_{altitude}',
-                               value=altitude in levels):
-                    selected_levels.append(altitude)
-
-        st.markdown('#### Geodata a výpočetní soubory')
-        data_cols = st.columns(2)
-        for n, (key, (label, _, _)) in enumerate(FORMATS.items()):
-            with data_cols[n % 2]:
+            st.checkbox('Diagram antény', key='zip_antenna', value=False)
+            st.checkbox('Jednotlivé letové hladiny', key='zip_fl_png', value=True)
+            st.checkbox('Souhrnná mapa · Dark', key='zip_png_dark', value=False)
+            st.checkbox('Souhrnná mapa · Light', key='zip_png_light', value=False)
+        with data_col:
+            st.markdown('**GEODATA / DATA**')
+            for key, (label, _, _) in FORMATS.items():
                 st.checkbox(label, key='zip_' + key, value=False)
+            st.checkbox('QuickReport · ZIP 600 DPI', key='zip_quickreport', value=False)
 
-        st.markdown('#### Kompletní technický report')
-        st.checkbox('QuickReport · všechny jeho části pro vybrané hladiny (600 DPI)',
-                    key='zip_quickreport', value=False)
-        st.caption('QuickReport obsahuje také mapy ESRI a může výrazně zvětšit ZIP. '
-                   'Všechny ostatní exporty fungují samostatně.')
+        # The flight levels are one clear, visually grouped unit.
+        with st.expander('LETOVÉ HLADINY  ·  ft AMSL  (rozbalit / sbalit)', expanded=True):
+            st.caption('Platí pro PNG hladin, mapy krytí, KML, GeoPackage, GeoTIFF a QuickReport.')
+            level_cols = st.columns(8, gap='small')
+            selected_levels = []
+            for n, altitude in enumerate(all_levels):
+                with level_cols[n % 8]:
+                    if st.checkbox(core.level_label(altitude), key=f'zip_fl_{altitude}',
+                                   value=altitude in levels):
+                        selected_levels.append(altitude)
 
         option_names = ('project', 'html', 'layers', 'terrain', 'antenna',
                         'fl_png', 'png_dark', 'png_light', 'quickreport', *FORMATS)
@@ -735,7 +723,8 @@ else:
         fingerprint = (tuple(sorted(selected.items())), tuple(selected_levels),
                        st.session_state.get('source_signature'), st.session_state.get('profile_index'),
                        repr(st.session_state.get('obstacles')))
-        st.caption(f'Vybráno: {count} typů obsahu · {len(selected_levels)} letových hladin')
+        with summary:
+            st.caption(f'Vybráno: {count} typů souborů · {len(selected_levels)} hladin · jeden ZIP')
         if requires_fl and not selected_levels:
             st.warning('Vyber alespoň jednu letovou hladinu pro označené exporty.')
 
