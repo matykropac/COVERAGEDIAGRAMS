@@ -5,7 +5,7 @@ html,body,[data-testid="stAppViewContainer"],[data-testid="stApp"]{background:#0
 [data-testid="stAppViewContainer"]{
 background-image:radial-gradient(ellipse 100% 45% at 55% -20%,rgba(18,119,174,.23),transparent 80%),linear-gradient(180deg,#071827 0%,#061523 65%)!important}
 header[data-testid="stHeader"]{background:rgba(6,21,35,.92)!important}
-.block-container{max-width:100%!important;padding:70px 1.6rem 2.5rem!important}
+.block-container{max-width:100%!important;padding:110px 1.6rem 2.5rem!important;padding-top:110px!important}
 [data-testid="stVerticalBlock"]{gap:.75rem!important}
 [data-testid="stVerticalBlock"] > div{margin:0!important}
 [data-testid="stHorizontalBlock"]{gap:1rem!important;align-items:stretch}
@@ -19,7 +19,7 @@ border:1px solid #234963;border-radius:12px;padding:1.05rem 1.05rem 1.2rem;
 box-shadow:0 8px 22px rgba(0,8,20,.16)}
 /* Don't put nested columns into conflicting panels */
 [data-testid="stColumn"] [data-testid="stColumn"] > div > [data-testid="stVerticalBlock"]{background:transparent;border:0;padding:0;box-shadow:none}
-@media(max-width:800px){.block-container{padding:.7rem .75rem 1.5rem!important}}
+@media(max-width:800px){.block-container{padding:110px .75rem 1.5rem!important;padding-top:110px!important}}
 h1,h2,h3,h4{color:#e7f7ff!important;letter-spacing:.015em}
 h3{font-size:1.03rem!important;font-weight:650!important;margin:0 0 .45rem!important;padding-bottom:.65rem;border-bottom:1px solid #234962}
 p{line-height:1.5!important;margin:0!important}
