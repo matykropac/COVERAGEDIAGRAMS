@@ -53,10 +53,20 @@ def render_obstacle_editor(radar_lat, radar_lon):
                     "Vzdálenost [km]": v["distance_km"],
                     "Původ": v["source"]
                 } for v in visible_environment[:1000]]), use_container_width=True, height=300)
-            st.download_button("Export vrstev + legenda (ZIP)",
-                               env.export_bundle(visible_environment, canopy_overlay=canopy_overlay),
-                               file_name="OBSTACLES_layers.zip",
-                               mime="application/zip", key="env_bundle_editor")
+            if st.button("Připravit export vrstev + legendy (ZIP)", key="env_bundle_prepare"):
+                st.session_state["obstacle_environment_zip"] = env.export_bundle(
+                    visible_environment, canopy_overlay=canopy_overlay)
+                st.session_state["obstacle_environment_signature"] = (
+                    env.geojson_bytes(visible_environment),
+                    canopy_overlay[0] if canopy_overlay else b"")
+            signature_now = (env.geojson_bytes(visible_environment),
+                             canopy_overlay[0] if canopy_overlay else b"")
+            if (st.session_state.get("obstacle_environment_zip") is not None
+                    and st.session_state.get("obstacle_environment_signature") == signature_now):
+                st.download_button("Stáhnout export vrstev + legenda (ZIP)",
+                                   st.session_state["obstacle_environment_zip"],
+                                   file_name="OBSTACLES_layers.zip", mime="application/zip",
+                                   key="env_bundle_editor")
             st.download_button("Export filtrovaných objektů · GeoJSON",
                                env.geojson_bytes(visible_environment), file_name="environment_layers.geojson",
                                mime="application/geo+json", key="env_geojson_editor")
