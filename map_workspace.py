@@ -172,48 +172,54 @@ def radar_dialog():
         st.multiselect("Letové hladiny [ft AMSL]",choices,default=default,
                        format_func=core.level_label,key="ws_levels")
     if st.button("VYPOČÍTAT KRYTÍ",type="primary",use_container_width=True,key="ws_calculate"):
-        try:
-            c=_cfg()
-            c.validate()
-            az,distance=core.axes(c)
-            if len(az)*len(distance)>250000:
-                raise ValueError("Výpočet přesahuje 250 000 vzorků. Zvětši krok.")
-            with st.spinner("Načítám terén a počítám krytí…"):
-                source=st.session_state.get("ws_source","OpenTopography")
-                if source=="DEM soubor":
-                    uploaded=st.session_state.get("ws_dem")
-                    if uploaded is None:
-                        raise ValueError("Nahraj DEM soubor.")
-                    with tempfile.TemporaryDirectory(prefix="cd_workspace_") as work:
-                        path=Path(work)/("terrain"+Path(uploaded.name).suffix.lower())
-                        content=uploaded.getvalue()
-                        path.write_bytes(content)
-                        terrain,ground=core.sample(path,c,lambda *args:None)
-                        provenance="DEM upload · SHA256 "+hashlib.sha256(content).hexdigest()
-                else:
-                    import os
-                    api_key=os.environ.get("OPENTOPOGRAPHY_API_KEY","")
-                    if not api_key:
-                        try: api_key=str(st.secrets.get("OPENTOPOGRAPHY_API_KEY",""))
-                        except (FileNotFoundError,KeyError,OSError): pass
-                    if not api_key:
-                        raise ValueError("OpenTopography vyžaduje klíč v Secrets (OPENTOPOGRAPHY_API_KEY).")
-                    dataset=st.session_state.get("ws_dataset","COP30")
-                    path=core.download(c,api_key,dataset,lambda *args:None)
+        _calculate_coverage()
+
+
+def _calculate_coverage():
+    """Compute from the shared map workspace without opening another screen."""
+    try:
+        c=_cfg()
+        c.validate()
+        az,distance=core.axes(c)
+        if len(az)*len(distance)>250000:
+            raise ValueError("Výpočet přesahuje 250 000 vzorků. Zvětši krok.")
+        with st.spinner("Načítám terén a počítám krytí…"):
+            source=st.session_state.get("ws_source","OpenTopography")
+            if source=="DEM soubor":
+                uploaded=st.session_state.get("ws_dem")
+                if uploaded is None:
+                    raise ValueError("Nahraj DEM soubor.")
+                with tempfile.TemporaryDirectory(prefix="cd_workspace_") as work:
+                    path=Path(work)/("terrain"+Path(uploaded.name).suffix.lower())
+                    content=uploaded.getvalue()
+                    path.write_bytes(content)
                     terrain,ground=core.sample(path,c,lambda *args:None)
-                    provenance="OpenTopography · "+dataset
-                result=core.solve(c,terrain,ground,_pattern(c))
-                apply_obstacles(result,st.session_state.get("obstacles",[]))
-                result["obstacles_signature"]=obstacle_signature(st.session_state.get("obstacles",[]))
-                result.update(source=provenance,completed_at=datetime.now(timezone.utc).isoformat(),
-                              duration_s=0.0)
-                st.session_state.result=result
-                st.session_state.geometry={}
-                st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
-                st.session_state["ws_result_notice"]="Krytí úspěšně vypočteno."
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Výpočet se nepodařil: {str(exc)[:360]}")
+                    provenance="DEM upload · SHA256 "+hashlib.sha256(content).hexdigest()
+            else:
+                import os
+                api_key=os.environ.get("OPENTOPOGRAPHY_API_KEY","")
+                if not api_key:
+                    try: api_key=str(st.secrets.get("OPENTOPOGRAPHY_API_KEY",""))
+                    except (FileNotFoundError,KeyError,OSError): pass
+                if not api_key:
+                    raise ValueError("OpenTopography vyžaduje klíč v Secrets (OPENTOPOGRAPHY_API_KEY).")
+                dataset=st.session_state.get("ws_dataset","COP30")
+                path=core.download(c,api_key,dataset,lambda *args:None)
+                terrain,ground=core.sample(path,c,lambda *args:None)
+                provenance="OpenTopography · "+dataset
+            result=core.solve(c,terrain,ground,_pattern(c))
+            apply_obstacles(result,st.session_state.get("obstacles",[]))
+            result["obstacles_signature"]=obstacle_signature(st.session_state.get("obstacles",[]))
+            result.update(source=provenance,completed_at=datetime.now(timezone.utc).isoformat(),
+                          duration_s=0.0)
+            st.session_state.result=result
+            st.session_state.geometry={}
+            st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
+            st.session_state["ws_result_notice"]="Krytí úspěšně vypočteno."
+        st.rerun()
+    except Exception as exc:
+        st.error(f"Výpočet se nepodařil: {str(exc)[:360]}")
+
 
 
 @st.dialog("PŘEKÁŽKY / Seznam a úpravy", width="large")
