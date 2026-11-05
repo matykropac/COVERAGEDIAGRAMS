@@ -551,9 +551,9 @@ def render_workspace():
     st.markdown("""
     <style>
       /* Native sidebar, not a CSS-positioned fake navigation bar. */
-      [data-testid="stSidebar"]{width:214px!important;min-width:214px!important;
+      [data-testid="stSidebar"]{width:400px!important;min-width:400px!important;
           background:#ffffff!important;border-right:1px solid #dbe4ee!important}
-      [data-testid="stSidebar"] > div:first-child{width:214px!important}
+      [data-testid="stSidebar"] > div:first-child{width:400px!important}
       [data-testid="stSidebarUserContent"]{padding:12px 10px!important}
       [data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.30rem!important}
       [data-testid="stSidebar"] [data-testid="stButton"]>button{
@@ -571,7 +571,7 @@ def render_workspace():
           padding:9px 12px 14px!important}
       [data-testid="stSidebar"] [data-testid="stSegmentedControl"]{max-width:100%}
       @media(max-width:700px){
-        [data-testid="stSidebar"]{width:214px!important;min-width:214px!important}
+        [data-testid="stSidebar"]{width:400px!important;min-width:400px!important}
       }
     </style>
     """, unsafe_allow_html=True)
