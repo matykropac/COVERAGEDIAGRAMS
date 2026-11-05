@@ -1698,7 +1698,7 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
             _geod = Geod(ellps='WGS84')
             _colors = {'Building': '#e3a64c', 'Forest': '#48ae78', 'Tower': '#d778ed'}
             polygons_by_kind = {kind: [] for kind in _colors}
-            for obj in environment_items[:3500]:
+            for obj in environment_items[:6000]:
                 typ = obj.get('kind')
                 if typ not in _colors:
                     continue
@@ -1771,7 +1771,7 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
         fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)
         if environment_items:
             fig.text(0.77, 0.24,
-                     f'Objects displayed: {min(len(environment_items), 3500)} / {len(environment_items)}'
+                     f'Objects displayed: {min(len(environment_items), 6000)} / {len(environment_items)}'
                      + '\\nInformational OSM/Microsoft/import layers'
                      + '\\nNot certified survey data',
                      color=UI_TEXT, fontsize=8)
