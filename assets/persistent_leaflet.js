@@ -45,8 +45,9 @@ function ensureBaseLayers(s, data) {
   const next=new Map();
   for(const spec of specs){
     if(!spec.url||!spec.name)continue;
+    const cls=spec.name.includes("Satelitní")?"cd-satellite-tile":"cd-basemap-tile";
     const layer=L.tileLayer(spec.url,{attribution:spec.attribution||"",
-      maxZoom:spec.max_zoom||19,crossOrigin:false});
+      maxZoom:spec.max_zoom||19,crossOrigin:false,className:cls});
     next.set(spec.name,layer);
   }
   const chosen=next.get(oldName)||next.get("OpenStreetMap")||next.values().next().value;
@@ -56,6 +57,14 @@ function ensureBaseLayers(s, data) {
   if(chosen)chosen.addTo(s.map);
   refreshControl(s);
 }
+function updateDayNight(s,data){
+  const theme=data.theme==="NIGHT"?"NIGHT":"DAY";
+  if(s.currentTheme===theme)return;
+  s.currentTheme=theme;
+  s.node.classList.toggle("cd-night",theme==="NIGHT");
+  // The DOM/CSS changes only the tile appearance. No requests or map reset.
+}
+
 function refreshControl(s) {
   if(s.controls.layers){s.map.removeControl(s.controls.layers);s.controls.layers=null;}
   const bases={};
@@ -335,7 +344,7 @@ function updateOpenAip(s,data) {
   s.last.openaip=sig;
   if(s.openaipLayer){s.map.removeLayer(s.openaipLayer);s.openaipLayer=null;}
   if(option.enabled&&option.url){
-    s.openaipLayer=L.tileLayer(option.url,{maxZoom:18,
+    s.openaipLayer=L.tileLayer(option.url,{maxZoom:18,className:"cd-aip-tile",
       attribution:"Aeronautical data © <a target='_blank' href='https://www.openaip.net/'>OpenAIP</a>",
       opacity:.88});
     s.openaipLayer.addTo(s.map);
@@ -465,6 +474,7 @@ function update(s){
   if(!s.ready)return;
   const data=s.latest||{};
   ensureBaseLayers(s,data);
+  updateDayNight(s,data);
   updateOpenAip(s,data);
   updateCoverage(s,data);
   updateObstacles(s,data);
