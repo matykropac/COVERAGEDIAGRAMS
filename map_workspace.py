@@ -510,33 +510,90 @@ def render_workspace():
        '<small>RADAR COVERAGE ENGINEERING</small>COVERAGEDIAGRAMS'
        '</div><div class="cd-meta">MAP WORKSPACE · WGS84 · OpenAIP</div></div>',
        unsafe_allow_html=True)
-    toolbar=st.columns([1.1,1.2,1.1,1.1,1.1,1.1,1.1,1.2],gap="small")
-    items=[
-      ("📡 Radar",radar_dialog),("▧ Překážky",obstacles_dialog),
-      ("◉ Vrstvy",layers_dialog),("✈ Provoz",traffic_dialog),
-      ("⌁ Analýza",analysis_dialog),("⇩ Export",exports_dialog)]
-    for n,(label,handler) in enumerate(items):
-        with toolbar[n]:
-            if st.button(label,key="ws_toolbar_"+str(n),use_container_width=True):
-                handler()
-    with toolbar[6]:
-        if st.button("⤢ Znovu načíst",key="ws_refresh",use_container_width=True):
-            st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
-            st.rerun()
-    with toolbar[7]:
-        if st.button("↩ Klasické UI",key="ws_legacy",use_container_width=True):
+
+    # Map-first command strip: no permanent setting columns, no tab switching.
+    left,right=st.columns([2.7,5.3],gap="small")
+    with left:
+        tool=st.segmented_control(
+            "PRÁCE S MAPOU",
+            options=["Prohlížení","Radar","Polygon"],
+            default="Prohlížení",key="ws_map_tool",
+            label_visibility="collapsed")
+    with right:
+        actions=st.columns([1.15,1.15,1.05,1.05,1.0,1.0],gap="small")
+        controls=[
+            ("⚙ Parametry",radar_dialog),
+            ("▧ Překážky",obstacles_dialog),
+            ("◉ Vrstvy",layers_dialog),
+            ("✈ Provoz",traffic_dialog),
+            ("⌁ Analýza",analysis_dialog),
+            ("⇩ Export",exports_dialog),
+        ]
+        for idx,(name,handler) in enumerate(controls):
+            with actions[idx]:
+                if st.button(name,key=f"ws_command_{idx}",use_container_width=True):
+                    handler()
+
+    status,simulate,calculate,legacy=st.columns([5,1.3,1.5,1.2],gap="small")
+    result=st.session_state.get("result")
+    current=_cfg()
+    with status:
+        if result is None:
+            st.caption(f"Stanoviště {current.lat:.6f}°, {current.lon:.6f}° · "
+                       f"{len(st.session_state.get('obstacles',[]))} překážek · "
+                       "Připrav parametry a spusť výpočet")
+        else:
+            age=result.get("completed_at","")
+            changed=(result.get("obstacles_signature") != obstacle_signature(
+                st.session_state.get("obstacles",[])))
+            st.caption(f"{result['config'].radar_mode} · {current.lat:.6f}°, "
+                       f"{current.lon:.6f}° · "
+                       f"{len(st.session_state.get('obstacles',[]))} překážek"
+                       +(" · ZMĚNĚNÉ PŘEKÁŽKY — PŘEPOČÍTEJ" if changed else ""))
+    with simulate:
+        live=st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
+    with calculate:
+        if st.button("▶ SPOČÍTAT KRYTÍ",type="primary",
+                     use_container_width=True,key="ws_calculate_main"):
+            _calculate_coverage()
+    with legacy:
+        if st.button("Klasické UI",key="ws_legacy",
+                     use_container_width=True):
             st.query_params["classic"]="1"
             st.rerun()
-    result=st.session_state.get("result")
-    if result is None:
-        st.caption("Mapa je připravena. Klikni na RADAR, nastav parametry a spusť výpočet.")
-    else:
-        c=result["config"]
-        st.caption(f"{c.radar_mode} · {c.lat:.6f}, {c.lon:.6f} · dosah {c.range_km:g} km · "
-                   f"{len(st.session_state.get('obstacles',[]))} překážek")
+
+    if tool=="Radar":
+        st.caption("📍 Klikni na mapu pro nové stanoviště radaru. "
+                   "Poloha se uloží, ale krytí se přepočítá až po stisknutí SPOČÍTAT KRYTÍ.")
+    elif tool=="Polygon":
+        st.caption("▧ Nakresli půdorys nástrojem polygon na mapě. "
+                   "Potom se otevře dialog pro výšku a název překážky.")
     if st.session_state.pop("ws_result_notice",None):
         st.success("Krytí vypočteno. Výsledné vrstvy jsou přímo v mapě.")
+
+    # On-demand snapshot is immediately drawn on the *same* map.
+    if live:
+        snapshot_site=(round(current.lat,5),round(current.lon,5))
+        if (st.session_state.get("ws_traffic_site")!=snapshot_site or
+                st.session_state.get("ws_refresh_traffic",False)):
+            try:
+                with st.spinner("Načítám ADS-B…"):
+                    st.session_state["ws_traffic_snapshot"]=fetch_snapshot(
+                        current.lat,current.lon,100)
+                    st.session_state["ws_traffic_site"]=snapshot_site
+                    st.session_state.pop("ws_refresh_traffic",None)
+            except (RuntimeError,ValueError) as exc:
+                st.warning(str(exc))
     _draw_map()
+    if live:
+        lower=st.columns([1,5,1])
+        with lower[0]:
+            if st.button("↻ Obnovit ADS-B",key="ws_reload_adsb",use_container_width=True):
+                st.session_state["ws_refresh_traffic"]=True
+                st.rerun()
+        with lower[1]:
+            st.caption(f"ADS-B · {len(st.session_state.get('ws_traffic_snapshot',[]))} poloh "
+                       "· zdroj adsb.lol · aktualizace ručně")
     st.markdown('<div class="cd-workspace-foot">OpenAIP aeronautical chart · '
                 'Geometrický výpočet radarového krytí · Nelze používat pro navigaci</div>',
                 unsafe_allow_html=True)
