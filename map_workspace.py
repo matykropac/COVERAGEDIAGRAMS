@@ -316,7 +316,7 @@ def new_obstacle_dialog():
                 st.session_state.pop("ws_pending_polygon",None)
                 st.session_state["ws_obstacle_revision"]=st.session_state.get("ws_obstacle_revision",0)+1
                 st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
-                st.session_state["ws_next_map_tool"]="Prohlížení"
+                st.session_state["ws_next_section"]="MAPA"
                 st.rerun()
             except (ValueError,TypeError,KeyError) as exc:
                 st.error(str(exc))
@@ -471,7 +471,7 @@ def _draw_map_folium():
         site=st.session_state.get("ws_traffic_site")
         if site==(round(configured.lat,5),round(configured.lon,5)):
             add_traffic_layer(m,records)
-    tool=st.session_state.get("ws_map_tool","Prohlížení")
+    tool=_map_tool()
     if tool=="Polygon":
         Draw(export=False,
              draw_options={"polyline":False,"rectangle":False,"circle":False,
@@ -500,7 +500,7 @@ def _draw_map_folium():
                 if old!=(lat,lon):
                     st.session_state["ws_lat"]=lat
                     st.session_state["ws_lon"]=lon
-                    st.session_state["ws_next_map_tool"]="Prohlížení"
+                    st.session_state["ws_next_section"]="MAPA"
                     st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
                     st.rerun()
             except (TypeError,ValueError,KeyError) as exc:
@@ -608,7 +608,7 @@ def _draw_map():
                  "label":configured.radar_mode+" · RADAR"},
         "basemaps":basemaps,
         "openaip":openaip,
-        "tool":st.session_state.get("ws_map_tool","Prohlížení"),
+        "tool":_map_tool(),
         "live":bool(st.session_state.get("ws_live_adsb",False)),
         "coverage":coverage,
         "opacity":alpha,
@@ -665,40 +665,49 @@ def _live_map_frame():
     _draw_map_folium()
 
 
+def _map_tool():
+    """Map editing follows the active workspace section automatically."""
+    return {
+        "MAPA": "Prohlížení",
+        "RADAR": "Radar",
+        "PŘEKÁŽKY": "Polygon",
+    }.get(st.session_state.get("ws_section","MAPA"),"Prohlížení")
+
+
 def render_workspace():
-    """A 210px native Streamlit sidebar with a persistent full-width map."""
+    """One persistent map; three task-oriented sections in the 400px sidebar."""
     previous=st.session_state.get("result")
     if previous is not None and "ws_radar" not in st.session_state:
         _config_state_from_project(previous["config"])
         st.session_state["ws_levels"]=list(st.session_state.get("levels",[3000,10000]))
 
-    pending_tool=st.session_state.pop("ws_next_map_tool",None)
-    if pending_tool is not None:
-        st.session_state["ws_map_tool"]=pending_tool
+    next_section=st.session_state.pop("ws_next_section",None)
+    if next_section in ("MAPA","RADAR","PŘEKÁŽKY"):
+        st.session_state["ws_section"]=next_section
 
     st.markdown(STYLES,unsafe_allow_html=True)
     st.markdown("""
     <style>
-      /* Native sidebar, not a CSS-positioned fake navigation bar. */
       [data-testid="stSidebar"]{width:400px!important;min-width:400px!important;
           background:#ffffff!important;border-right:1px solid #dbe4ee!important}
       [data-testid="stSidebar"] > div:first-child{width:400px!important}
-      [data-testid="stSidebarUserContent"]{padding:12px 10px!important}
-      [data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.62rem!important}
+      [data-testid="stSidebarUserContent"]{padding:16px 18px!important}
+      [data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.66rem!important}
       [data-testid="stSidebar"] [data-testid="stButton"]>button{
-          min-height:33px!important;font-size:11px!important;text-align:left!important}
-      [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p{font-size:11px!important}
-      [data-testid="stSidebar"] [data-testid="stCaptionContainer"]{font-size:10px!important}
-      [data-testid="stSidebar"] div[data-baseweb="select"]>div{min-height:32px!important}
-      .cd-nav-title{color:#7b8da1;font:700 10px system-ui;letter-spacing:.12em;
-          margin:18px 0 10px;border-bottom:1px solid #e4eaf1;padding-bottom:8px}
-      .cd-sidebar-brand{color:#1d3c61;font:800 14px system-ui;line-height:1.3;
-          letter-spacing:.025em;padding:8px 0 12px}
-      .cd-sidebar-brand small{display:block;font-size:9px;letter-spacing:.14em;
+          min-height:38px!important;font-size:12px!important}
+      [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p{font-size:12px!important}
+      [data-testid="stSidebar"] [data-testid="stCaptionContainer"]{font-size:11px!important}
+      [data-testid="stSidebar"] div[data-baseweb="select"]>div{min-height:36px!important}
+      .cd-nav-title{color:#627c97;font:750 11px system-ui;letter-spacing:.10em;
+          margin:19px 0 11px;border-bottom:1px solid #e4eaf1;padding-bottom:9px}
+      .cd-sidebar-brand{color:#1d3c61;font:800 16px system-ui;line-height:1.3;
+          letter-spacing:.025em;padding:6px 0 15px}
+      .cd-sidebar-brand small{display:block;font-size:10px;letter-spacing:.14em;
           color:#7c90a4;font-weight:650}
       [data-testid="stMainBlockContainer"],.block-container{
           padding:9px 12px 14px!important}
-      [data-testid="stSidebar"] [data-testid="stSegmentedControl"]{max-width:100%}
+      [data-testid="stSidebar"] [data-testid="stSegmentedControl"]{
+          width:100%!important}
       @media(max-width:700px){
         [data-testid="stSidebar"]{width:400px!important;min-width:400px!important}
       }
@@ -709,107 +718,124 @@ def render_workspace():
     config=_cfg()
     with st.sidebar:
         st.markdown(
-            '<div class="cd-sidebar-brand"><small>RADAR COVERAGE</small>'
+            '<div class="cd-sidebar-brand"><small>RADAR COVERAGE WORKSPACE</small>'
             'COVERAGEDIAGRAMS</div>',unsafe_allow_html=True)
 
-        st.markdown('<div class="cd-nav-title">MAPOVÉ NÁSTROJE</div>',unsafe_allow_html=True)
-        tool=st.radio("Režim mapy",["Prohlížení","Radar","Polygon"],
-                      key="ws_map_tool",label_visibility="collapsed",
-                      help="Radar: klikni na stanoviště. Polygon: nakresli překážku.")
-        if st.button("⚙ Parametry radaru",key="ws_command_radar",use_container_width=True):
-            radar_dialog()
-        if st.button("▧ Seznam překážek",key="ws_command_obstacles",use_container_width=True):
-            obstacles_dialog()
-
-        st.markdown('<div class="cd-nav-title">VRSTVY KRYTÍ</div>',unsafe_allow_html=True)
-        if result is None:
-            st.caption("Nejprve spočítej radarové krytí.")
-        else:
-            supported=tuple(core.flight_levels_for(result["config"].radar_mode))
-            selected=[ft for ft in st.session_state.get("ws_levels",[]) if ft in supported]
-            if not selected:
-                selected=list(supported)
-            st.toggle("Zobrazit krytí",value=True,key="ws_show_coverage")
-            mode=st.selectbox("Režim krytí",["Jedna hladina","Porovnání","Cíl"],
-                              key="ws_display_mode")
-            if mode=="Jedna hladina":
-                previous_level=st.session_state.get("ws_map_level")
-                if previous_level not in selected:
-                    st.session_state["ws_map_level"]=selected[0]
-                st.selectbox("Letová hladina",selected,key="ws_map_level",
-                             format_func=core.level_label)
-            elif mode=="Porovnání":
-                remembered=st.session_state.get("ws_comparison")
-                if remembered is not None:
-                    st.session_state["ws_comparison"]=[ft for ft in remembered if ft in selected]
-                st.multiselect("Viditelné hladiny",selected,
-                               default=selected[:3],key="ws_comparison",
-                               format_func=core.level_label)
+        section=st.segmented_control(
+            "Pracovní sekce",
+            options=["MAPA","RADAR","PŘEKÁŽKY"],
+            default="MAPA",key="ws_section",selection_mode="single",
+            use_container_width=True,label_visibility="collapsed")
+        if section is None:
+            section="MAPA"
+        if section=="MAPA":
+            st.markdown('<div class="cd-nav-title">VRSTVY KRYTÍ</div>',unsafe_allow_html=True)
+            if result is None:
+                st.caption("Nejprve spočítej radarové krytí v sekci RADAR.")
             else:
-                st.caption("Krytí zadané cílové výšky")
-            with st.expander("Průhlednost",expanded=False):
-                st.slider("Opacity",0.,1.,.42,.05,key="ws_map_opacity",
-                          label_visibility="collapsed")
-
-        st.markdown('<div class="cd-nav-title">MAPOVÉ PODKLADY</div>',unsafe_allow_html=True)
-        show_openaip=st.toggle("OpenAIP · letecká mapa",value=True,key="ws_openaip")
-        if show_openaip:
-            from aviation_basemap import configured_key
-            if not configured_key():
-                st.caption("OpenAIP potřebuje OPENAIP_API_KEY v nastavení aplikace.")
-        live=st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
-        with st.expander("Další geodata",expanded=False):
-            st.checkbox("Větrné elektrárny",value=False,key="ws_show_wind")
-            if st.button("Budovy / letiště / lesy",key="ws_command_geodata",
+                supported=tuple(core.flight_levels_for(result["config"].radar_mode))
+                selected=[ft for ft in st.session_state.get("ws_levels",[]) if ft in supported]
+                if not selected:
+                    selected=list(supported)
+                st.toggle("Zobrazit krytí",value=True,key="ws_show_coverage")
+                mode=st.selectbox("Režim krytí",["Jedna hladina","Porovnání","Cíl"],
+                                  key="ws_display_mode")
+                if mode=="Jedna hladina":
+                    prev=st.session_state.get("ws_map_level")
+                    if prev not in selected:
+                        st.session_state["ws_map_level"]=selected[0]
+                    st.selectbox("Letová hladina",selected,key="ws_map_level",
+                                 format_func=core.level_label)
+                elif mode=="Porovnání":
+                    remembered=st.session_state.get("ws_comparison")
+                    if remembered is not None:
+                        st.session_state["ws_comparison"]=[ft for ft in remembered if ft in selected]
+                    st.multiselect("Viditelné hladiny",selected,
+                                   default=selected[:3],key="ws_comparison",
+                                   format_func=core.level_label)
+                else:
+                    st.caption("Krytí zadané cílové výšky.")
+                with st.expander("Průhlednost krytí",expanded=False):
+                    st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity",
+                              label_visibility="collapsed")
+            st.markdown('<div class="cd-nav-title">LETECKÁ MAPA A PROVOZ</div>',unsafe_allow_html=True)
+            enabled=st.toggle("OpenAIP · letecká mapa",value=True,key="ws_openaip")
+            if enabled:
+                from aviation_basemap import configured_key
+                if not configured_key():
+                    st.caption("OpenAIP vyžaduje OPENAIP_API_KEY v nastavení aplikace.")
+            st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
+            with st.expander("Další mapové vrstvy",expanded=False):
+                st.checkbox("Větrné elektrárny",value=False,key="ws_show_wind")
+                if st.button("Budovy / lesy / letiště",key="ws_command_geodata",
+                             use_container_width=True):
+                    layers_dialog()
+            if st.button("✈ Historie provozu",key="ws_command_traffic",
                          use_container_width=True):
-                layers_dialog()
+                traffic_dialog()
 
-        st.markdown('<div class="cd-nav-title">VÝPOČET A DATA</div>',unsafe_allow_html=True)
-        if st.button("▶ SPOČÍTAT KRYTÍ",type="primary",
-                     use_container_width=True,key="ws_calculate_main"):
-            _calculate_coverage()
-        if st.button("⌁ Analýza profilu",key="ws_command_analysis",use_container_width=True):
-            analysis_dialog()
-        if st.button("✈ Provoz / historie",key="ws_command_traffic",use_container_width=True):
-            traffic_dialog()
+        elif section=="RADAR":
+            st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
+            st.caption("Kliknutím do mapy umístíš radar. Po výběru se vrátíš do sekce MAPA.")
+            st.markdown(f"**LAT** {config.lat:.6f}° &nbsp; **LON** {config.lon:.6f}°",
+                        unsafe_allow_html=True)
+            if st.button("⚙ Nastavení radaru",key="ws_command_radar",
+                         use_container_width=True):
+                radar_dialog()
+            st.markdown('<div class="cd-nav-title">VÝPOČET KRYTÍ</div>',unsafe_allow_html=True)
+            if st.button("▶ SPOČÍTAT KRYTÍ",type="primary",
+                         use_container_width=True,key="ws_calculate_main"):
+                _calculate_coverage()
+            if result is not None:
+                stale=(result.get("obstacles_signature")!=obstacle_signature(
+                    st.session_state.get("obstacles",[])) or config!=result["config"])
+                st.caption("Výsledek je potřeba přepočítat." if stale
+                           else "Výpočet je aktuální.")
+            if st.button("⌁ Analýza profilu",key="ws_command_analysis",
+                         use_container_width=True):
+                analysis_dialog()
+
+        else:  # PŘEKÁŽKY
+            st.markdown('<div class="cd-nav-title">ZAKRESLENÍ PŘEKÁŽEK</div>',unsafe_allow_html=True)
+            st.caption("Na hlavní mapě použij nástroj polygon. Po dokončení zadáš výšku a název.")
+            st.metric("Počet překážek",len(st.session_state.get("obstacles",[])))
+            if st.button("▧ Upravit / odstranit překážky",key="ws_command_obstacles",
+                         use_container_width=True):
+                obstacles_dialog()
+            st.caption("Změny překážek vyžadují nový výpočet krytí. "
+                       "Přejdi do sekce RADAR a klikni na SPOČÍTAT KRYTÍ.")
+
+        # Shared actions are always available, independent of the active section.
+        st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
         if st.button("⇩ Export ZIP",key="ws_command_export",use_container_width=True):
             exports_dialog()
+        with st.expander("Pokročilé",expanded=False):
+            st.toggle("Původní Folium mapa (záloha)",value=False,
+                      key="ws_legacy_map",help="Pro kontrolu starého mapového zobrazení.")
+            if st.button("Klasické UI",key="ws_legacy",use_container_width=True):
+                st.query_params["classic"]="1"
+                st.rerun()
 
-        st.divider()
-        st.toggle("Původní Folium mapa (záloha)",value=False,
-                  key="ws_legacy_map",
-                  help="Pouze pro porovnání a případné problémy s novým frontendem.")
-        if st.button("Klasické UI",key="ws_legacy",use_container_width=True):
-            st.query_params["classic"]="1"
-            st.rerun()
-
-    # Only a small status strip above the map; no second toolbar.
+    # The map is always present and does not change when the sidebar section changes.
     if result is None:
         st.caption(f"RADAR · {config.lat:.6f}°, {config.lon:.6f}° · "
                    f"{len(st.session_state.get('obstacles',[]))} překážek")
     else:
-        is_stale=(result.get("obstacles_signature") != obstacle_signature(
-            st.session_state.get("obstacles",[])) or config != result["config"])
+        is_stale=(result.get("obstacles_signature")!=obstacle_signature(
+            st.session_state.get("obstacles",[])) or config!=result["config"])
         if is_stale:
-            st.warning("Parametry nebo překážky se změnily. Zobrazené krytí patří k předchozímu výpočtu.")
+            st.warning("Nastavení nebo překážky se změnily. Zobrazené krytí patří k předchozímu výpočtu.")
         else:
             st.caption(f"{result['config'].radar_mode} · "
                        f"{config.lat:.6f}°, {config.lon:.6f}° · "
                        f"{len(st.session_state.get('obstacles',[]))} překážek · KRYTÍ AKTUÁLNÍ")
-
-    if tool=="Radar":
-        st.info("Klikni na místo v mapě pro umístění radaru.")
-    elif tool=="Polygon":
-        st.info("Nástrojem polygon zakresli půdorys překážky přímo do mapy.")
     if st.session_state.pop("ws_result_notice",None):
-        st.success("Krytí vypočteno. Přepínání letových hladin najdeš vlevo pod VRSTVY KRYTÍ.")
+        st.success("Krytí vypočteno. Letové hladiny přepínáš v sekci MAPA.")
 
     if st.session_state.get("ws_legacy_map",False):
-        if live and tool=="Prohlížení":
+        if st.session_state.get("ws_live_adsb",False) and section=="MAPA":
             _live_map_frame()
         else:
             _draw_map_folium()
     else:
         _draw_map()
-        if live:
-            st.caption("ADS-B se obnovuje v prohlížeči každých 15 s bez přepočtu mapy.")
