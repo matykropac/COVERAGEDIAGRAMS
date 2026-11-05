@@ -9,14 +9,16 @@ from folium.plugins import Fullscreen
 from pyproj import Geod
 from web_support import coverage_geojson
 import radar_core as core
+from aviation_basemap import add_to_map
 
 GEOD = Geod(ellps="WGS84")
 
-def open_display(result, level_ft, provider, traffic=None):
+def open_display(result, level_ft, provider, traffic=None, openaip_key=None):
     c = result["config"]
     m = folium.Map(location=[c.lat,c.lon], zoom_start=7, tiles="https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
                    attr="Tiles © Esri and its data providers",
                    control_scale=True, prefer_canvas=True)
+    add_to_map(m, openaip_key)
     # Toggle each available calculated altitude slice independently.
     for flight_level in core.flight_levels_for(c.radar_mode):
         geo = coverage_geojson(result, flight_level)
