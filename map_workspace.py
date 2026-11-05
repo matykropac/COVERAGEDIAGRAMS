@@ -306,6 +306,96 @@ def _calculate_coverage():
         st.rerun()
 
 
+def _focused_obstacle_controls(catalog,manual):
+    """Focused editor opened by a polygon click, before the full tables."""
+    from obstacles import validate_obstacle
+    focus=st.session_state.get("ws_selected_obstacle")
+    if not focus:
+        return
+    kind=focus.get("kind")
+    identifier=focus.get("id")
+    if kind=="catalog":
+        match=next((i for i,obj in enumerate(catalog) if obj["id"]==identifier),None)
+        if match is None:return
+        obj=catalog[match]
+        category=obj.get("category","Objekt")
+        source=obj.get("source","")
+    elif kind=="manual":
+        try:index=int(identifier)
+        except (ValueError,TypeError):return
+        if not 0<=index<len(manual):return
+        obj=manual[index]
+        category="Vlastní polygon"
+        source="Uživatel"
+    else:
+        return
+    token=focus.get("token","focused").replace("-","_").replace(".","_")
+    st.markdown("### 📍 VYBRANÁ PŘEKÁŽKA")
+    st.info(f"**{obj.get('name','Překážka')}** · {category} · {source}. "
+            "Příslušný řádek je označen symbolem ▶ v tabulce níže.")
+    name=st.text_input("Název vybraného objektu",
+                       value=str(obj.get("name","Překážka")),
+                       key=f"ws_focus_name_{token}")
+    height=st.number_input("Výška [m AGL] · 0 = neznámá",
+                           min_value=0.0,max_value=1000.0,step=1.0,
+                           value=float(obj.get("height_m") or 0),
+                           key=f"ws_focus_height_{token}")
+    enabled=True
+    if kind=="catalog":
+        enabled=st.checkbox("Zahrnout do výpočtu",
+                            value=bool(obj.get("enabled")),
+                            key=f"ws_focus_enabled_{token}")
+    left,right=st.columns([2,1],gap="small")
+    with left:
+        save=st.button("ULOŽIT VYBRANOU PŘEKÁŽKU",type="primary",
+                       use_container_width=True,key=f"ws_focus_save_{token}")
+    with right:
+        delete=st.button("ODSTRANIT",use_container_width=True,
+                         key=f"ws_focus_delete_{token}")
+    if not save and not delete:return
+    try:
+        site=_cfg_site()
+        if kind=="catalog":
+            updated=[dict(x) for x in catalog]
+            if delete:
+                deleted_ids=set(st.session_state.get("ws_imported_deleted_ids",[]))
+                deleted_ids.add(identifier)
+                st.session_state["ws_imported_deleted_ids"]=list(deleted_ids)
+                updated.pop(match)
+            else:
+                changed=updated[match]
+                changed["name"]=name.strip() or changed["name"]
+                changed["height_m"]=height if height>.0 else None
+                changed["enabled"]=bool(enabled)
+                if changed["enabled"] and changed["height_m"] is None:
+                    raise ValueError("Pro výpočet musíš nejprve doplnit výšku.")
+                if changed["enabled"]:
+                    validate_obstacle({"kind":"polygon",
+                        "coordinates":changed["coordinates"],
+                        "height_m":changed["height_m"]},*site)
+            active,invalid=synchronize(st.session_state.get("obstacles",[]),
+                                       updated,*site,auto_enable=False)
+            st.session_state["ws_imported_catalog"]=updated
+            st.session_state["obstacles"]=active
+        else:
+            updated=[dict(x) for x in manual]
+            if delete:
+                updated.pop(index)
+            else:
+                updated[index]["name"]=name.strip() or updated[index]["name"]
+                if height<=0:
+                    raise ValueError("Vlastní překážka musí mít kladnou výšku.")
+                updated[index]["height_m"]=height
+                validate_obstacle(updated[index],*site)
+            active,invalid=synchronize(updated,catalog,*site,auto_enable=False)
+            st.session_state["obstacles"]=active
+        st.session_state["ws_obstacle_revision"]=st.session_state.get("ws_obstacle_revision",0)+1
+        st.session_state["ws_selected_obstacle"]=None
+        st.rerun()
+    except (ValueError,TypeError,KeyError) as exc:
+        st.error(f"Úpravu nelze uložit: {exc}")
+
+
 @st.dialog("PŘEKÁŽKY / Upravit a odstranit",width="large")
 def obstacles_dialog():
     """One editor for drawn obstacles and automatically loaded geodata."""
@@ -323,14 +413,25 @@ def obstacles_dialog():
     a.metric("Načtené objekty",len(catalog))
     b.metric("Aktivní pro výpočet",active_count+len(manual))
     d.metric("Vlastní polygony",len(manual))
-    tabs=st.tabs(["NAČTENÉ GEODATA","VLASTNÍ PŘEKÁŽKY"])
-    with tabs[0]:
+    focus=st.session_state.get("ws_selected_obstacle") or {}
+    _focused_obstacle_controls(catalog,manual)
+    manual_first=focus.get("kind")=="manual"
+    tabs=st.tabs(["VLASTNÍ PŘEKÁŽKY","NAČTENÉ GEODATA"] if manual_first
+                 else ["NAČTENÉ GEODATA","VLASTNÍ PŘEKÁŽKY"])
+    imported_tab=tabs[1] if manual_first else tabs[0]
+    manual_tab=tabs[0] if manual_first else tabs[1]
+    with imported_tab:
         if not catalog:
             st.info("Geodata zatím nejsou načtená. V sekci MAPA otevři Geodata / okolní překážky.")
         else:
             st.caption("Výška z OSM je informativní. Prázdná hodnota znamená neznámou výšku, "
                        "nikoli nulovou. Výpočet podporuje maximálně 1000 aktivních překážek.")
             types=sorted(set(x["category"] for x in catalog))
+            # Clicking a polygon resets filters so its row is always visible.
+            if focus.get("kind")=="catalog":
+                st.session_state["ws_catalog_kind"]="Vše"
+                st.session_state["ws_catalog_search"]=""
+                st.session_state["ws_catalog_page"]=1
             left,right=st.columns([1,2])
             with left:
                 category=st.selectbox("Kategorie",["Vše"]+types,key="ws_catalog_kind")
@@ -341,6 +442,10 @@ def obstacles_dialog():
                      if (category=="Vše" or x["category"]==category)
                      and (not query or query in
                           (x["name"]+" "+x["source"]).casefold())]
+            # Keep the clicked item at the very top with a visible marker.
+            selected_id=focus.get("id") if focus.get("kind")=="catalog" else None
+            if selected_id:
+                matches.sort(key=lambda i:0 if catalog[i]["id"]==selected_id else 1)
             page_size=75
             pages=max(1,(len(matches)+page_size-1)//page_size)
             if int(st.session_state.get("ws_catalog_page",1))>pages:
@@ -350,6 +455,7 @@ def obstacles_dialog():
             indexes=matches[(page-1)*page_size:page*page_size]
             current=[catalog[i] for i in indexes]
             table=pd.DataFrame([{
+                "Výběr":"▶ VYBRÁNO" if x["id"]==selected_id else "",
                 "Název":x["name"],
                 "Typ":x["category"],
                 "Zdroj":x["source"],
@@ -362,6 +468,7 @@ def obstacles_dialog():
                 table,key=f"ws_imported_table_{rev}_{page}_{category}_{query}",
                 hide_index=True,use_container_width=True,
                 column_config={
+                    "Výběr":st.column_config.TextColumn(disabled=True,width="small"),
                     "Název":st.column_config.TextColumn(required=True),
                     "Typ":st.column_config.TextColumn(disabled=True),
                     "Zdroj":st.column_config.TextColumn(disabled=True),
@@ -408,20 +515,28 @@ def obstacles_dialog():
                 except (ValueError,TypeError,KeyError) as exc:
                     st.error(f"Nelze uložit: {exc}")
 
-    with tabs[1]:
+    with manual_tab:
         if not manual:
             st.info("Vlastní překážky zatím nejsou zakreslené. Přejdi do sekce PŘEKÁŽKY.")
         else:
+            selected_manual=(int(focus["id"]) if focus.get("kind")=="manual"
+                             and str(focus.get("id","")).isdigit() else -1)
+            manual_indices=list(range(len(manual)))
+            if 0<=selected_manual<len(manual):
+                manual_indices.remove(selected_manual)
+                manual_indices.insert(0,selected_manual)
             table=pd.DataFrame([{
-                "Název":obj.get("name",f"Překážka {i+1}"),
-                "Výška [m AGL]":float(obj["height_m"]),
+                "Výběr":"▶ VYBRÁNO" if i==selected_manual else "",
+                "Název":manual[i].get("name",f"Překážka {i+1}"),
+                "Výška [m AGL]":float(manual[i]["height_m"]),
                 "Smazat":False,
-            } for i,obj in enumerate(manual)])
+            } for i in manual_indices])
             rev=st.session_state.get("ws_obstacle_revision",0)
             edited=st.data_editor(
                 table,key=f"ws_manual_table_{rev}",
                 use_container_width=True,hide_index=True,
                 column_config={
+                    "Výběr":st.column_config.TextColumn(disabled=True,width="small"),
                     "Název":st.column_config.TextColumn(required=True),
                     "Výška [m AGL]":st.column_config.NumberColumn(
                         min_value=.1,max_value=1000.,step=1.),
@@ -434,7 +549,7 @@ def obstacles_dialog():
                     for i,row in edited.iterrows():
                         if bool(row["Smazat"]):
                             continue
-                        item=dict(manual[i])
+                        item=dict(manual[manual_indices[i]])
                         item["name"]=str(row["Název"]).strip() or item.get("name","Překážka")
                         item["height_m"]=float(row["Výška [m AGL]"])
                         validate_obstacle(item,*_cfg_site())
