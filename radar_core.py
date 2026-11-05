@@ -1691,13 +1691,14 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
         environment_items = environment_items or []
         present_environment = {}
         if environment_items:
-            from matplotlib.patches import Polygon as MplPolygon
+            from matplotlib.collections import PolyCollection
             from pyproj import Geod
             from math import radians
             import numpy as _np
             _geod = Geod(ellps='WGS84')
             _colors = {'Building': '#e3a64c', 'Forest': '#48ae78', 'Tower': '#d778ed'}
-            for obj in environment_items[:900]:
+            polygons_by_kind = {kind: [] for kind in _colors}
+            for obj in environment_items[:3500]:
                 typ = obj.get('kind')
                 if typ not in _colors:
                     continue
@@ -1714,13 +1715,16 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                     ys = distances / 1000. * _np.cos(_np.deg2rad(angles))
                     if not _np.isfinite(xs).all() or not _np.isfinite(ys).all():
                         continue
-                    ax.add_patch(MplPolygon(
-                        _np.column_stack((xs, ys)), closed=True, fill=True,
-                        facecolor=_colors[typ], edgecolor=_colors[typ],
-                        linewidth=.40, alpha=.42, zorder=9))
+                    polygons_by_kind[typ].append(_np.column_stack((xs, ys)))
                     present_environment[typ] = _colors[typ]
                 except (ValueError, TypeError, KeyError):
                     continue
+            for typ, polygons in polygons_by_kind.items():
+                if polygons:
+                    ax.add_collection(PolyCollection(
+                        polygons, closed=True, facecolor=_colors[typ],
+                        edgecolor=_colors[typ], linewidths=.3,
+                        alpha=.42, zorder=9))
         if theme == 'light':
             import matplotlib.patheffects as pe
             for patch in ax.patches:
@@ -1767,7 +1771,7 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
         fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)
         if environment_items:
             fig.text(0.77, 0.24,
-                     f'Objects displayed: {min(len(environment_items), 900)} / {len(environment_items)}'
+                     f'Objects displayed: {min(len(environment_items), 3500)} / {len(environment_items)}'
                      + '\\nInformational OSM/Microsoft/import layers'
                      + '\\nNot certified survey data',
                      color=UI_TEXT, fontsize=8)
