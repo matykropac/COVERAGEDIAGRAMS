@@ -212,7 +212,7 @@ def simulation_dialog(result,level_ft,provider):
     _live_frame(result,level_ft,provider)
 
 @st.fragment(run_every="5s")
-def _persistent_display(result, level_ft, provider):
+def _persistent_display(result, level_ft, provider, openaip_key=None):
     try:
         _, states = _traffic(round(result["config"].lat,5),
                              round(result["config"].lon,5), provider)
@@ -221,7 +221,7 @@ def _persistent_display(result, level_ft, provider):
             aircraft.append({"hex":row[0],"flight":row[1],"lat":row[6],
                              "lon":row[5],"alt_geom":row[13]/0.3048 if row[13] is not None else None,
                              "track":row[10],"gs":row[11]})
-        open_display(result, level_ft, provider, aircraft)
+        open_display(result, level_ft, provider, aircraft, openaip_key=openaip_key)
     except Exception as exc:
         st.warning(f"ADS-B data nejsou dostupná: {str(exc)[:160]}")
 
