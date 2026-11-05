@@ -156,7 +156,6 @@ def selected(items, lat, lon, kinds, min_height, max_distance, include_unknown,
             continue
         if not item.get("coordinates"):
             continue
-            continue
         h = item.get("height_m")
         if h is None:
             if not include_unknown:
