@@ -19,7 +19,7 @@ from shapely.geometry import shape, Polygon, box
 GEOD = Geod(ellps="WGS84")
 CATALOG = "https://bfppub.blob.core.windows.net/%24web/2026-08-13/dataset-links.csv"
 MAX_COMPRESSED = 24_000_000
-MAX_ITEMS = 12000
+MAX_ITEMS = 50000
 MAX_TILE_COUNT = 3
 
 def quadkey(latitude, longitude, zoom=9):
