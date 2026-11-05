@@ -328,14 +328,124 @@ def traffic_dialog():
     simulation_tab(st.session_state.get("result"),st.session_state.get("ws_levels",[3000,10000]))
 
 
-@st.dialog("DALŠÍ MAPOVÁ DATA",width="large")
+@st.dialog("GEODATA / Okolní objekty",width="large")
 def layers_dialog():
-    """Advanced datasets only; basic coverage layers live in the sidebar."""
-    config=_cfg()
-    st.caption("Letové hladiny, OpenAIP a ADS-B přepínej přímo v levém panelu.")
-    st.session_state["ws_environment"]=env.controls(config.lat,config.lon,"ws_env")
-    st.session_state["ws_airports"]=aviation.controls(config.lat,config.lon,"ws_airports")
-    st.session_state["ws_canopy"]=canopy.controls("ws_canopy")
+    """One explicit source-selection window; all loaded items share the main map."""
+    from io import BytesIO, StringIO
+    from zipfile import ZipFile, ZIP_DEFLATED
+    import csv
+    import json
+
+    c=_cfg()
+    site=(round(c.lat,5),round(c.lon,5))
+    st.caption(f"Stanoviště {c.lat:.5f}°, {c.lon:.5f}° · WGS84. "
+               "Data se načtou pouze po stisknutí tlačítka.")
+    st.markdown("**CO CHCEŠ NAČÍST?**")
+    col1,col2=st.columns(2)
+    with col1:
+        buildings=st.checkbox("Budovy, lesy a věže · OpenStreetMap",
+                              value=True,key="ws_geo_osm")
+        airports=st.checkbox("Letiště a heliporty · OurAirports",
+                             value=False,key="ws_geo_airports")
+    with col2:
+        wind=st.checkbox("Větrné elektrárny · dataset / OSM",
+                         value=True,key="ws_geo_wind")
+        microsoft=st.checkbox("Microsoft Building Footprints",
+                              value=False,key="ws_geo_microsoft")
+    radius=st.slider("Okolí pro budovy / lesy / věže [km]",.5,10.,3.,.5,
+                     key="ws_geo_radius")
+    st.caption("OpenStreetMap: 0,5–10 km · větrné elektrárny: 100 km · "
+               "letiště: 120 km. Data mohou být neúplná a jejich výšky nejsou ověřené.")
+
+    if st.button("NAČÍST VYBRANÁ GEODATA",type="primary",
+                 use_container_width=True,key="ws_geo_fetch"):
+        if not (buildings or airports or wind or microsoft):
+            st.warning("Vyber alespoň jeden datový zdroj.")
+        else:
+            loaded=[]
+            errors=[]
+            if buildings:
+                try:
+                    with st.spinner("Načítám OpenStreetMap…"):
+                        loaded.extend(env.fetch_osm(*site,radius))
+                except Exception as exc:
+                    errors.append("OSM: "+str(exc)[:135])
+            if microsoft:
+                try:
+                    from microsoft_buildings import fetch_microsoft
+                    with st.spinner("Načítám Microsoft Building Footprints…"):
+                        loaded.extend(fetch_microsoft(*site,radius))
+                except Exception as exc:
+                    errors.append("Microsoft: "+str(exc)[:135])
+            if buildings or microsoft:
+                st.session_state["ws_environment"]=loaded[:env.MAX_ENVIRONMENT_ITEMS]
+            if airports:
+                try:
+                    with st.spinner("Načítám letiště…"):
+                        st.session_state["ws_airports"]=aviation.nearby(*site,120)
+                except Exception as exc:
+                    errors.append("Letiště: "+str(exc)[:135])
+            if wind:
+                try:
+                    with st.spinner("Načítám větrné elektrárny…"):
+                        st.session_state["ws_wind_data"]=load_wind_turbines(*site)
+                except Exception as exc:
+                    errors.append("Větrné elektrárny: "+str(exc)[:135])
+            st.session_state["ws_geodata_site"]=site
+            st.session_state["ws_geodata_errors"]=errors
+            if errors:
+                st.warning("Některé zdroje selhaly: "+" | ".join(errors))
+            else:
+                st.success("Vybraná geodata byla načtena do hlavní mapy.")
+
+    if st.session_state.get("ws_geodata_site")!=site:
+        if st.session_state.get("ws_geodata_site"):
+            st.warning("Geodata jsou z jiného stanoviště. Načti je znovu pro aktuální radar.")
+        return
+
+    environment_items=st.session_state.get("ws_environment",[])
+    wind_items=st.session_state.get("ws_wind_data",[])
+    airport_items=st.session_state.get("ws_airports",[])
+    a,b,d=st.columns(3)
+    a.metric("Budovy / lesy / věže",len(environment_items))
+    b.metric("Větrné elektrárny",len(wind_items))
+    d.metric("Letiště",len(airport_items))
+
+    st.markdown("**ZOBRAZENÍ V HLAVNÍ MAPĚ**")
+    visibility=st.columns(3)
+    with visibility[0]:
+        st.checkbox("Objekty OSM / MS",value=True,key="ws_geo_show_environment")
+    with visibility[1]:
+        st.checkbox("Turbíny",value=True,key="ws_geo_show_wind")
+    with visibility[2]:
+        st.checkbox("Letiště",value=True,key="ws_geo_show_airports")
+
+    if environment_items or wind_items or airport_items:
+        buffer=BytesIO()
+        with ZipFile(buffer,"w",ZIP_DEFLATED) as archive:
+            if environment_items:
+                archive.writestr("geodata/objects.geojson",env.geojson_bytes(environment_items))
+                archive.writestr("geodata/objects.kml",env.kml_bytes(environment_items))
+            if airport_items:
+                archive.writestr("geodata/airports.geojson",aviation.geojson_bytes(airport_items))
+                archive.writestr("geodata/airports.csv",aviation.csv_bytes(airport_items))
+            if wind_items:
+                columns=["lat","lon","name","height","hub_height","rotor","distance_km","az","osm_id"]
+                out=StringIO()
+                writer=csv.DictWriter(out,fieldnames=columns,extrasaction="ignore")
+                writer.writeheader()
+                writer.writerows(wind_items)
+                archive.writestr("geodata/wind_turbines.csv",out.getvalue().encode("utf-8-sig"))
+                archive.writestr("geodata/wind_turbines.geojson",
+                    json.dumps({"type":"FeatureCollection","features":[
+                        {"type":"Feature","geometry":{"type":"Point",
+                          "coordinates":[x["lon"],x["lat"]]},
+                         "properties":{k:v for k,v in x.items() if k not in ("lat","lon")}}
+                        for x in wind_items]},ensure_ascii=False).encode("utf-8"))
+        st.download_button("STÁHNOUT NAČTENÁ GEODATA · ZIP",
+                           data=buffer.getvalue(),file_name="COVERAGEDIAGRAMS_geodata.zip",
+                           mime="application/zip",use_container_width=True,key="ws_geodata_download")
+    st.caption("Informativní mapové vrstvy se automaticky nestávají výpočetními překážkami.")
 
 
 @st.dialog("ANALÝZA / Radarový profil",width="large")
@@ -785,11 +895,9 @@ def render_workspace():
                 if not configured_key():
                     st.caption("OpenAIP vyžaduje OPENAIP_API_KEY v nastavení aplikace.")
             st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
-            with st.expander("Další mapové vrstvy",expanded=False):
-                st.checkbox("Větrné elektrárny",value=False,key="ws_show_wind")
-                if st.button("Budovy / lesy / letiště",key="ws_command_geodata",
-                             use_container_width=True):
-                    layers_dialog()
+            if st.button("⬡ Geodata / okolní překážky",key="ws_command_geodata",
+                         use_container_width=True):
+                layers_dialog()
             if st.button("✈ Historie provozu",key="ws_command_traffic",
                          use_container_width=True):
                 traffic_dialog()
