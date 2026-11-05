@@ -1093,7 +1093,7 @@ def _draw_map():
             st.session_state["ws_last_map_action_id"]=event_id
             if action.get("type")=="edit_obstacle":
                 kind=str(action.get("kind",""))
-                identifier=str(action.get("id",""))
+                identifier=str(action.get("obstacle_id",""))
                 valid=(kind=="manual" and identifier.isdigit() and
                        int(identifier)<len(manual_obstacles))
                 valid=valid or (kind=="catalog" and any(
