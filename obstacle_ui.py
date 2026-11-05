@@ -16,7 +16,7 @@ import aviation_layers as aviation
 import canopy_layers as canopy
 
 GEOD = Geod(ellps='WGS84')
-MAX_OBSTACLES = 100
+MAX_OBSTACLES = 1000
 
 
 def _label(o, i):
@@ -78,9 +78,9 @@ def render_obstacle_editor(radar_lat, radar_lon):
                                mime="application/vnd.google-earth.kml+xml", key="env_kml_editor")
             usable = [x for x in visible_environment if x["height_m"] is not None and
                       x["kind"] in ("Building", "Tower") and len(x["coordinates"]) >= 3]
-            if st.button(f"Převést známé výšky na překážky ({min(len(usable), 100)})",
+            if st.button(f"Převést známé výšky na překážky ({min(len(usable), MAX_OBSTACLES-len(obstacles))})",
                          key="environment_to_obstacles",
-                         help="Pouze budovy a věže se známou výškou; max 100 objektů. Neprovádí se automaticky."):
+                         help="Pouze budovy a věže se známou výškou; max 1000 objektů. Neprovádí se automaticky."):
                 remaining = MAX_OBSTACLES - len(obstacles)
                 if remaining <= 0:
                     st.error("Nejdříve uvolni místo v seznamu 100 výpočetních překážek.")
@@ -157,7 +157,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
             if signature and signature != st.session_state.get('obstacle_last_drawing'):
                 st.session_state['obstacle_last_drawing'] = signature
                 if len(obstacles) >= MAX_OBSTACLES:
-                    st.error('Nejvýše 100 překážek.')
+                    st.error('Nejvýše 1000 překážek.')
                 else:
                     item = dict(kind='polygon', name=f'Polygon {len(obstacles)+1:02d}',
                                 coordinates=coords, height_m=float(height))
