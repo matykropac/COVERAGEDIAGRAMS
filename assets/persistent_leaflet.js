@@ -182,7 +182,57 @@ function drawTerrain(s){
   canvasText(ctx,sel.km.toFixed(2)+" km",sx,height-8,"center","#d45259",11);
   canvasText(ctx,to.toFixed(1)+" km",right,height-8,"right");
 }
+function terrainDestination(site,bearing,km){
+  const rad=Math.PI/180,d=km/6371.0088,lat1=site[0]*rad,lon1=site[1]*rad,b=bearing*rad;
+  const lat=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(b));
+  const lon=lon1+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(lat1),
+    Math.cos(d)-Math.sin(lat1)*Math.sin(lat));
+  return [lat/rad,((lon/rad+540)%360)-180];
+}
+function hideTerrainWedge(s){
+  if(s.terrainWedge){s.map.removeLayer(s.terrainWedge);s.terrainWedge=null;}
+}
+function showTerrainWedge(s){
+  hideTerrainWedge(s);
+  const p=s.latest?.profile,sel=s.selection;
+  if(!p?.distance?.length||!sel||sel.km<=0||!p.terrain?.length)return;
+  const step=Math.max(1,Math.ceil(p.distance.length/65));
+  const range=Math.min(sel.km,Number(p.maxRangeKm)||sel.km);
+  const group=L.layerGroup();
+  const cells=[];
+  for(let delta=-10;delta<10;delta+=2){
+    const a=(sel.az+delta+360)%360,b=(sel.az+delta+2+360)%360;
+    const row=p.terrain[nearestAzimuth(p.az,(sel.az+delta+1+360)%360).idx]||[];
+    for(let i=0;i<p.distance.length-1;i+=step){
+      const j=Math.min(p.distance.length-1,i+step),lo=p.distance[i],hi=Math.min(range,p.distance[j]);
+      if(lo>=range||hi<=lo)break;
+      const h=row[Math.min(row.length-1,Math.floor((i+j)/2))];
+      if(!Number.isFinite(h))continue;
+      cells.push({a,b,lo,hi,h});
+    }
+  }
+  if(!cells.length)return;
+  const heights=cells.map(x=>x.h);
+  const min=Math.min(...heights),max=Math.max(...heights),spread=Math.max(1,max-min);
+  const palette=["#1e5b7c","#217d92","#4b9b83","#9bad75","#dbbb80"];
+  for(const cell of cells){
+    const idx=Math.min(palette.length-1,
+      Math.max(0,Math.floor((cell.h-min)/spread*(palette.length-1))));
+    L.polygon([
+      terrainDestination(p.site,cell.a,cell.lo),
+      terrainDestination(p.site,cell.b,cell.lo),
+      terrainDestination(p.site,cell.b,cell.hi),
+      terrainDestination(p.site,cell.a,cell.hi)
+    ],{stroke:false,fillColor:palette[idx],fillOpacity:.62,
+       interactive:false}).addTo(group);
+  }
+  group.addTo(s.map);
+  s.terrainWedge=group;
+  if(s.selectionLine)s.selectionLine.bringToFront();
+  if(s.selectionMarker)s.selectionMarker.bringToFront();
+}
 function clearTerrainSelection(s){
+  hideTerrainWedge(s);
   s.selection=null;
   if(s.selectionMarker){s.map.removeLayer(s.selectionMarker);s.selectionMarker=null;}
   if(s.selectionLine){s.map.removeLayer(s.selectionLine);s.selectionLine=null;}
@@ -194,13 +244,16 @@ function selectTerrainPoint(s,latlng){
   const site=p.site;
   const {km,az}=geodesic(site,latlng);
   s.selection={lat:latlng.lat,lon:latlng.lng,km,az};
+  hideTerrainWedge(s);
   if(s.selectionMarker)s.map.removeLayer(s.selectionMarker);
   if(s.selectionLine)s.map.removeLayer(s.selectionLine);
   s.selectionMarker=L.circleMarker(latlng,{radius:7,color:"#ffffff",
     weight:2,fillColor:"#e34c57",fillOpacity:1}).addTo(s.map);
   s.selectionLine=L.polyline([site,[latlng.lat,latlng.lng]],
-    {color:"#e34c57",weight:2.5,dashArray:"6 5",opacity:.94,
-     interactive:false}).addTo(s.map);
+    {color:"#e34c57",weight:3,dashArray:"6 5",opacity:.94,
+     interactive:true}).addTo(s.map);
+  s.selectionLine.on("mouseover",()=>showTerrainWedge(s));
+  s.selectionLine.on("mouseout",()=>hideTerrainWedge(s));
   const azIndex=nearestAzimuth(p.az||[],az);
   const sample=nearestDistance(p.distance||[],km);
   const value=p.terrain[azIndex.idx]?.[sample];
