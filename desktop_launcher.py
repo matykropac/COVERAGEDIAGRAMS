@@ -80,8 +80,14 @@ def run_server(port: int) -> None:
         os.chdir(str(app_root()))
         from streamlit.web import bootstrap
         stream.write("[server] bootstrap imported\\n")
+        # Direct bootstrap.run() does NOT apply flag_options initially.
+        # Streamlit CLI calls this explicitly; a frozen desktop launcher must
+        # do the same to bind its chosen loopback port and disable browser launch.
+        options = server_options(port)
+        bootstrap.load_config_options(options)
+        stream.write(f"[server] configured 127.0.0.1:{port}; headless=True\\n")
         sys.argv = ["streamlit", "run", str(script)]
-        bootstrap.run(str(script), False, [], server_options(port))
+        bootstrap.run(str(script), False, [], options)
     except BaseException:
         stream.write("[server] FATAL ERROR\\n" + traceback.format_exc() + "\\n")
         raise
