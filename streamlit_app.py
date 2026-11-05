@@ -470,6 +470,194 @@ if result is None:
     with analysis:
         st.info('V záložce NASTAVENÍ zvol radar a zdroj DEM a spusť výpočet.')
     with raw:
+        st.info('Data a exporty se objeví po úspěšném výpočtu.')
+else:
+    rc = result['config']
+    source_signature = (source, dataset, uploaded.file_id if uploaded is not None else None)
+    with analysis:
+        if (asdict(c) != asdict(rc) or (not st.session_state.get('loaded_project') and source_signature != st.session_state.source_signature)
+                or result.get('obstacles_signature') != obstacle_signature(st.session_state.obstacles)):
+            st.warning('Nastavení se změnilo. Mapa a exporty stále patří k poslednímu úspěšnému výpočtu.')
+        if result['source'] == 'SYNTHETIC DEMO':
+            st.warning('SYNTETICKÝ TERÉN — NEJDE O SKUTEČNÉ KRYTÍ STANOVIŠTĚ.')
+        st.caption(f"{rc.radar_mode} · {rc.lat:.6f}°, {rc.lon:.6f}° · {rc.range_km:g} km · "
+                   f"{result['completed_at']} · {result['duration_s']:g} s")
+        legend, mapcol, profile = st.columns([20, 55, 25])
+        with legend:
+            st.subheader('DISPLAY CONTROL / Hladiny')
+            # One selected layer by default: no duplicated opacity sliders and
+            # no animated layer toggles that shift the entire sidebar.
+            available_levels = list(levels)
+            display_mode = st.radio('Zobrazení', ['Jedna hladina', 'Porovnání', 'Cíl'],
+                                    horizontal=False, key='analysis_layer_mode')
+            alpha = st.slider('Průhlednost vrstev', 0., 1., .45, .05,
+                              key='analysis_global_opacity')
+            active = []
+            show_target = display_mode == 'Cíl'
+            if display_mode == 'Jedna hladina':
+                if available_levels:
+                    chosen = st.selectbox('Zobrazená hladina', available_levels,
+                                          format_func=core.level_label,
+                                          key='analysis_single_level')
+                    active = [chosen]
+                    st.caption('Přepnutím hladiny se změní pouze zobrazení; krytí se nepřepočítává.')
+                else:
+                    st.info('V NASTAVENÍ nejprve vyber výškové hladiny.')
+            elif display_mode == 'Porovnání':
+                active = st.multiselect('Zobrazené hladiny', available_levels,
+                                        default=available_levels[:3],
+                                        format_func=core.level_label,
+                                        key='analysis_comparison_levels')
+                st.caption('Pro čitelnost mapy doporučuji 2–3 hladiny.')
+            else:
+                st.caption('Zobrazuje krytí cílové výšky nastavené ve výpočtu.')
+            alphas = {ft: alpha for ft in active}
+            st.caption(f'Aktivní vrstvy: {len(active) + int(show_target)}')
+            st.caption('Kliknutí měří přímo v mapě, bez překreslení aplikace — funguje i na celou obrazovku.')
+            with st.expander("GEODATA / Budovy · Lesy · Letiště · Canopy", expanded=False):
+                analysis_environment = env.controls(rc.lat, rc.lon, "analysis_env")
+                analysis_airports = aviation.controls(rc.lat, rc.lon, "analysis_airports")
+                analysis_canopy = canopy.controls("analysis_canopy")
+            st.session_state["environment_filtered_export"] = analysis_environment
+            st.markdown('**Větrné turbíny**')
+            show_analysis_wind = st.checkbox('Zobrazit jednotlivé turbíny (100 km)',
+                                             value=True, key='analysis_show_wind')
+            assumed_wind_height = st.number_input(
+                'Výška, pokud není v OSM [m AGL]', min_value=0.0,
+                max_value=400.0, value=0.0, step=5.0,
+                key='analysis_wind_height_fallback',
+                help='0 = neznámá výška. Hodnota je pouze pro popis bodu, '
+                     'nemění radarové krytí.')
+            analysis_wind_data = []
+            if show_analysis_wind:
+                try:
+                    analysis_wind_data = load_wind_turbines(round(rc.lat, 6), round(rc.lon, 6))
+                    st.caption(f'Na mapě: {len(analysis_wind_data)} turbín · žluté body.')
+                except Exception as exc:
+                    st.warning('Turbíny nelze načíst; krytí zůstává dostupné.')
+                    st.caption(str(exc)[:240])
+            st.caption('Výška turbín je informativní. Neovlivňuje výpočet krytí.')
+
+
+        with mapcol:
+            m = folium.Map(location=[rc.lat, rc.lon], zoom_start=8 if rc.range_km<=100 else 7,
+                           tiles=None, control_scale=True, prefer_canvas=True,
+                           zoom_animation=False, fade_animation=False, marker_zoom_animation=False)
+            for name, provider in core.BASEMAP_PROVIDERS.items():
+                folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
+                                 max_zoom=provider['max_zoom'], overlay=False, show=name=='OpenStreetMap').add_to(m)
+            # Session-local contours: changes to opacity never repeat the coverage calculation.
+            for ft in ([None] if show_target else []) + active:
+                if ft not in st.session_state.geometry:
+                    st.session_state.geometry[ft] = coverage_geojson(result, ft)
+                geo = st.session_state.geometry[ft]
+                color = '#22d3c5' if ft is None else to_hex(core.level_color(ft))
+                opacity = alpha
+                if geo['features']:
+                    folium.GeoJson(geo, name='Cíl' if ft is None else core.level_label(ft),
+                        style_function=lambda feature, color=color, opacity=opacity:
+                            dict(color=color, weight=1.5, fillColor=color, fillOpacity=opacity),
+                        tooltip=folium.GeoJsonTooltip(fields=['hladina'], labels=False)).add_to(m)
+            if show_analysis_wind and analysis_wind_data:
+                add_wind_layer(m, analysis_wind_data, cluster_points=False,
+                               fallback_height=assumed_wind_height or None)
+            if analysis_environment:
+                env.layer_group(m, analysis_environment, "Budovy / lesy / věže")
+            if analysis_airports:
+                aviation.add_airports(m, analysis_airports)
+            if analysis_canopy is not None:
+                canopy.add_layer(m, analysis_canopy)
+            legend_levels = ([(core.level_label(ft), to_hex(core.level_color(ft))) for ft in active[:10]]
+                             if not show_target else [("Target coverage", "#22d3c5")])
+            level_key = "".join('<div><span style="display:inline-block;width:12px;height:10px;'
+                                'margin-right:6px;background:' + color + '"></span>' +
+                                label + '</div>' for label, color in legend_levels)
+            env.add_legend(m, analysis_environment,
+                           level_key + '<div>Orange: calculated obstacles · Blue: airports</div>' +
+                           ('<div>Yellow: wind turbines</div>' if show_analysis_wind else ''))
+            for obs in result.get('obstacles', []):
+                folium.Polygon(obstacle_polygon(obs, rc.lat, rc.lon), color='#ff7043',
+                               weight=1, fill=True, fill_opacity=.65,
+                               tooltip=f"Překážka {obs['height_m']:g} m AGL").add_to(m)
+            folium.Marker([rc.lat, rc.lon], tooltip=f'{rc.radar_mode} · radar',
+                          icon=folium.Icon(color='orange', icon='signal')).add_to(m)
+            if par := (rc.radar_mode == 'PAR-NG'):
+                from pyproj import Geod
+                bearings = np.linspace(rc.bearing_deg-15, rc.bearing_deg+15, 81)
+                xs, ys, _ = Geod(ellps='WGS84').fwd(np.full(81,rc.lon),np.full(81,rc.lat),bearings,np.full(81,40000.))
+                folium.PolyLine([[rc.lat,rc.lon]]+list(zip(ys,xs))+[[rc.lat,rc.lon]],
+                                color='#8ca4b5',dash_array='5 5',weight=1,tooltip='Sektor PAR-NG ±15° / 40 km').add_to(m)
+            ClickMeasure(result).add_to(m)
+            # Layer selection is handled by stable Streamlit controls; Leaflet
+            # keeps only basemap switching, without coverage layer animations.
+            folium.LayerControl(collapsed=True).add_to(m)
+            Fullscreen().add_to(m)
+            MeasureControl(primary_length_unit='kilometers').add_to(m)
+            HoverDetail(result).add_to(m)
+            # Leaflet handles clicks without Streamlit reruns in fast mode.
+            sync_click = st.session_state.get('sync_map_click', False)
+            event = st_folium(m, height=540, use_container_width=True,
+                             key='coverage_'+result['completed_at'],
+                             returned_objects=['last_clicked'] if sync_click else [])
+            click = event.get('last_clicked') if (sync_click and event) else None
+            if click and click != st.session_state.get('last_map_click'):
+                st.session_state.last_map_click = click
+                st.session_state.selected_point = click
+                from pyproj import Geod
+                selected_az, _, _ = Geod(ellps='WGS84').inv(rc.lon, rc.lat, click['lng'], click['lat'])
+                st.session_state.radial_view_bearing = int(round(selected_az)) % 360
+                _, idx, _ = clicked_point(result, click['lat'], click['lng'], active)
+                if idx is not None:
+                    st.session_state.profile_index = idx
+            # Keep the standalone map in browser memory, not as a downloaded file.
+            # The user-initiated click opens a Blob URL in a new browser tab.
+            standalone_html = m.get_root().render().encode('utf-8')
+            st.session_state["environment_map_html"] = standalone_html
+            standalone_b64 = base64.b64encode(standalone_html).decode('ascii')
+            components.html(
+                """
+                <style>
+                  body {margin:0;background:transparent;font-family:system-ui,sans-serif;display:flex;justify-content:center;align-items:center}
+                  button {background:#143d55;color:#e7f7ff;border:1px solid #4b92b0;
+                          border-radius:8px;padding:10px 18px;font-size:14px;cursor:pointer}
+                  button:hover {background:#205a79}
+                </style>
+                <button id="open">↗ OTEVŘÍT MAPU V NOVÉM OKNĚ</button>
+                <script>
+                const payload = '""" + standalone_b64 + """';
+                document.getElementById('open').addEventListener('click', () => {
+                    const raw = atob(payload);
+                    const bytes = new Uint8Array(raw.length);
+                    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+                    const url = URL.createObjectURL(new Blob([bytes], {type:'text/html;charset=utf-8'}));
+                    const tab = window.open(url, '_blank');
+                    if (!tab) alert('Pro otevření mapy povol v prohlížeči vyskakovací okna.');
+                    setTimeout(() => URL.revokeObjectURL(url), 120000);
+                });
+                </script>
+                """,
+                height=54, scrolling=False
+            )
+            st.caption('Mapa se otevře online v novém panelu. Bez stahování souboru a bez přepočtu krytí.')
+        with profile:
+            st.toggle('Přenášet kliknutí z mapy do diagnostiky (pomalejší)',
+                      value=False, key='sync_map_click',
+                      help='Zapne aktualizaci radiálního profilu. Vypnuto = rychlé klikání i ve fullscreen.')
+            st.subheader('RADIAL PROFILE / Radiální profil')
+            idx = st.select_slider('Azimut [°]', options=list(range(len(result['az']))),
+                                   format_func=lambda i:f"{result['az'][i]%360:.2f}°", key='profile_index')
+            point = st.session_state.get('selected_point')
+            selected_distance = None
+            if point:
+                detail, point_idx, dist = clicked_point(result, point['lat'], point['lng'], active)
+                st.caption(detail)
+                if idx == point_idx:
+                    selected_distance = dist
+            figure(core.profile_plot, result=result, index=idx, selected=selected_distance, levels_ft=active)
+            with st.expander('Terén a spodní hranice · technický rastr'):
+                mode = st.selectbox('Veličina', ['Terén', 'Spodní hranice'])
+                figure(core.map_plot, result=result, mode=mode)
+    with raw:
         from io import BytesIO
         from selected_export import FORMATS, build_selected_zip
 
