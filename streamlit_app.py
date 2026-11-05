@@ -650,7 +650,8 @@ else:
         source_bytes = env.geojson_bytes(filtered_env)
         canopy_bytes = analysis_canopy[0] if analysis_canopy is not None else b""
         map_bundle_signature = hashlib.sha256(source_bytes + canopy_bytes +
-                                              repr(exported_levels).encode("utf-8")).hexdigest()
+                                              repr(exported_levels).encode("utf-8") +
+                                              repr(analysis_airports).encode("utf-8")).hexdigest()
         if st.button("Připravit analytickou mapu + vrstvy + legendu (ZIP)",
                      key="environment_bundle_prepare"):
             with st.spinner("Balení mapy a filtrovaných vrstev…"):
