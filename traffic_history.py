@@ -36,6 +36,18 @@ def render_history(result):
                 data[col] = pd.to_numeric(data[col], errors="coerce")
             data = data.dropna(subset=["lat", "lon", "altitude_m"])
             data = data[data["lat"].between(-90, 90) & data["lon"].between(-180, 180)]
+            a, b = st.columns(2)
+            with a:
+                alt_range = st.slider("Výškové pásmo [m AMSL]", -500, 16000,
+                                      (-500, 16000), 100, key="history_alt_filter")
+            with b:
+                if "icao24" in data.columns:
+                    needle = st.text_input("ICAO24 obsahuje", "", key="history_icao_filter").strip().lower()
+                    if needle:
+                        data = data[data["icao24"].astype(str).str.lower().str.contains(needle, regex=False)]
+                else:
+                    st.caption("Pro filtrování jednotlivých letadel přidej sloupec icao24.")
+            data = data[data["altitude_m"].between(*alt_range)].copy()
             statuses = []
             for row in data.itertuples():
                 bounds = _sample(result, row.lat, row.lon)
@@ -50,6 +62,32 @@ def render_history(result):
             c2.metric("Mimo", int(counts.get("Outside geometric coverage", 0)))
             c3.metric("Neurčeno", int(counts.get("Unknown / outside DEM", 0)))
             st.bar_chart(counts)
+            if not data.empty:
+                view = folium.Map(location=[result["config"].lat, result["config"].lon],
+                                  zoom_start=7, tiles="OpenStreetMap", control_scale=True)
+                colors = {"Inside geometric coverage": "#43d4a3",
+                          "Outside geometric coverage": "#fb7979",
+                          "Unknown / outside DEM": "#f4ce6c"}
+                # Stratified limit keeps the map responsive, statistics use every filtered row.
+                sample = data.groupby("coverage_status", group_keys=False).head(500)
+                for record in sample.itertuples():
+                    color = colors[record.coverage_status]
+                    folium.CircleMarker(
+                        [record.lat, record.lon], radius=2.5, color=color, fill=True,
+                        fill_color=color, fill_opacity=.8, weight=0,
+                        tooltip=f"{record.coverage_status} · {record.altitude_m:.0f} m AMSL"
+                    ).add_to(view)
+                from branca.element import Element
+                view.get_root().html.add_child(Element(
+                    '<div style="position:absolute;z-index:9999;bottom:25px;left:10px;'
+                    'background:#09283c;color:#fff;padding:10px;border-radius:8px;'
+                    'font:12px system-ui">🟢 In coverage<br>🔴 Outside<br>🟡 Unknown'
+                    '<br>ADS-B observations / geometrical estimate</div>'))
+                from streamlit_folium import st_folium
+                st_folium(view, height=470, use_container_width=True, key="historical_traffic_map",
+                          returned_objects=[])
+                st.caption(f"Mapa obsahuje nejvýše 500 pozorování na kategorii (celkem {len(sample)}); "
+                           "statistiky a export používají všechna vyfiltrovaná pozorování.")
             st.dataframe(data.head(2000), use_container_width=True, height=310)
             st.download_button("Export vyhodnocení · CSV",
                                data.to_csv(index=False).encode("utf-8-sig"),
@@ -58,5 +96,5 @@ def render_history(result):
             st.caption("Vyhodnocení jednotlivých ADS-B pozic, nikoliv skutečné detekční pravděpodobnosti "
                        "nebo procentuálního pokrytí všech letadel. Opakované polohy jednoho letadla "
                        "se počítají jako samostatná pozorování.")
-        except (ValueError, UnicodeError, TypeError, KeyError) as exc:
+        except Exception as exc:
             st.error(f"CSV nelze analyzovat: {exc}")
