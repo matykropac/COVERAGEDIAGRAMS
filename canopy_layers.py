@@ -1,5 +1,6 @@
 """Visualize georeferenced canopy-height raster GeoTIFF (AGL) without changing coverage."""
 import io
+import base64
 
 import folium
 import numpy as np
@@ -66,7 +67,8 @@ def add_layer(map_obj, data):
     if data is None:
         return
     image, bounds, low, high = data
-    folium.raster_layers.ImageOverlay(image=image, bounds=bounds, opacity=0.75,
+    encoded = 'data:image/png;base64,' + base64.b64encode(image).decode('ascii')
+    folium.raster_layers.ImageOverlay(image=encoded, bounds=bounds, opacity=0.75,
                                       name=f"Canopy height {low}-{high} m AGL",
                                       show=True, overlay=True).add_to(map_obj)
     from branca.element import Element
