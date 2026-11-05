@@ -26,13 +26,13 @@ def _color_raster(raw, low, high):
             width = min(900, max(100, ds.width))
             height = min(900, max(100, ds.height))
             values = np.full((height, width), np.nan, dtype=np.float32)
-            reproject(source=ds.read(1, masked=True).filled(np.nan),
+            reproject(source=ds.read(1, masked=True).astype(np.float32).filled(np.nan),
                       destination=values, src_transform=ds.transform,
                       src_crs=ds.crs, dst_transform=from_bounds(west, south, east, north, width, height),
                       dst_crs="EPSG:4326", src_nodata=np.nan, dst_nodata=np.nan,
                       resampling=Resampling.bilinear)
     good = np.isfinite(values) & (values >= low) & (values <= high)
-    scaled = np.clip((values - low) / max(high - low, 1.), 0, 1)
+    scaled = np.nan_to_num(np.clip((values - low) / max(high - low, 1.), 0, 1), nan=0.0)
     pixels = np.zeros((height, width, 4), dtype=np.uint8)
     pixels[..., 0] = (205 - 174*scaled).astype(np.uint8)
     pixels[..., 1] = (231 - 113*scaled).astype(np.uint8)
