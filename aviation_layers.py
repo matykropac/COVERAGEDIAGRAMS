@@ -10,7 +10,7 @@ import streamlit as st
 from pyproj import Geod
 
 _GEOD = Geod(ellps="WGS84")
-_URL = "https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv"
+_URL = "https://raw.githubusercontent.com/datasets/airport-codes/main/data/airport-codes.csv"
 
 @st.cache_data(ttl=86400, max_entries=2, show_spinner=False)
 def _all_airports():
@@ -27,7 +27,7 @@ def _all_airports():
             continue
         try:
             coordinate = str(row.get("coordinates") or "").split(",")
-            lon, lat = float(coordinate[0]), float(coordinate[1])
+            lat, lon = float(coordinate[0]), float(coordinate[1])
         except (ValueError, IndexError):
             continue
         output.append({"lat": lat, "lon": lon, "icao": row.get("ident", ""),
