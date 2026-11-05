@@ -1199,9 +1199,6 @@ def render_workspace():
                 if not configured_key():
                     st.caption("OpenAIP vyžaduje OPENAIP_API_KEY v nastavení aplikace.")
             st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
-            if st.button("✈ Historie provozu",key="ws_command_traffic",
-                         use_container_width=True):
-                traffic_dialog()
 
         elif section=="RADAR":
             st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
