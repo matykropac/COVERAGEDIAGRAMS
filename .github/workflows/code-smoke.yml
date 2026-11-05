@@ -24,6 +24,8 @@ jobs:
           import canopy_layers
           import microsoft_buildings
           import traffic_history
+          import map_workspace
+          assert callable(map_workspace.render_workspace)
           assert env.numeric_height("100 ft") is not None
           assert env.numeric_height("unknown") is None
           assert env.import_geojson('{"type":"FeatureCollection","features":[]}') == []
