@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 from zipfile import ZipFile, ZIP_STORED
 from io import BytesIO
+from matplotlib.colors import to_hex
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import xml.etree.ElementTree as ET
@@ -351,7 +352,7 @@ def export_range_rings_kml(result):
     return ET.tostring(root, encoding='utf-8', xml_declaration=True)
 
 
-def export_kml(result, levels):
+def export_kml(result, levels, environment_items=None):
     """One KML file: separate polygon folders for target + every requested FL + obstacles."""
     from matplotlib.colors import to_hex
     root = ET.Element('{' + KML_NS + '}kml')
@@ -382,6 +383,17 @@ def export_kml(result, levels):
             latlon = obstacle_polygon(o, c.lat, c.lon)
             ring = [[lon, lat] for lat, lon in latlon]
             _kml_polygon(pm, [ring])
+    # Environmental features are a separate toggleable folder; source heights are not
+    # assumed to be reliable radar-calculation inputs.
+    if environment_items:
+        import environment_layers as env
+        other = ET.fromstring(env.kml_bytes(environment_items))
+        source_doc = other.find('{' + KML_NS + '}Document')
+        if source_doc is not None:
+            folder = _kml_element(doc, 'Folder')
+            _kml_element(folder, 'name', 'Environmental layers / OSM or imported')
+            for mark in source_doc.findall('{' + KML_NS + '}Placemark'):
+                folder.append(mark)
     # Embed the same rings in the standalone all-layers KML as a toggleable folder.
     rings_root = ET.fromstring(export_range_rings_kml(result))
     rings_folder = rings_root.find('{' + KML_NS + '}Document/{' + KML_NS + '}Folder')
@@ -390,7 +402,7 @@ def export_kml(result, levels):
     return ET.tostring(root, encoding='utf-8', xml_declaration=True)
 
 
-def export_quickreport(result, *, flight_levels=None):
+def export_quickreport(result, *, flight_levels=None, environment_items=None):
     """Create a single ZIP containing the antenna plot, terrain and every flight level at 600 DPI.
 
     All images use the application's print renderer. Images are rendered one at a time;
@@ -465,7 +477,16 @@ def export_quickreport(result, *, flight_levels=None):
                     archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI{suffix}_600dpi.png")
 
             # Include toggleable polygons for the same altitude slices as the PNG report.
-            archive.writestr(manifest['coverage_kml'], export_kml(result, requested))
+            archive.writestr(manifest['coverage_kml'], export_kml(result, requested, environment_items))
+            if environment_items:
+                import environment_layers as env
+                archive.writestr('06_Environmental_Layers/objects.geojson', env.geojson_bytes(environment_items))
+                archive.writestr('06_Environmental_Layers/objects.kml', env.kml_bytes(environment_items))
+                archive.writestr('06_Environmental_Layers/objects.csv', env.csv_bytes(environment_items))
+                legend_levels = [(core.level_label(ft), to_hex(core.level_color(ft))) for ft in requested]
+                archive.writestr('06_Environmental_Layers/legend.png',
+                                 env.legend_png(environment_items, legend_levels))
+                archive.writestr('06_Environmental_Layers/SOURCES.txt', env.SOURCES)
             archive.writestr(manifest['range_rings_kml'], export_range_rings_kml(result))
             archive.writestr('report_manifest.json',
                              json.dumps(manifest, ensure_ascii=False, indent=2))
@@ -485,13 +506,13 @@ def export_quickreport(result, *, flight_levels=None):
         return archive_bytes.getvalue()
 
 
-def export_bytes(kind, result, levels, index, dpi, alpha, level_alphas=None):
+def export_bytes(kind, result, levels, index, dpi, alpha, level_alphas=None, environment_items=None):
     with tempfile.TemporaryDirectory(prefix='radar_export_') as directory:
         root = Path(directory)
         if kind == 'QuickReport · ZIP (600 DPI)':
-            return export_quickreport(result), 'COVERAGEDIAGRAMS_QuickReport_600dpi.zip', 'application/zip'
+            return export_quickreport(result, environment_items=environment_items), 'COVERAGEDIAGRAMS_QuickReport_600dpi.zip', 'application/zip'
         if kind == 'KML · všechny vrstvy (polygony)':
-            return export_kml(result, levels), 'coverage_all_layers.kml', 'application/vnd.google-earth.kml+xml'
+            return export_kml(result, levels, environment_items), 'coverage_all_layers.kml', 'application/vnd.google-earth.kml+xml'
         if kind == 'GeoPackage · vektory':
             path, mime = root/'coverage.gpkg', 'application/geopackage+sqlite3'
             core.export_gpkg(path, result, levels)
