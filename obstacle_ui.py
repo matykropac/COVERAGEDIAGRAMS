@@ -14,6 +14,7 @@ from wind_turbines import load_wind_turbines, add_wind_layer
 import environment_layers as env
 import aviation_layers as aviation
 import canopy_layers as canopy
+from aviation_basemap import add_to_map as add_openaip_map
 
 GEOD = Geod(ellps='WGS84')
 MAX_OBSTACLES = 1000
@@ -121,6 +122,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
             folium.TileLayer(provider['url'], name=name, attr=provider['attribution'],
                              max_zoom=provider['max_zoom'], overlay=False,
                              show=name == 'OpenStreetMap').add_to(om)
+        add_openaip_map(om)
         if show_wind and wind_data:
             add_wind_layer(om, wind_data, cluster_points=False)
         if visible_environment:
