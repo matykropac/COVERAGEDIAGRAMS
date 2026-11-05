@@ -12,7 +12,7 @@ import hashlib
 import folium
 import streamlit as st
 import numpy as np
-from folium.plugins import Fullscreen, MeasureControl
+from folium.plugins import Fullscreen, MeasureControl, Draw
 from streamlit_folium import st_folium
 from matplotlib.colors import to_hex
 
@@ -21,6 +21,8 @@ import environment_layers as env
 from aviation_basemap import add_to_map as add_openaip_map
 from web_support import coverage_geojson
 from obstacles import apply_obstacles, obstacle_polygon, obstacle_signature
+from site_picker import coordinates_from_map_click
+from traffic_overlay import fetch_snapshot, add_traffic_layer
 from obstacle_ui import render_obstacle_editor
 from live_simulation import simulation_tab
 from project_file import save_project, load_project
@@ -389,15 +391,20 @@ def exports_dialog():
 
 def _draw_map():
     result=st.session_state.get("result")
-    c=result["config"] if result is not None else _cfg()
-    m=folium.Map(location=[c.lat,c.lon],zoom_start=8 if result else 9,
-                 tiles=None,control_scale=True,prefer_canvas=True)
+    # Editing an uncalculated site must not be confused with the old result's location.
+    configured=_cfg()
+    c=result["config"] if result is not None else configured
+    view=st.session_state.get("ws_viewport")
+    center=[view["lat"],view["lng"]] if view else [configured.lat,configured.lon]
+    zoom=view["zoom"] if view else (8 if result else 9)
+    m=folium.Map(location=center,zoom_start=zoom,
+                 tiles=None,control_scale=True,prefer_canvas=True,
+                 zoom_animation=False,fade_animation=False)
     for name,provider in core.BASEMAP_PROVIDERS.items():
         folium.TileLayer(provider["url"],name=name,attr=provider["attribution"],
                          max_zoom=provider["max_zoom"],overlay=False,
                          show=name=="OpenStreetMap").add_to(m)
     add_openaip_map(m)
-    active=[]
     if result is not None:
         mode=st.session_state.get("ws_display_mode","Jedna hladina")
         levels=[x for x in st.session_state.get("ws_levels",[3000,10000])
@@ -405,6 +412,7 @@ def _draw_map():
         if mode=="Cíl":active=[None]
         elif mode=="Porovnání":active=st.session_state.get("ws_comparison",levels[:3])
         elif levels:active=[st.session_state.get("ws_map_level",levels[0])]
+        else:active=[]
         for level in active:
             if level is not None and level not in core.flight_levels_for(c.radar_mode):
                 continue
@@ -412,28 +420,82 @@ def _draw_map():
             if geo.get("features"):
                 color="#247ad3" if level is None else to_hex(core.level_color(level))
                 layer=folium.FeatureGroup(name="Krytí cíle" if level is None else core.level_label(level))
-                folium.GeoJson(geo,style_function=lambda feature,color=color:
+                opacity=st.session_state.get("ws_map_opacity",.42)
+                folium.GeoJson(geo,style_function=lambda feature,color=color,opacity=opacity:
                                {"color":color,"weight":1.5,"fillColor":color,
-                                "fillOpacity":st.session_state.get("ws_map_opacity",.42)}).add_to(layer)
+                                "fillOpacity":opacity}).add_to(layer)
                 layer.add_to(m)
-        for item in result.get("obstacles",[]):
-            folium.Polygon(obstacle_polygon(item,c.lat,c.lon),
-                           color="#eb6a43",weight=2,fill=True,fill_opacity=.3).add_to(m)
-        if st.session_state.get("ws_show_wind",False):
-            try:
-                wind=load_wind_turbines(round(c.lat,6),round(c.lon,6))
-                add_wind_layer(m,wind,cluster_points=False)
-            except Exception:pass
-    folium.Marker([c.lat,c.lon],tooltip=f"{c.radar_mode} · RADAR",
-                  icon=folium.Icon(color="orange",icon="signal")).add_to(m)
+    # Draw editable site configuration and obstacles independently from the
+    # last calculated result. Otherwise the map appears stale before rerun.
+    folium.Marker([configured.lat,configured.lon],
+                  tooltip=f"{configured.radar_mode} · stanoviště radaru",
+                  icon=folium.Icon(color="blue",icon="signal")).add_to(m)
+    if result is not None and (abs(c.lat-configured.lat)>1e-6 or abs(c.lon-configured.lon)>1e-6):
+        folium.CircleMarker([c.lat,c.lon],radius=5,color="#24a69e",
+                            tooltip="Stanoviště posledního výpočtu").add_to(m)
+    obstacle_layer=folium.FeatureGroup(
+        name=f"Překážky · {len(st.session_state.get('obstacles',[]))}",show=True)
+    for item in st.session_state.get("obstacles",[]):
+        folium.Polygon(obstacle_polygon(item,configured.lat,configured.lon),
+                       color="#e87848",weight=2,fill=True,fill_opacity=.32,
+                       tooltip=f"{item.get('name','Překážka')} · {item['height_m']:g} m AGL"
+                       ).add_to(obstacle_layer)
+    obstacle_layer.add_to(m)
+    if st.session_state.get("ws_show_wind",False):
+        try:
+            wind=load_wind_turbines(round(configured.lat,6),round(configured.lon,6))
+            add_wind_layer(m,wind,cluster_points=False)
+        except Exception:pass
+    if st.session_state.get("ws_live_adsb",False):
+        records=st.session_state.get("ws_traffic_snapshot",[])
+        site=st.session_state.get("ws_traffic_site")
+        if site==(round(configured.lat,5),round(configured.lon,5)):
+            add_traffic_layer(m,records)
+    tool=st.session_state.get("ws_map_tool","Prohlížení")
+    if tool=="Polygon":
+        Draw(export=False,
+             draw_options={"polyline":False,"rectangle":False,"circle":False,
+                           "circlemarker":False,"marker":False,
+                           "polygon":{"allowIntersection":False,"showArea":True}},
+             edit_options={"edit":False,"remove":False}).add_to(m)
     folium.LayerControl(collapsed=True).add_to(m)
     Fullscreen().add_to(m)
     MeasureControl(primary_length_unit="kilometers").add_to(m)
-    st_folium(m,height=730,use_container_width=True,
+    event=st_folium(m,height=730,use_container_width=True,
               key=f"ws_map_{st.session_state.get('ws_map_revision',0)}",
-              returned_objects=[])
+              returned_objects=["last_clicked","last_active_drawing","center","zoom"])
+    if event:
+        current=event.get("center")
+        current_zoom=event.get("zoom")
+        if isinstance(current,dict) and current_zoom is not None:
+            st.session_state["ws_viewport"]={
+                "lat":float(current["lat"]),"lng":float(current["lng"]),
+                "zoom":int(current_zoom)}
+        if tool=="Radar" and event.get("last_clicked"):
+            clicked=event["last_clicked"]
+            try:
+                lat,lon=coordinates_from_map_click(clicked)
+                old=(float(st.session_state.get("ws_lat",50.034)),
+                     float(st.session_state.get("ws_lon",15.781)))
+                if old!=(lat,lon):
+                    st.session_state["ws_lat"]=lat
+                    st.session_state["ws_lon"]=lon
+                    st.session_state["ws_map_tool"]="Prohlížení"
+                    st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
+                    st.rerun()
+            except (TypeError,ValueError,KeyError) as exc:
+                st.warning(f"Neplatné místo radaru: {exc}")
+        if tool=="Polygon":
+            drawing=event.get("last_active_drawing")
+            if drawing and drawing.get("geometry",{}).get("type")=="Polygon":
+                ring=drawing["geometry"]["coordinates"][0]
+                coords=[[float(pair[1]),float(pair[0])] for pair in ring[:-1]]
+                signature=tuple(tuple(pt) for pt in coords)
+                if len(coords)>=3 and signature!=st.session_state.get("ws_last_polygon"):
+                    st.session_state["ws_last_polygon"]=signature
+                    st.session_state["ws_pending_polygon"]=coords
+                    new_obstacle_dialog()
     st.session_state["ws_map_html"]=m.get_root().render().encode("utf-8")
-
 
 def render_workspace():
     st.markdown(STYLES,unsafe_allow_html=True)
