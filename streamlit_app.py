@@ -665,23 +665,6 @@ else:
         st.subheader('DATA / EXPORTY')
         all_levels = tuple(core.flight_levels_for(rc.radar_mode))
 
-        left_action, right_action, summary = st.columns([1, 1, 5], gap='small')
-        with left_action:
-            if st.button('Vybrat vše', key='zip_check_all', use_container_width=True):
-                st.session_state['zip_select_all'] = True
-                st.rerun()
-        with right_action:
-            if st.button('Zrušit výběr', key='zip_check_none', use_container_width=True):
-                st.session_state['zip_select_all'] = False
-                st.rerun()
-        # Update widget state before creating any checkbox.
-        if 'zip_select_all' in st.session_state:
-            desired = st.session_state.pop('zip_select_all')
-            for option in ('project', 'html', 'layers', 'terrain', 'antenna',
-                           'fl_png', 'png_dark', 'png_light', 'quickreport', *FORMATS):
-                st.session_state['zip_' + option] = desired
-            st.session_state['zip_selected_levels'] = list(all_levels) if desired else []
-
         # Three concise columns instead of vertically stacked export sections.
         project_col, images_col, data_col = st.columns(3, gap='medium')
         with project_col:
@@ -722,8 +705,7 @@ else:
         fingerprint = (tuple(sorted(selected.items())), tuple(selected_levels),
                        st.session_state.get('source_signature'), st.session_state.get('profile_index'),
                        repr(st.session_state.get('obstacles')))
-        with summary:
-            st.caption(f'Vybráno: {count} typů souborů · {len(selected_levels)} hladin · jeden ZIP')
+        st.caption(f'Vybráno: {count} typů souborů · {len(selected_levels)} hladin · jeden ZIP')
         if requires_fl and not selected_levels:
             st.warning('Vyber alespoň jednu letovou hladinu pro označené exporty.')
 
