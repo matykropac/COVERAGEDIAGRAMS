@@ -81,6 +81,7 @@ def fetch_osm(lat, lon, radius_km):
              f'way(around:{meters},{lat:.6f},{lon:.6f})["landuse"="forest"];'
              f'way(around:{meters},{lat:.6f},{lon:.6f})["natural"="wood"];'
              f'way(around:{meters},{lat:.6f},{lon:.6f})["man_made"~"^(tower|mast|chimney)$"];'
+             f'node(around:{meters},{lat:.6f},{lon:.6f})["man_made"~"^(tower|mast|chimney)$"];'
              ');out geom;')
     payload = urllib.parse.urlencode({"data": query}).encode()
     request = urllib.request.Request(
@@ -94,9 +95,21 @@ def fetch_osm(lat, lon, radius_km):
         tags = element.get("tags") or {}
         kind = _kind(tags)
         geometry = element.get("geometry") or []
-        if not kind or len(geometry) < 3:
+        if not kind:
             continue
-        coords = [[float(p["lat"]), float(p["lon"])] for p in geometry]
+        if element.get("type") == "node":
+            if kind != "Tower" or "lat" not in element or "lon" not in element:
+                continue
+            plat, plon = float(element["lat"]), float(element["lon"])
+            # A point tower needs a footprint for the existing radar model.
+            # 10 m visualization square; not surveyed tower dimensions.
+            lons, lats, _ = GEOD.fwd([plon]*4, [plat]*4,
+                                      [45, 135, 225, 315], [7.071]*4)
+            coords = [[float(y), float(x)] for x, y in zip(lons, lats)]
+        else:
+            if len(geometry) < 3:
+                continue
+            coords = [[float(p["lat"]), float(p["lon"])] for p in geometry]
         item = _feature(kind, coords[:-1] if coords[0] == coords[-1] else coords,
                         tags, element.get("id", "unknown"))
         if item:
@@ -134,10 +147,15 @@ def distance_azimuth(item, lat, lon):
     az, _, dist = GEOD.inv(lon, lat, clon, clat)
     return dist / 1000., az % 360
 
-def selected(items, lat, lon, kinds, min_height, max_distance, include_unknown):
+def selected(items, lat, lon, kinds, min_height, max_distance, include_unknown,
+             az_start=0., az_end=360., query=""):
     filtered = []
+    query = query.strip().casefold()
     for item in items:
-        if item["kind"] not in kinds:
+        if item["kind"] not in kinds or (query and query not in str(item.get("name", "")).casefold()):
+            continue
+        if not item.get("coordinates"):
+            continue
             continue
         h = item.get("height_m")
         if h is None:
@@ -146,9 +164,10 @@ def selected(items, lat, lon, kinds, min_height, max_distance, include_unknown):
         elif h < min_height:
             continue
         dist, az = distance_azimuth(item, lat, lon)
-        if dist <= max_distance:
+        in_sector = (az_start <= az <= az_end) if az_start <= az_end else (az >= az_start or az <= az_end)
+        if dist <= max_distance and in_sector:
             filtered.append({**item, "distance_km": round(dist, 2), "azimuth_deg": round(az, 1)})
-    return filtered
+    return sorted(filtered, key=lambda item: item["distance_km"])
 
 def layer_group(map_obj, items, name="Environmental objects", visible=True):
     group = folium.FeatureGroup(name=name, show=visible, overlay=True)
@@ -241,6 +260,8 @@ def controls(lat, lon, prefix):
     file = st.file_uploader("Import budov / lesů (GeoJSON)", type=["geojson", "json"], key=prefix+"_upload")
     if file is not None and st.button("Použít importovaná data", key=prefix+"_use_import"):
         try:
+            if file.size > 30_000_000:
+                raise ValueError("GeoJSON je větší než 30 MB. Rozděl ho na menší území.")
             st.session_state["environment_items"] = import_geojson(file.getvalue())
             st.session_state["environment_site"] = None
             st.success("GeoJSON byl načten.")
@@ -256,8 +277,13 @@ def controls(lat, lon, prefix):
     minimum = st.slider("Minimální známá výška [m]", 0, 200, 0, 5, key=prefix+"_min")
     distance = st.slider("Zobrazit do [km]", 1, 300, 30, 1, key=prefix+"_dist")
     include_unknown = st.checkbox("Zobrazit i neznámé výšky", True, key=prefix+"_unknown")
-    subset = selected(items, lat, lon, kinds, minimum, distance, include_unknown)
-    st.caption(f"Načteno {len(items)} · filtrem vybráno {len(subset)} · v mapě max. 3500 polygonů")
+    az_start, az_end = st.slider("Azimutální sektor [°] (0–360 = vše)",
+                                 0, 360, (0, 360), 5, key=prefix+"_az")
+    search_name = st.text_input("Hledat objekt podle názvu", "", key=prefix+"_search")
+    subset = selected(items, lat, lon, kinds, minimum, distance, include_unknown,
+                      az_start, az_end, search_name)
+    st.caption(f"Načteno {len(items)} · filtrem vybráno {len(subset)} · "
+               f"vykresleno {min(len(subset), 3500)} nejbližších objektů")
     st.caption("Výšky bez atributu OSM zůstávají neznámé; nevstupují automaticky do krytí.")
     return subset
 
