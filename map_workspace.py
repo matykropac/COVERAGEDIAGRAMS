@@ -30,6 +30,7 @@ from live_simulation import simulation_tab
 from project_file import save_project, load_project
 from ssr_custom import load_measured_ssr
 from wind_turbines import load_wind_turbines, add_wind_layer
+from geodata_obstacle_catalog import catalog_from_data, synchronize
 from selected_export import FORMATS, build_selected_zip
 
 STYLES = """
@@ -484,6 +485,26 @@ def layers_dialog():
                     st.session_state["ws_environment"]=loaded[:env.MAX_ENVIRONMENT_ITEMS]
                 st.session_state["ws_geodata_site"]=site
                 st.session_state["ws_geodata_errors"]=errors
+                # Loaded polygons and turbines become editable immediately.
+                # Keep prior catalog edits for matching items across repeated fetches.
+                previous={x["id"]:x for x in st.session_state.get("ws_imported_catalog",[])}
+                new_catalog=catalog_from_data(
+                    st.session_state.get("ws_environment",[]),
+                    st.session_state.get("ws_wind_data",[]))
+                for item in new_catalog:
+                    old=previous.get(item["id"])
+                    if old:
+                        item.update(name=old["name"],height_m=old["height_m"],
+                                    enabled=old["enabled"])
+                current_manual=st.session_state.setdefault("obstacles",[])
+                # The first load enables known-height items automatically;
+                # reloading preserves existing choices instead.
+                first_load=not bool(previous)
+                actual,invalid=synchronize(current_manual,new_catalog,*site,
+                                           auto_enable=first_load)
+                st.session_state["ws_imported_catalog"]=new_catalog
+                st.session_state["obstacles"]=actual
+                st.session_state["ws_obstacle_revision"]=st.session_state.get("ws_obstacle_revision",0)+1
                 total=sum(v for v in completed.values() if v is not None)
                 elapsed=time.perf_counter()-started
                 if errors:
@@ -494,8 +515,9 @@ def layers_dialog():
                     progress.update(
                         label=f"✅ Hotovo · {total:,} objektů · {elapsed:.1f} s",
                         state="complete",expanded=False)
-            st.caption("Záznam postupu je dostupný rozbalením stavového okénka. "
-                       "Načtené objekty se zobrazí na hlavní mapě.")
+            st.caption("Načtené polygony jsou automaticky přidané do PŘEKÁŽKY → Upravit / odstranit. "
+                       "Objekty se známou výškou lze zahrnout do výpočtu (max. 1000); "
+                       "neznámé výšky zůstávají k doplnění.")
 
     if st.session_state.get("ws_geodata_site")!=site:
         if st.session_state.get("ws_geodata_site"):
@@ -544,7 +566,8 @@ def layers_dialog():
         st.download_button("STÁHNOUT NAČTENÁ GEODATA · ZIP",
                            data=buffer.getvalue(),file_name="COVERAGEDIAGRAMS_geodata.zip",
                            mime="application/zip",use_container_width=True,key="ws_geodata_download")
-    st.caption("Informativní mapové vrstvy se automaticky nestávají výpočetními překážkami.")
+    st.caption("Objekty se známou výškou a validním polygonem se zařadí do výpočtu automaticky "
+               "do limitu 1000; ostatní zůstávají editovatelné, ale zatím pouze informativní.")
 
 
 @st.dialog("DATA / EXPORT",width="large")
