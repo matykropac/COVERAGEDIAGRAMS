@@ -656,7 +656,8 @@ else:
             with st.spinner("Balení mapy a filtrovaných vrstev…"):
                 archive = env.export_bundle(filtered_env,
                             st.session_state.get("environment_map_html"),
-                            coverage_layers=exported_levels, canopy_overlay=analysis_canopy)
+                            coverage_layers=exported_levels, canopy_overlay=analysis_canopy,
+                            airports=analysis_airports)
                 st.session_state["environment_bundle_ready"] = (map_bundle_signature, archive)
         ready_bundle = st.session_state.get("environment_bundle_ready")
         if ready_bundle and ready_bundle[0] == map_bundle_signature:
