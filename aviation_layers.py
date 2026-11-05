@@ -30,16 +30,22 @@ def _all_airports():
             lat, lon = float(coordinate[0]), float(coordinate[1])
         except (ValueError, IndexError):
             continue
-        output.append({"lat": lat, "lon": lon, "icao": row.get("ident", ""),
+        if not -90 <= lat <= 90 or not -180 <= lon <= 180:
+            continue
+        output.append({"lat": lat, "lon": lon,
+                       "icao": row.get("icao_code") or row.get("ident", ""),
                        "name": row.get("name", ""), "type": row.get("type", ""),
                        "elevation_ft": row.get("elevation_ft", "")})
     return output
 
 def nearby(lat, lon, radius_km=120, types=None):
-    types = types or ["large_airport", "medium_airport", "small_airport", "heliport"]
+    if types is None:
+        types = ["large_airport", "medium_airport", "small_airport", "heliport"]
+    if not types:
+        return []
     selected = []
     for point in _all_airports():
-        if point["type"] not in types or abs(point["lat"]-lat) > radius_km/95:
+        if point["type"] not in types or abs(point["lat"]-lat) > radius_km/110:
             continue
         _, _, d = _GEOD.inv(lon, lat, point["lon"], point["lat"])
         if d <= radius_km*1000:
