@@ -442,7 +442,8 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
             for theme in ('dark', 'light'):
                 suffix = '' if theme == 'dark' else '_LIGHT'
                 core.export_map_image(png, result, 'Terén', dpi=600,
-                                      alpha=1.0, english=True, theme=theme)
+                                      alpha=1.0, english=True, theme=theme,
+                                      environment_items=environment_items)
                 archive.write(png, manifest['terrain'] if theme == 'dark'
                               else '01_Terrain/terrain_LIGHT_600dpi.png')
 
@@ -462,7 +463,8 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                 for level in requested:
                     core.export_map_image(png, result, 'Vybrané výšky',
                                           levels_ft=(level,), alpha=0.74,
-                                          dpi=600, english=True, theme=theme)
+                                          dpi=600, english=True, theme=theme,
+                                           environment_items=environment_items)
                     archive.write(png, f'03_Flight_Levels/{int(level):05d}ft_AMSL{suffix}_600dpi.png')
 
             # Download Esri once, then reuse for dark and light report variants.
@@ -473,7 +475,8 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                     suffix = '' if theme == 'dark' else '_LIGHT'
                     core.export_map_image(png, result, 'Vybrané výšky',
                                           basemap=esri, levels_ft=(level,),
-                                          alpha=0.52, dpi=600, english=True, theme=theme)
+                                          alpha=0.52, dpi=600, english=True, theme=theme,
+                                           environment_items=environment_items)
                     archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI{suffix}_600dpi.png")
 
             # Include toggleable polygons for the same altitude slices as the PNG report.
@@ -533,7 +536,8 @@ def export_bytes(kind, result, levels, index, dpi, alpha, level_alphas=None, env
             path, mime = root / f"coverage_{dpi}dpi{'_LIGHT' if light else ''}.png", 'image/png'
             core.export_map_image(path, result, 'Vybrané výšky' if levels else 'Krytí cíle',
                                   levels_ft=levels, alpha=alpha, dpi=dpi, level_alphas=level_alphas,
-                                  theme='light' if light else 'dark')
+                                  theme='light' if light else 'dark',
+                                  environment_items=environment_items)
         else:
             raise ValueError('Neznámý formát exportu.')
         return path.read_bytes(), path.name, mime
