@@ -467,17 +467,25 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                                            environment_items=environment_items)
                     archive.write(png, f'03_Flight_Levels/{int(level):05d}ft_AMSL{suffix}_600dpi.png')
 
-            # Download Esri once, then reuse for dark and light report variants.
-            esri = core.load_basemap(c, provider=manifest['esri_provider'],
-                                     out_size=(1600, 1600))
-            for level in requested:
-                for theme in ('dark', 'light'):
-                    suffix = '' if theme == 'dark' else '_LIGHT'
-                    core.export_map_image(png, result, 'Vybrané výšky',
-                                          basemap=esri, levels_ft=(level,),
-                                          alpha=0.52, dpi=600, english=True, theme=theme,
-                                           environment_items=environment_items)
-                    archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI{suffix}_600dpi.png")
+            # Optional third-party imagery: never let a tile outage invalidate
+            # the core engineering report.
+            try:
+                esri = core.load_basemap(c, provider=manifest['esri_provider'],
+                                         out_size=(1600, 1600))
+            except Exception as exc:
+                esri = None
+                archive.writestr('05_ESRI_Maps/UNAVAILABLE.txt',
+                                 'Map tile provider unavailable; engineering sections remain valid.\\n'
+                                 + type(exc).__name__ + ': ' + str(exc)[:300])
+            if esri is not None:
+                for level in requested:
+                    for theme in ('dark', 'light'):
+                        suffix = '' if theme == 'dark' else '_LIGHT'
+                        core.export_map_image(png, result, 'Vybrané výšky',
+                                              basemap=esri, levels_ft=(level,),
+                                              alpha=0.52, dpi=600, english=True, theme=theme,
+                                              environment_items=environment_items)
+                        archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI{suffix}_600dpi.png")
 
             # Include toggleable polygons for the same altitude slices as the PNG report.
             archive.writestr(manifest['coverage_kml'], export_kml(result, requested, environment_items))
