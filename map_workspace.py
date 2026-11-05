@@ -811,6 +811,26 @@ def exports_dialog():
                           default=[x for x in st.session_state.get("ws_levels",[]) if x in opts],
                           format_func=core.level_label,key="ws_zip_levels")
     selected={key:bool(st.session_state.get("ws_zip_"+key)) for key in names}
+    st.markdown("#### CUSTOMER DELIVERY · LIGHT EDITION")
+    st.caption("Profesionální světlé podklady pro zákazníka. Původní ZIP preset výše zůstává beze změny.")
+    customer_name=st.text_input(
+        "Název projektu / zákazníka",value="Radar Coverage Study",
+        key="ws_customer_title")
+    customer_options=st.columns(2,gap="small")
+    with customer_options[0]:
+        st.checkbox("PDF + Coverage Scorecard + metadata",value=True,
+                    key="ws_zip_customer_pack")
+        st.checkbox("Mapový atlas PNG · 300 DPI · LIGHT",value=False,
+                    key="ws_zip_customer_maps")
+    with customer_options[1]:
+        st.checkbox("Terénní mapa · 300 DPI · LIGHT",value=False,
+                    key="ws_zip_customer_terrain")
+        st.checkbox("Anténní diagram · 300 DPI · LIGHT",value=False,
+                    key="ws_zip_customer_antenna")
+    selected.update({
+        key:bool(st.session_state.get("ws_zip_"+key))
+        for key in ("customer_pack","customer_maps","customer_terrain","customer_antenna")
+    })
     if st.button("PŘIPRAVIT ZIP",type="primary",use_container_width=True,key="ws_export_build"):
         try:
             with st.spinner("Připravuji export…"):
@@ -824,7 +844,8 @@ def exports_dialog():
                     index=st.session_state.get("ws_profile_index",0),
                     alpha=st.session_state.get("ws_map_opacity",.42),
                     level_alphas={x:st.session_state.get("ws_map_opacity",.42) for x in chosen},
-                    environment_items=[],project_bytes=proj,map_html=html)
+                    environment_items=[],project_bytes=proj,map_html=html,
+                    customer_name=customer_name.strip() or "Radar Coverage Study")
                 st.session_state["ws_zip_ready"]=blob
         except Exception as exc:st.error(f"Export selhal: {exc}")
     if st.session_state.get("ws_zip_ready"):
