@@ -256,6 +256,19 @@ def controls(lat, lon, prefix):
             st.success(f'Načteno {len(st.session_state["environment_items"])} polygonů')
         except Exception as exc:
             st.warning("OSM nyní nelze načíst: " + str(exc)[:180])
+    if st.button("Načíst Microsoft Building Footprints (lokálně, beta)",
+                 key=prefix+"_microsoft", use_container_width=True,
+                 help="Otevřená databáze Microsoft 2026. Max. 3 zdrojové dlaždice a 12 000 budov; "
+                      "ve velkých městech může služba vrátit limit nebo chybu."):
+        try:
+            from microsoft_buildings import fetch_microsoft
+            with st.spinner("Čtu geografický index a nejbližší dlaždice Microsoft…"):
+                data = fetch_microsoft(round(lat, 5), round(lon, 5), radius)
+            st.session_state["environment_items"] = data
+            st.session_state["environment_site"] = (round(lat, 5), round(lon, 5))
+            st.success(f"Microsoft: {len(data)} polygonů poblíž radaru")
+        except Exception as exc:
+            st.warning(f"Microsoft data se nepodařilo načíst: {str(exc)[:200]}")
     file = st.file_uploader("Import budov / lesů (GeoJSON)", type=["geojson", "json"], key=prefix+"_upload")
     if file is not None and st.button("Použít importovaná data", key=prefix+"_use_import"):
         try:
