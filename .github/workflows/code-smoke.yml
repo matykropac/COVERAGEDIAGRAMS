@@ -21,6 +21,7 @@ jobs:
           python - <<'PY'
           import environment_layers as env
           import aviation_layers
+          import canopy_layers
           import traffic_history
           assert env.numeric_height("100 ft") is not None
           assert env.numeric_height("unknown") is None
@@ -29,5 +30,6 @@ jobs:
           assert b"<" in env.kml_bytes([])
           assert len(env.legend_png([])) > 1000
           assert len(env.export_bundle([])) > 500
+          assert len(env.export_bundle([], coverage_layers=[("1000 ft AMSL", "#22d3c5")])) > 500
           print("Smoke OK")
           PY
