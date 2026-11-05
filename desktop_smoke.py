@@ -5,6 +5,9 @@ Native GUI automation is intentionally not attempted in GitHub Actions.
 """
 from __future__ import annotations
 import argparse
+import os
+from pathlib import Path
+import sys
 import socket
 import subprocess
 import time
@@ -42,12 +45,29 @@ def main() -> None:
             time.sleep(.5)
         raise RuntimeError("Packaged Streamlit server failed health check within timeout")
     finally:
-        process.terminate()
+        if process.poll() is None:
+            process.terminate()
         try:
             process.wait(timeout=8)
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=8)
+        # Show stderr/console output on CI so packaged startup problems are actionable.
+        if process.stdout:
+            output = process.stdout.read()
+            if output:
+                print("PACKAGED EXECUTABLE OUTPUT:\\n" +
+                      output.decode("utf-8", errors="replace")[-10000:], flush=True)
+        if sys.platform == "win32":
+            app_dir = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "COVERAGEDIAGRAMS"
+        elif sys.platform == "darwin":
+            app_dir = Path.home() / "Library" / "Application Support" / "COVERAGEDIAGRAMS"
+        else:
+            app_dir = Path.home() / ".local" / "share" / "COVERAGEDIAGRAMS"
+        logfile = app_dir / "desktop-startup.log"
+        if logfile.exists():
+            print("DESKTOP STARTUP LOG:\\n" + logfile.read_text(
+                encoding="utf-8", errors="replace")[-18000:], flush=True)
 
 
 if __name__ == "__main__":
