@@ -63,18 +63,18 @@ def build_selected_zip(result, *, selected, flight_levels, index, alpha,
                 if selected.get("terrain"):
                     core.export_map_image(
                         image_path, result, "Terén", dpi=600,
-                        alpha=1.0, english=True, theme="dark",
+                        alpha=1.0, english=True, theme="light",
                         environment_items=environment_items)
                     archive.write(image_path, "03_Images/terrain_600dpi.png")
 
                 if selected.get("antenna"):
-                    fig = Figure(figsize=(13, 9), dpi=600, facecolor=core.PLOT_BG)
+                    fig = Figure(figsize=(13, 9), dpi=600, facecolor="white")
                     FigureCanvasAgg(fig)
                     try:
                         core.technical_plot(fig, result=result, english=True)
                         fig.text(.07, .975, "ELDIS · ANTENNA DIAGRAM",
-                                 color=core.UI_TEXT, fontsize=18, weight="bold", va="top")
-                        core.style_export_theme(fig, "dark")
+                                 color="#17324c", fontsize=18, weight="bold", va="top")
+                        core.style_export_theme(fig, "light")
                         fig.savefig(image_path, dpi=600, format="png",
                                     facecolor=fig.get_facecolor())
                     finally:
@@ -86,7 +86,7 @@ def build_selected_zip(result, *, selected, flight_levels, index, alpha,
                         core.export_map_image(
                             image_path, result, "Vybrané výšky",
                             levels_ft=(level,), alpha=0.74, dpi=600,
-                            english=True, theme="dark",
+                            english=True, theme="light",
                             environment_items=environment_items)
                         archive.write(
                             image_path, f"03_Images/Flight_Levels/{int(level):05d}ft_AMSL_600dpi.png")
