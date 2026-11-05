@@ -547,26 +547,6 @@ def layers_dialog():
     st.caption("Informativní mapové vrstvy se automaticky nestávají výpočetními překážkami.")
 
 
-@st.dialog("ANALÝZA / Radarový profil",width="large")
-def analysis_dialog():
-    result=st.session_state.get("result")
-    if result is None:
-        st.info("Nejdřív vypočítej krytí.")
-        return
-    from matplotlib.figure import Figure
-    az=result["az"]
-    idx=st.select_slider("Azimut [°]",options=list(range(len(az))),
-                         format_func=lambda i:f"{az[i]%360:.2f}°",
-                         key="ws_profile_index")
-    fig=Figure(figsize=(11,5),facecolor=core.PLOT_BG)
-    try:
-        core.profile_plot(fig,result=result,index=idx,
-                          levels_ft=st.session_state.get("ws_levels",[]))
-        st.pyplot(fig,use_container_width=True)
-    finally:
-        fig.clear()
-
-
 @st.dialog("DATA / EXPORT",width="large")
 def exports_dialog():
     result=st.session_state.get("result")
@@ -601,7 +581,28 @@ def exports_dialog():
                 blob=build_selected_zip(
                     result, selected=selected, flight_levels=chosen,
                     index=st.session_state.get("ws_profile_index",0),
-                    alpha=st.session_state.get("ws_map_opacity",.42),
+                    profile=None
+    if result is not None:
+        # Compact browser-side DEM profile. Values are sampled from the exact
+        # matrices used by the coverage solver, not synthetic terrain.
+        arr=np.asarray(result["terrain"],dtype=float)
+        lower=np.asarray(result["lower"],dtype=float)
+        az=np.asarray(result["az"],dtype=float)
+        dist=np.asarray(result["distance"],dtype=float)/1000.
+        stride=max(1,int(np.ceil(len(dist)/280)))
+        az_stride=max(1,int(np.ceil(len(az)/720)))
+        def finite_values(a):
+            return np.where(np.isfinite(a),np.round(a,1),None).tolist()
+        profile={
+            "site":[float(result["config"].lat),float(result["config"].lon)],
+            "az":np.round(az[::az_stride],3).tolist(),
+            "distance":np.round(dist[::stride],4).tolist(),
+            "terrain":finite_values(arr[::az_stride,::stride]),
+            "lower":finite_values(lower[::az_stride,::stride]),
+            "maxRangeKm":float(result["config"].range_km),
+            "version":str(result.get("completed_at","")),
+        }
+    alpha=st.session_state.get("ws_map_opacity",.42),
                     level_alphas={x:st.session_state.get("ws_map_opacity",.42) for x in chosen},
                     environment_items=[],project_bytes=proj,map_html=html)
                 st.session_state["ws_zip_ready"]=blob
@@ -828,6 +829,7 @@ def _draw_map():
         "obstaclesVersion":signature(obstacle_data),
         "environment":environment_data,
         "environmentVersion":signature(environment_data),
+        "profile":profile,
     }
     action=show_persistent_map(payload)
     if isinstance(action,dict):
@@ -1018,9 +1020,6 @@ def render_workspace():
                     st.session_state.get("obstacles",[])) or config!=result["config"])
                 st.caption("Výsledek je potřeba přepočítat." if stale
                            else "Výpočet je aktuální.")
-            if st.button("⌁ Analýza profilu",key="ws_command_analysis",
-                         use_container_width=True):
-                analysis_dialog()
             st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
             if st.button("⇩ Export ZIP",key="ws_command_export",use_container_width=True):
                 exports_dialog()
