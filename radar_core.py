@@ -1251,6 +1251,32 @@ for _label, (_service, _zoom) in _ESRI_RASTER.items():
     }
 
 
+# Additional raster services; loaded only as interactive tiles when selected.
+# Source/licensing: Esri and its data providers.
+BASEMAP_PROVIDERS['Esri · Shaded Relief'] = {
+    'cache': 'esri_shaded_relief',
+    'url': 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}',
+    'max_zoom': 13,
+    'attribution': 'Shaded relief © Esri and its data providers',
+}
+BASEMAP_PROVIDERS['Esri · Hillshade'] = {
+    'cache': 'esri_hillshade',
+    'url': 'https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
+    'max_zoom': 16,
+    'attribution': 'Hillshade © Esri, Vantor, Airbus, USGS, NASA and data providers',
+}
+BASEMAP_PROVIDERS['Esri · Physical (legacy)'] = {
+    'cache': 'esri_physical',
+    'url': 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Physical_Map/MapServer/tile/{z}/{y}/{x}',
+    'max_zoom': 8,
+    'attribution': 'Physical map © Esri and its data providers',
+}
+BASEMAP_PROVIDERS['Esri · Terrain (legacy)'] = {
+    'cache': 'esri_terrain_base',
+    'url': 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
+    'max_zoom': 13,
+    'attribution': 'Terrain © Esri and its data providers',
+}
 BASEMAP_OPTIONS = (*BASEMAP_PROVIDERS, 'Bez podkladu')
 
 
