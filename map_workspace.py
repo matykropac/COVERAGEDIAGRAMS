@@ -229,8 +229,8 @@ def _calculate_coverage():
             samples=len(az)*len(distance)
             log(f"Radar: {c.radar_mode} · {c.lat:.6f}°, {c.lon:.6f}°")
             log(f"Výpočetní síť: {len(az)} azimutů × {len(distance)} vzdáleností = {samples:,} vzorků")
-            if samples>250000:
-                raise ValueError("Výpočet přesahuje 250 000 vzorků. Zvětši krok.")
+            if samples>750000:
+                raise ValueError("Výpočet přesahuje 750 000 vzorků. Zvětši radiální nebo azimutální krok.")
 
             source=st.session_state.get("ws_source","OpenTopography")
             if source=="DEM soubor":
