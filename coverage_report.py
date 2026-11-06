@@ -65,7 +65,7 @@ class CoverageReportOptions:
     project_name: str = "Radar Coverage Study"
     flight_levels_ft: Sequence[int] = ()
     basemap: str = "Satelitní · Esri"
-    dpi: int = 300
+    dpi: int = 600
 
 
 def _page(c, title, project, page_number):
@@ -168,13 +168,13 @@ def _image_page(c, title, project, page_number, image, caption):
     # Compress embedded map image to print-resolution JPEG to avoid huge PDFs.
     with Image.open(image) as source:
         reduced = source.convert("RGB")
-        reduced.thumbnail((3000, 2100), Image.Resampling.LANCZOS)
+        reduced.thumbnail((6600, 4600), Image.Resampling.LANCZOS)
         encoded = BytesIO()
-        reduced.save(encoded, format="JPEG", quality=88, optimize=True)
+        reduced.save(encoded, format="JPEG", quality=95, optimize=True, subsampling=0)
         encoded.seek(0)
     reader = ImageReader(encoded)
     width, height = reader.getSize()
-    box = (MARGIN, 68, PAGE_W - 2 * MARGIN, PAGE_H - 157)
+    box = (MARGIN - 8, 62, PAGE_W - 2 * MARGIN + 16, PAGE_H - 145)
     x, y, w, h = box
     scale = min(w / width, h / height)
     render_w, render_h = width * scale, height * scale
@@ -223,7 +223,7 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
             core.export_map_image(png, result, "Vybrané výšky",
                                   basemap=basemap, levels_ft=(level,),
                                   alpha=0.43, dpi=options.dpi,
-                                  english=True, theme="light")
+                                  english=True, theme="light", report_layout=True)
             coverage = item["coverage_pct_of_known_area"]
             caption = (f"Altitude: {level:,} ft AMSL  |  Area-weighted coverage: "
                        + ("N/A" if coverage is None else f"{coverage:.2f}%")
