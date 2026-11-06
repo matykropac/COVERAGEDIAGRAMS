@@ -165,7 +165,16 @@ def _summary_page(c, result, metrics, project):
 
 def _image_page(c, title, project, page_number, image, caption):
     _page(c, title, project, page_number)
-    # Compress embedded map image to print-resolution JPEG to avoid huge PDFs.\n    with Image.open(image) as source:\n        reduced = source.convert("RGB")\n        reduced.thumbnail((3000, 2100), Image.Resampling.LANCZOS)\n        encoded = BytesIO()\n        reduced.save(encoded, format="JPEG", quality=88, optimize=True)\n        encoded.seek(0)\n    reader = ImageReader(encoded)\n    width, height = reader.getSize()\n    box = (MARGIN, 68, PAGE_W - 2 * MARGIN, PAGE_H - 157)
+    # Compress embedded map image to print-resolution JPEG to avoid huge PDFs.
+    with Image.open(image) as source:
+        reduced = source.convert("RGB")
+        reduced.thumbnail((3000, 2100), Image.Resampling.LANCZOS)
+        encoded = BytesIO()
+        reduced.save(encoded, format="JPEG", quality=88, optimize=True)
+        encoded.seek(0)
+    reader = ImageReader(encoded)
+    width, height = reader.getSize()
+    box = (MARGIN, 68, PAGE_W - 2 * MARGIN, PAGE_H - 157)
     x, y, w, h = box
     scale = min(w / width, h / height)
     render_w, render_h = width * scale, height * scale
