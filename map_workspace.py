@@ -853,6 +853,43 @@ def exports_dialog():
                            file_name="COVERAGEDIAGRAMS_export.zip",mime="application/zip",
                            use_container_width=True)
 
+    # Independent English customer PDF atlas, not part of the ZIP preset.
+    st.divider()
+    st.markdown("#### COVERAGE REPORT · PDF")
+    st.caption("Standalone English report: introduction, descending FL coverage chart, "
+               "terrain model and one Esri-backed diagram per flight level.")
+    report_name=st.text_input("Report / project title",
+                              value=customer_name.strip() or "Radar Coverage Study",
+                              key="ws_report_title")
+    report_levels=st.multiselect(
+        "Report flight altitudes [ft AMSL]",opts,
+        default=[x for x in st.session_state.get("ws_levels",[]) if x in opts],
+        format_func=core.level_label,key="ws_report_levels")
+    report_basemap=st.selectbox("Report basemap",
+        ("Satelitní · Esri","Esri · Topographic (legacy)"),key="ws_report_basemap")
+    if st.button("GENERATE COVERAGE REPORT · PDF",type="primary",
+                 use_container_width=True,key="ws_report_generate"):
+        try:
+            from coverage_report import CoverageReportOptions, generate_coverage_report_pdf
+            report_options=CoverageReportOptions(
+                project_name=report_name,
+                flight_levels_ft=report_levels,
+                basemap=report_basemap,
+                dpi=300)
+            with st.spinner("Generating report with Esri basemap..."):
+                st.session_state["ws_report_pdf"]=generate_coverage_report_pdf(
+                    result,report_options)
+                st.session_state["ws_report_filename"]="Coverage_Report.pdf"
+        except Exception as exc:
+            st.session_state.pop("ws_report_pdf",None)
+            st.error(f"Coverage report generation failed: {exc}")
+    if st.session_state.get("ws_report_pdf"):
+        st.download_button("DOWNLOAD COVERAGE REPORT · PDF",
+            data=st.session_state["ws_report_pdf"],
+            file_name=st.session_state.get("ws_report_filename","Coverage_Report.pdf"),
+            mime="application/pdf",use_container_width=True,
+            key="ws_report_download")
+
 
 def _draw_map_folium():
     result=st.session_state.get("result")
