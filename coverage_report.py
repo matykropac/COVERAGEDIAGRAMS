@@ -14,6 +14,7 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.utils import ImageReader
+from PIL import Image
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import Paragraph
@@ -164,12 +165,11 @@ def _summary_page(c, result, metrics, project):
 
 def _image_page(c, title, project, page_number, image, caption):
     _page(c, title, project, page_number)
-    width, height = ImageReader(image).getSize()
-    box = (MARGIN, 68, PAGE_W - 2 * MARGIN, PAGE_H - 157)
+    # Compress embedded map image to print-resolution JPEG to avoid huge PDFs.\n    with Image.open(image) as source:\n        reduced = source.convert("RGB")\n        reduced.thumbnail((3000, 2100), Image.Resampling.LANCZOS)\n        encoded = BytesIO()\n        reduced.save(encoded, format="JPEG", quality=88, optimize=True)\n        encoded.seek(0)\n    reader = ImageReader(encoded)\n    width, height = reader.getSize()\n    box = (MARGIN, 68, PAGE_W - 2 * MARGIN, PAGE_H - 157)
     x, y, w, h = box
     scale = min(w / width, h / height)
     render_w, render_h = width * scale, height * scale
-    c.drawImage(ImageReader(image), x + (w - render_w) / 2, y + (h - render_h) / 2,
+    c.drawImage(reader, x + (w - render_w) / 2, y + (h - render_h) / 2,
                 width=render_w, height=render_h, mask="auto")
     c.setFillColor(MUTED)
     c.setFont("Helvetica", 8)
@@ -193,7 +193,7 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
     # Fetch/reproject once: all maps share precisely the same AEQD geometry.
     basemap = core.load_basemap(result["config"], out_size=(1300, 1300),
                                 provider=options.basemap)
-    if not basemap or not basemap.get("image", None) is not None:
+    if basemap is None or basemap.get("image") is None:
         raise ValueError("Esri basemap is unavailable. Report not generated.")
     buffer = BytesIO()
     pdf = Canvas(buffer, pagesize=(PAGE_W, PAGE_H), pageCompression=1)
