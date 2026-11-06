@@ -342,11 +342,36 @@ function updateOpenAip(s,data) {
   const sig=JSON.stringify(option);
   if(s.last.openaip===sig)return;
   s.last.openaip=sig;
+  const oldWarning=s.root.querySelector("#cd-openaip-warning");
+  if(oldWarning)oldWarning.remove();
   if(s.openaipLayer){s.map.removeLayer(s.openaipLayer);s.openaipLayer=null;}
   if(option.enabled&&option.url){
     s.openaipLayer=L.tileLayer(option.url,{maxZoom:18,className:"cd-aip-tile",
       attribution:"Aeronautical data © <a target='_blank' href='https://www.openaip.net/'>OpenAIP</a>",
       opacity:.88});
+    // OpenAIP failures were previously silent: a checked overlay could be blank.
+    // Keep diagnostics separate from ADS-B status and never expose the API key.
+    let errors=0,loaded=0;
+    const warn=(message)=>{
+      let banner=s.root.querySelector("#cd-openaip-warning");
+      if(!banner){
+        banner=document.createElement("div");
+        banner.id="cd-openaip-warning";
+        banner.setAttribute("role","alert");
+        banner.style.cssText="position:absolute;top:80px;left:50%;transform:translateX(-50%);z-index:1000;max-width:min(620px,85%);padding:9px 14px;border-radius:6px;background:#fff4e6;border:1px solid #e3a24d;color:#673c0e;font:13px system-ui;box-shadow:0 2px 10px #0002;";
+        s.node.appendChild(banner);
+      }
+      banner.textContent=message;
+    };
+    s.openaipLayer.on("tileerror",()=>{
+      errors++;
+      if(errors>=2 && loaded===0)warn("OpenAIP: mapové dlaždice se nenačítají. Zkontroluj Network → openaip → Status/Response. HTTP 401 znamená odmítnutý API klíč; ověř nebo vyměň klíč v OpenAIP a Streamlit Secrets.");
+    });
+    s.openaipLayer.on("tileload",()=>{
+      loaded++;
+      const banner=s.root.querySelector("#cd-openaip-warning");
+      if(banner)banner.remove();
+    });
     s.openaipLayer.addTo(s.map);
   }
   refreshControl(s);
