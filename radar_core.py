@@ -1672,7 +1672,7 @@ def style_export_theme(fig, theme='dark'):
 
 def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                      level_alphas=None, limits=None, dpi=300, english=False, theme='dark',
-                     environment_items=None):
+                     environment_items=None, report_layout=False):
     """Render a fresh print-size figure, not a screen capture."""
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.lines import Line2D
@@ -1737,7 +1737,12 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                     item.set_path_effects([pe.withStroke(linewidth=3, foreground='#ffffff')])
         if ax.get_legend() is not None:
             ax.get_legend().remove()
-        fig.subplots_adjust(left=0.075, right=0.75, bottom=0.25, top=0.90)
+        if report_layout:
+            # The square map dominates the right side; left column is technical data.
+            # Axis position is expressed in figure fractions and respects equal aspect.
+            ax.set_position((0.345, 0.155, 0.60, 0.775))
+        else:
+            fig.subplots_adjust(left=0.075, right=0.75, bottom=0.25, top=0.90)
         handles = []
         if mode == 'Vybrané výšky':
             handles = [Line2D([], [], color=level_color(ft), lw=3, label=level_label(ft)) for ft in levels_ft]
@@ -1751,8 +1756,16 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                 handles.append(Patch(facecolor=color, edgecolor=color,
                                      label=labels[typ]))
         if handles:
-            legend = fig.legend(handles=handles, loc='upper left',
-                                bbox_to_anchor=(0.77, 0.88), fontsize=9, title='Legend' if english else 'Legenda')
+            if report_layout:
+                # Legend in the lower-left margin, just below the map panel.
+                legend = fig.legend(handles=handles, loc='lower left',
+                                    bbox_to_anchor=(0.35, 0.045), fontsize=10,
+                                    frameon=False,
+                                    title='Legend' if english else 'Legenda')
+            else:
+                legend = fig.legend(handles=handles, loc='upper left',
+                                    bbox_to_anchor=(0.77, 0.88), fontsize=9,
+                                    title='Legend' if english else 'Legenda')
             style_legend(legend)
             legend.get_title().set_color(UI_TEXT)
         c = result['config']
@@ -1768,14 +1781,29 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
             + (f'Geometric model · AMSL altitude slices · {dpi} DPI · 330 × 229 mm'
                if english else f'Geometrický model · výškové řezy AMSL · {dpi} DPI · 330 × 229 mm')
         )
-        fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)
+        if report_layout:
+            # Deliberately short lines fit the narrow metadata column.
+            details = (
+                f'SITE / RADAR\n{c.lat:.6f}°, {c.lon:.6f}°\n\n'
+                f'ANTENNA\n{c.antenna_agl:g} m AGL · tilt {c.antenna_tilt_deg:g}°\n\n'
+                f'RANGE\n{c.range_km:g} km / {c.range_km / 1.852:.1f} NM\n\n'
+                f'MODEL\nk = {c.k:.3f}\n'
+                f'Elevation {c.min_elev:g}° to {c.max_elev:g}°\n'
+                f'Grid {c.step_m:g} m / {actual_azimuth_step(result):g}°'
+            )
+            fig.text(0.055, 0.70, details, color=UI_TEXT, fontsize=12,
+                     va='top', linespacing=1.5)
+        else:
+            fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)
         if environment_items:
             fig.text(0.77, 0.24,
                      f'Objects displayed: {min(len(environment_items), 6000)} / {len(environment_items)}'
                      + '\\nInformational OSM/Microsoft/import layers'
                      + '\\nNot certified survey data',
                      color=UI_TEXT, fontsize=8)
-        fig.text(0.075, 0.035, 'Terrain and basemap resolution reflect the original source data.' if english else 'Rozlišení terénu a mapového podkladu odpovídá zdrojovým datům.',
+        fig.text(0.055 if report_layout else 0.075,
+                 0.025 if report_layout else 0.035,
+                 'Terrain and basemap resolution reflect the original source data.' if english else 'Rozlišení terénu a mapového podkladu odpovídá zdrojovým datům.',
                  color=UI_MUTED, fontsize=8)
         style_export_theme(fig, theme)
         fig.savefig(path, dpi=dpi, format='png', facecolor=fig.get_facecolor())
