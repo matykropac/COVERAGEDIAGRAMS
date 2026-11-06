@@ -393,8 +393,8 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
             try:
                 c.validate()
                 az, distance = core.axes(c)
-                if len(az) * len(distance) > 250_000:
-                    raise ValueError('Webová verze: nejvýše 250 000 bodů. Zvětši krok pro plynulou mapu.')
+                if len(az) * len(distance) > 750_000:
+                    raise ValueError('Webová verze: nejvýše 750 000 bodů. Zvětši krok pro plynulou mapu.')
                 start = time.perf_counter()
                 def report(message, *args):
                     log(message)
