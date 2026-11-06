@@ -855,7 +855,7 @@ def exports_dialog():
 
     # Independent English customer PDF atlas, not part of the ZIP preset.
     st.divider()
-    st.markdown("#### COVERAGE REPORT · PDF")
+    st.markdown("#### COVERAGE REPORT · PDF · 600 DPI")
     st.caption("Standalone English report: introduction, descending FL coverage chart, "
                "terrain model and one Esri-backed diagram per flight level.")
     report_name=st.text_input("Report / project title",
@@ -875,11 +875,11 @@ def exports_dialog():
                 project_name=report_name,
                 flight_levels_ft=report_levels,
                 basemap=report_basemap,
-                dpi=300)
-            with st.spinner("Generating report with Esri basemap..."):
+                dpi=600)
+            with st.spinner("Generating high-resolution 600 DPI report with Esri basemap..."):
                 st.session_state["ws_report_pdf"]=generate_coverage_report_pdf(
                     result,report_options)
-                st.session_state["ws_report_filename"]="Coverage_Report.pdf"
+                st.session_state["ws_report_filename"]="Coverage_Report_600dpi.pdf"
         except Exception as exc:
             st.session_state.pop("ws_report_pdf",None)
             st.error(f"Coverage report generation failed: {exc}")
