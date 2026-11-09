@@ -8,6 +8,12 @@ on:
       - 'desktop_launcher.py'
       - 'desktop.spec'
       - 'desktop_smoke.py'
+      - 'coverage_report.py'
+      - 'radar_core.py'
+      - 'map_workspace.py'
+      - 'web_support.py'
+      - 'streamlit_app.py'
+      - 'requirements.txt'
       - 'requirements-desktop.txt'
       - '.github/workflows/desktop-build.yml'
     tags:
