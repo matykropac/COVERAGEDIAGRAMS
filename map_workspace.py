@@ -1046,8 +1046,9 @@ def _draw_map_folium():
         add_openaip_map(m)
     if result is not None and st.session_state.get("ws_show_coverage",True):
         mode=st.session_state.get("ws_display_mode","Jedna hladina")
-        levels=[x for x in st.session_state.get("ws_levels",[3000,10000])
-                if x in core.flight_levels_for(c.radar_mode)]
+        levels=(list(core.flight_levels_for(c.radar_mode)) if c.radar_mode=="PAR-NG" else
+                [x for x in st.session_state.get("ws_levels",[3000,10000])
+                 if x in core.flight_levels_for(c.radar_mode)])
         if mode=="Cíl":active=[None]
         elif mode=="Porovnání":active=st.session_state.get("ws_comparison",levels[:3])
         elif levels:active=[st.session_state.get("ws_map_level",levels[0])]
@@ -1055,7 +1056,9 @@ def _draw_map_folium():
         for level in active:
             if level is not None and level not in core.flight_levels_for(c.radar_mode):
                 continue
-            geo=coverage_geojson(result,level)
+            geo=coverage_geojson(result,level,
+                reference=st.session_state.get("ws_par_level_reference","AGL")
+                if c.radar_mode=="PAR-NG" else "AMSL")
             if geo.get("features"):
                 color="#247ad3" if level is None else to_hex(core.level_color(level))
                 layer=folium.FeatureGroup(name="Krytí cíle" if level is None else core.level_label(level))
@@ -1162,8 +1165,9 @@ def _draw_map():
     active=[]
     if result is not None and st.session_state.get("ws_show_coverage",True):
         mode=st.session_state.get("ws_display_mode","Jedna hladina")
-        available=[ft for ft in st.session_state.get("ws_levels",[3000,10000])
-                   if ft in core.flight_levels_for(c.radar_mode)]
+        available=(list(core.flight_levels_for(c.radar_mode)) if c.radar_mode=="PAR-NG" else
+                   [ft for ft in st.session_state.get("ws_levels",[3000,10000])
+                    if ft in core.flight_levels_for(c.radar_mode)])
         if not available:
             available=list(core.flight_levels_for(c.radar_mode))
         if mode=="Cíl":
@@ -1175,11 +1179,15 @@ def _draw_map():
             active=[wanted if wanted in available else available[0]]
 
     coverage=[]
+    reference=(st.session_state.get("ws_par_level_reference","AGL")
+               if c.radar_mode=="PAR-NG" else "AMSL")
     for level in active:
-        if level not in st.session_state.setdefault("geometry",{}):
-            st.session_state.geometry[level]=coverage_geojson(result,level)
+        cache_key=(level,reference)
+        if cache_key not in st.session_state.setdefault("geometry",{}):
+            st.session_state.geometry[cache_key]=coverage_geojson(
+                result,level,reference=reference)
         coverage.append({
-            "geojson":st.session_state.geometry[level],
+            "geojson":st.session_state.geometry[cache_key],
             "color":"#247ad3" if level is None else to_hex(core.level_color(level)),
         })
         previous=st.session_state.get("ws_previous_result")
@@ -1188,9 +1196,10 @@ def _draw_map():
                 # Read-only historic result: retain before/after visibility even
                 # when obstacles are removed or the current geometry is cached.
                 before_cache=st.session_state.setdefault("ws_before_geometry",{})
-                if level not in before_cache:
-                    before_cache[level]=coverage_geojson(previous,level)
-                coverage.append({"geojson":before_cache[level],"color":"#ed8a2e",
+                if cache_key not in before_cache:
+                    before_cache[cache_key]=coverage_geojson(
+                        previous,level,reference=reference)
+                coverage.append({"geojson":before_cache[cache_key],"color":"#ed8a2e",
                                  "previous":True})
 
     obstacle_data=[]
@@ -1285,7 +1294,7 @@ def _draw_map():
            if st.session_state.get("ws_show_runways",True) else [],
         "airportCode":st.session_state.get("ws_airport_code",""),
         "opacity":alpha,
-        "coverageVersion":signature([active,alpha,
+        "coverageVersion":signature([active,reference,alpha,
                                       result.get("completed_at") if result else None,
                                       st.session_state.get("ws_compare_previous",False),
                                       (st.session_state.get("ws_previous_result") or {}).get("completed_at")]),
@@ -1390,7 +1399,8 @@ def _step_flight_level(direction):
     if result is None:
         return
     allowed=tuple(core.flight_levels_for(result["config"].radar_mode))
-    levels=[int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed]
+    levels=(list(allowed) if result["config"].radar_mode=="PAR-NG" else
+            [int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed])
     if not levels:
         levels=list(allowed)
     levels=sorted(set(levels))
@@ -1409,7 +1419,8 @@ def _select_comparison_levels(select_all):
     if result is None:
         return
     allowed=tuple(core.flight_levels_for(result["config"].radar_mode))
-    levels=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed))
+    levels=(list(allowed) if result["config"].radar_mode=="PAR-NG" else
+            sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed)))
     if not levels:
         levels=list(allowed)
     st.session_state["ws_comparison"]=levels if select_all else []
@@ -1483,7 +1494,12 @@ def render_workspace():
                 supported=tuple(core.flight_levels_for(result["config"].radar_mode))
                 selected=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[])
                                     if ft in supported))
-                if not selected:
+                if result["config"].radar_mode=="PAR-NG":
+                    selected=list(supported)
+                    st.radio("Výška PAR nad terénem / mořem",("AGL","AMSL"),
+                             horizontal=True,key="ws_par_level_reference",
+                             help="AGL = nad místním terénem. AMSL = nad hladinou moře.")
+                elif not selected:
                     selected=list(supported)
                 st.toggle("Zobrazit radarové krytí",value=True,key="ws_show_coverage")
                 st.segmented_control(
@@ -1502,8 +1518,9 @@ def render_workspace():
                                   use_container_width=True,on_click=_step_flight_level,
                                   args=(-1,))
                     with level_choice:
-                        st.selectbox("Aktivní letová hladina",selected,
-                                     key="ws_map_level",format_func=core.level_label)
+                        st.selectbox("Aktivní výška [ft]",selected,
+                                     key="ws_map_level",format_func=lambda ft:
+                                     f"{ft:,} ft {st.session_state.get('ws_par_level_reference','AGL') if result['config'].radar_mode=='PAR-NG' else 'AMSL'}")
                     with next_button:
                         st.button("▶",key="ws_level_next",help="Vyšší letová hladina",
                                   use_container_width=True,on_click=_step_flight_level,
