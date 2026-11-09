@@ -152,6 +152,8 @@ def radar_dialog():
                 result=fresh
                 _config_state_from_project(result["config"])
                 st.session_state["result"]=result
+                st.session_state["geometry"]={}
+                st.session_state.pop("ws_snapshot_bytes",None)
                 st.session_state["obstacles"]=meta.get("obstacles",[])
                 st.session_state["ws_levels"]=meta.get("levels",[])
                 st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
@@ -294,6 +296,7 @@ def _calculate_coverage():
                           duration_s=round(time.perf_counter()-started,3))
             st.session_state.result=result
             st.session_state.geometry={}
+            st.session_state.pop("ws_snapshot_bytes",None)
             st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
             st.session_state["ws_result_notice"]="Krytí úspěšně vypočteno."
             st.session_state["ws_next_section"]="MAPA"
@@ -341,6 +344,7 @@ def _recalculate_cached_terrain():
     )
     st.session_state["result"]=recalculated
     st.session_state["geometry"]={}
+    st.session_state.pop("ws_snapshot_bytes",None)
     st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
     st.session_state["ws_result_notice"]="Překážky přepočteny z uloženého terénu."
     st.session_state["ws_next_section"]="MAPA"
@@ -1463,17 +1467,22 @@ def render_workspace():
                         st.error(f"Přepočet z uloženého DEM selhal; předchozí výsledek zůstal zachován: {exc}")
             st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
             if result is not None:
-                try:
-                    snapshot=save_project(
-                        result,levels=st.session_state.get("ws_levels",[]),
-                        obstacles=st.session_state.get("obstacles",[]))
-                    st.download_button("⇩ ULOŽIT PRACOVNÍ PROJEKT · .cdproj",
-                        data=snapshot,file_name="COVERAGEDIAGRAMS_working.cdproj",
+                if st.button("⇩ PŘIPRAVIT PRACOVNÍ PROJEKT · .cdproj",
+                             use_container_width=True,key="ws_prepare_snapshot",
+                             help="Snapshot DEM a výpočtu připravit až na vyžádání."):
+                    try:
+                        st.session_state["ws_snapshot_bytes"]=save_project(
+                            result,levels=st.session_state.get("ws_levels",[]),
+                            obstacles=st.session_state.get("obstacles",[]))
+                    except Exception as exc:
+                        st.error(f"Projekt nelze uložit: {exc}")
+                if st.session_state.get("ws_snapshot_bytes"):
+                    st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
+                        data=st.session_state["ws_snapshot_bytes"],
+                        file_name="COVERAGEDIAGRAMS_working.cdproj",
                         mime="application/octet-stream",use_container_width=True,
                         key="ws_save_working_project",
-                        help="Přenosný snapshot včetně DEM. Zachová práci i po restartu aplikace.")
-                except Exception as exc:
-                    st.warning(f"Projekt se nepodařilo připravit k uložení: {exc}")
+                        help="Přenosný snapshot včetně DEM, nezávislý na dočasné cache.")
             if st.button("⇩ Export ZIP",key="ws_command_export",use_container_width=True):
                 exports_dialog()
 
