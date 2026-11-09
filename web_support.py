@@ -21,10 +21,13 @@ EXPORTS = ('QuickReport · ZIP (600 DPI)', 'KML · všechny vrstvy (polygony)', 
            'Profil · CSV', 'Metadata · JSON', 'Obrázek · PNG', 'Obrázek · PNG (Light)')
 
 
-def coverage_geojson(result, ft):
-    status = result['status'] if ft is None else core.status_at_height(result, ft * core.FT_TO_M)
+def coverage_geojson(result, ft, reference='AMSL'):
+    if reference not in ('AMSL', 'AGL'):
+        raise ValueError('Neplatná výšková reference.')
+    status = result['status'] if ft is None else core.status_at_height(
+        result, ft * core.FT_TO_M, reference=reference)
     project = Transformer.from_crs(core.local_crs(result['config']), 'EPSG:4326', always_xy=True)
-    label = 'Target coverage' if ft is None else core.level_label(ft)
+    label = 'Target coverage' if ft is None else f'{ft:,} ft {reference}'
     return {'type': 'FeatureCollection', 'features': [
         {'type': 'Feature', 'geometry': mapping(transform(project.transform, poly)),
          'properties': {'hladina': label}}
