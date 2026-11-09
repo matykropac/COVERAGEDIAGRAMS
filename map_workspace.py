@@ -1256,7 +1256,7 @@ def exports_dialog():
         st.info("Export je dostupný po výpočtu.")
         return
     opts=tuple(core.flight_levels_for(result["config"].radar_mode))
-    st.caption("Vyber položky do jednoho ZIPu.")
+    st.caption("Původní exportní nástroje: PDF report 600 DPI, PNG, QuickReport, zákaznické balíčky a datové formáty. Vyber požadované výstupy.")
     groups=st.columns(3)
     names={
       "project":"Projekt CDPROJ","html":"Interaktivní mapa HTML",
@@ -1907,15 +1907,22 @@ def render_workspace():
                 if not configured_key():
                     st.caption("OpenAIP vyžaduje OPENAIP_API_KEY v nastavení aplikace.")
             st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
-            st.markdown('<div class="cd-nav-title">EXPORT MAPOVÝCH VRSTEV</div>',
+            st.markdown('<div class="cd-nav-title">EXPORTNÍ CENTRUM</div>',
                         unsafe_allow_html=True)
-            if st.button("⇩ EXPORTOVAT VRSTVY · KML / KMZ / GEOJSON",
-                         key="ws_map_export_layers",use_container_width=True):
+            if result is not None:
+                st.caption("Původní výstupy: PDF report 600 DPI, PNG po hladinách, "
+                           "QuickReport, zákaznický ZIP, GeoTIFF a další.")
+                if st.button("⇩ PDF 600 DPI / PNG / QUICKREPORT / ZIP",
+                             key="ws_command_export",type="primary",
+                             use_container_width=True):
+                    exports_dialog()
+            else:
+                st.caption("PDF report a PNG radarového krytí vyžadují vypočtená data. "
+                           "Samostatné geodatové vrstvy můžeš exportovat ihned.")
+            if st.button("⇩ KML / KMZ / GEOJSON · MAPOVÉ VRSTVY",
+                         key="ws_map_export_layers",use_container_width=True,
+                         help="Vrstvy RWY, CTR/TMA, překážek a okolních geodat bez výpočtu."):
                 position_layers_export_dialog()
-            if result is not None and st.button("⇩ EXPORT RADAROVÉHO KRYTÍ · ZIP",
-                                                 key="ws_command_export",
-                                                 use_container_width=True):
-                exports_dialog()
 
         elif section=="RADAR":
             st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
