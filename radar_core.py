@@ -1738,9 +1738,10 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
         if ax.get_legend() is not None:
             ax.get_legend().remove()
         if report_layout:
-            # The square map dominates the right side; left column is technical data.
-            # Axis position is expressed in figure fractions and respects equal aspect.
-            ax.set_position((0.345, 0.155, 0.60, 0.775))
+            # Maximize the square map inside the report graphic. The previous
+            # 0.345 / 0.155 / 0.60 / 0.775 layout left excessive white space.
+            # Matplotlib maintains equal geographic aspect without stretching tiles.
+            ax.set_position((0.19, 0.045, 0.79, 0.91))
         else:
             fig.subplots_adjust(left=0.075, right=0.75, bottom=0.25, top=0.90)
         handles = []
@@ -1757,9 +1758,9 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                                      label=labels[typ]))
         if handles:
             if report_layout:
-                # Legend in the lower-left margin, just below the map panel.
+                # Legend lives in the compact left sidebar, not below the map.
                 legend = fig.legend(handles=handles, loc='lower left',
-                                    bbox_to_anchor=(0.35, 0.045), fontsize=10,
+                                    bbox_to_anchor=(0.025, 0.11), fontsize=9,
                                     frameon=False,
                                     title='Legend' if english else 'Legenda')
             else:
@@ -1769,7 +1770,8 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
             style_legend(legend)
             legend.get_title().set_color(UI_TEXT)
         c = result['config']
-        fig.text(0.075, 0.955, 'ELDIS · RADAR COVERAGE', color=UI_TEXT, fontsize=18, weight='bold')
+        if not report_layout:
+            fig.text(0.075, 0.955, 'ELDIS · RADAR COVERAGE', color=UI_TEXT, fontsize=18, weight='bold')
         footer = (
             f'Radar: {c.lat:.6f}°, {c.lon:.6f}°  |  '
             f'{"Antenna" if english else "Anténa"}: {c.antenna_agl:g} m AGL  |  '
@@ -1782,17 +1784,18 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                if english else f'Geometrický model · výškové řezy AMSL · {dpi} DPI · 330 × 229 mm')
         )
         if report_layout:
-            # Deliberately short lines fit the narrow metadata column.
+            # Compact metadata; the complete parameters are on the technical
+            # pages. Do not shrink the actual map to fit long labels here.
             details = (
-                f'SITE / RADAR\n{c.lat:.6f}°, {c.lon:.6f}°\n\n'
-                f'ANTENNA\n{c.antenna_agl:g} m AGL · tilt {c.antenna_tilt_deg:g}°\n\n'
-                f'RANGE\n{c.range_km:g} km / {c.range_km / 1.852:.1f} NM\n\n'
+                f'RADAR\n{c.lat:.4f}°\n{c.lon:.4f}°\n\n'
+                f'ANTENNA\n{c.antenna_agl:g} m AGL\nTilt {c.antenna_tilt_deg:g}°\n\n'
+                f'RANGE\n{c.range_km / 1.852:.1f} NM\n\n'
                 f'MODEL\nk = {c.k:.3f}\n'
-                f'Elevation {c.min_elev:g}° to {c.max_elev:g}°\n'
-                f'Grid {c.step_m:g} m / {actual_azimuth_step(result):g}°'
+                f'Elev. {c.min_elev:g}° to {c.max_elev:g}°\n'
+                f'Grid {c.step_m:g} m'
             )
-            fig.text(0.055, 0.70, details, color=UI_TEXT, fontsize=12,
-                     va='top', linespacing=1.5)
+            fig.text(0.025, 0.82, details, color=UI_TEXT, fontsize=10,
+                     va='top', linespacing=1.35)
         else:
             fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)
         if environment_items:
@@ -1801,8 +1804,8 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                      + '\\nInformational OSM/Microsoft/import layers'
                      + '\\nNot certified survey data',
                      color=UI_TEXT, fontsize=8)
-        fig.text(0.055 if report_layout else 0.075,
-                 0.025 if report_layout else 0.035,
+        fig.text(0.025 if report_layout else 0.075,
+                 0.02 if report_layout else 0.035,
                  'Terrain and basemap resolution reflect the original source data.' if english else 'Rozlišení terénu a mapového podkladu odpovídá zdrojovým datům.',
                  color=UI_MUTED, fontsize=8)
         style_export_theme(fig, theme)
