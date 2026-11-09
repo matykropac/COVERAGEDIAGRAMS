@@ -31,6 +31,44 @@ def coverage_geojson(result, ft):
         for poly in core.coverage_polygons(result, status)]}
 
 
+
+def coverage_diagnostic(result, ft, features=None):
+    """Explain an empty coverage layer without changing the physical model."""
+    c = result['config']
+    target = result['target'] if ft is None else np.full_like(
+        result['terrain'], float(ft) * core.FT_TO_M)
+    known = np.asarray(result['known'], dtype=bool)
+    lower, upper = result['lower'], result['upper']
+    geometric = (known & np.isfinite(lower) &
+                 (target >= lower - 1e-6) & (target <= upper + 1e-6))
+    status = result['status'] if ft is None else core.status_at_height(
+        result, float(ft) * core.FT_TO_M)
+    covered = np.isfinite(status) & (status > 0)
+    return {
+        'known': int(np.count_nonzero(known)),
+        'geometric': int(np.count_nonzero(geometric)),
+        'covered': int(np.count_nonzero(covered)),
+        'features': None if features is None else len(features),
+        'samples': int(known.size),
+    }
+
+
+def coverage_diagnostic_message(stats):
+    """Czech, user-actionable message for PAR empty coverage."""
+    if stats['known'] == 0:
+        return 'DEM neobsahuje platný souvislý profil terénu pro tento sektor.'
+    if stats['geometric'] == 0:
+        return ('Žádný bod nesplňuje geometrický horizont a elevační meze. '
+                'Ověř výšku AMSL vůči terénu a výšku antény.')
+    if stats['covered'] == 0:
+        return ('Terénní geometrie je dostupná, ale anténní obálka včetně '
+                'tiltu a dosahu 40 km nepovoluje žádný bod této hladiny.')
+    if stats['features'] == 0:
+        return ('Kryté body existují, ale nebyl vytvořen žádný mapový polygon. '
+                'Problém je ve vektorizaci, nikoliv v samotném výpočtu.')
+    return 'Krytí existuje; zkontroluj viditelnost vrstvy a mapový renderer.'
+
+
 def clicked_point(result, lat, lon, levels):
     c = result['config']
     bearing, _, distance = Geod(ellps='WGS84').inv(c.lon, c.lat, lon, lat)
