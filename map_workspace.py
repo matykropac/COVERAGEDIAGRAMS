@@ -28,6 +28,7 @@ from traffic_overlay import fetch_snapshot, add_traffic_layer
 from obstacle_ui import render_obstacle_editor
 from live_simulation import simulation_tab
 from project_file import save_project, load_project
+from airport_geometry import airport_runways, runway_rows, runway_geometry, par_bearing_for_runway, validate_icao
 from ssr_custom import load_measured_ssr
 from wind_turbines import load_wind_turbines, add_wind_layer
 from geodata_obstacle_catalog import catalog_from_data, synchronize
@@ -80,6 +81,55 @@ iframe[title*="streamlit_folium"]{border-radius:9px!important;border:1px solid #
 @media(max-width:850px){[data-testid="stMainBlockContainer"],.block-container{padding:8px!important}.cd-meta{display:none}}
 </style>
 """
+
+
+@st.cache_data(ttl=86400, show_spinner=False, max_entries=1)
+def _public_runways():
+    """Download at most once per day; UI may keep old loaded runway geometries."""
+    return runway_rows()
+
+
+def _airport_controls():
+    st.markdown('<div class="cd-nav-title">LETIŠTĚ / GEOMETRIE RWY</div>',
+                unsafe_allow_html=True)
+    st.text_input("ICAO letiště",key="ws_airport_icao",placeholder="LKPD",
+                  max_chars=4,help="OurAirports: orientační veřejná geometrie, nikoli ověřené AIP souřadnice.")
+    if st.button("NAČÍST RWY PODLE ICAO",key="ws_load_runways",
+                 use_container_width=True):
+        try:
+            code=validate_icao(st.session_state.get("ws_airport_icao",""))
+            runways=airport_runways(code,_public_runways())
+            st.session_state["ws_airport_geometry"]=runways
+            st.session_state["ws_airport_code"]=code
+            st.session_state["ws_runway_index"]=0
+            st.session_state["ws_runway_end"]=0
+            st.session_state["ws_show_runways"]=True
+        except Exception as exc:
+            st.error(f"Nepodařilo se načíst RWY; poslední geometrie zůstala: {exc}")
+    runways=st.session_state.get("ws_airport_geometry") or []
+    if not runways:
+        st.caption("Zadej ICAO; zobrazím osy, prahy, midpoint a prodloužení RWY.")
+        return
+    st.caption(f"{st.session_state.get('ws_airport_code','')} · "
+               "OurAirports (informativní). Pro přesnou PAR studii ověř AIP AD 2.12.")
+    st.selectbox("Runway",range(len(runways)),
+                 format_func=lambda i:runways[i]["label"],key="ws_runway_index")
+    selected=runways[st.session_state["ws_runway_index"]]
+    st.selectbox("Přibližovací směr / práh",options=(0,1),
+                 format_func=lambda i:"RWY "+selected["ends"][i]["ident"],
+                 key="ws_runway_end")
+    st.caption(f"TRUE {selected['heading_deg_true']:.2f}° · "
+               f"{selected['length_m']:.0f} m · šířka {selected['width_m']:.0f} m")
+    st.toggle("Zobrazit geometrii všech RWY",value=True,key="ws_show_runways")
+    if config := st.session_state.get("ws_radar"):
+        if config=="PAR-NG" and st.button("NASTAVIT AZIMUT PAR PODLE RWY",
+                                         key="ws_align_par",use_container_width=True):
+            site=_cfg()
+            az=par_bearing_for_runway(selected,st.session_state["ws_runway_end"],
+                                       site.lat,site.lon)
+            st.session_state["ws_bearing"]=round(az,2)
+            st.info(f"Osa PAR nastavena na {az:.2f}° TRUE směrem k přibližovacímu koridoru (5 NM). "
+                    "Pokud se stanoviště liší, ověř mechanickou orientaci systému.")
 
 
 def _cfg():
@@ -152,6 +202,7 @@ def radar_dialog():
                 result=fresh
                 _config_state_from_project(result["config"])
                 st.session_state["result"]=result
+                st.session_state.pop("ws_previous_result",None)
                 st.session_state["geometry"]={}
                 st.session_state.pop("ws_snapshot_bytes",None)
                 st.session_state["obstacles"]=meta.get("obstacles",[])
@@ -295,6 +346,7 @@ def _calculate_coverage():
                           completed_at=datetime.now(timezone.utc).isoformat(),
                           duration_s=round(time.perf_counter()-started,3))
             st.session_state.result=result
+            st.session_state.pop("ws_previous_result",None)
             st.session_state.geometry={}
             st.session_state.pop("ws_snapshot_bytes",None)
             st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
@@ -342,6 +394,7 @@ def _recalculate_cached_terrain():
         duration_s=0,
         obstacles_signature=obstacle_signature(obstacles),
     )
+    st.session_state["ws_previous_result"]=previous
     st.session_state["result"]=recalculated
     st.session_state["geometry"]={}
     st.session_state.pop("ws_snapshot_bytes",None)
@@ -1096,6 +1149,14 @@ def _draw_map():
             "geojson":st.session_state.geometry[level],
             "color":"#247ad3" if level is None else to_hex(core.level_color(level)),
         })
+        previous=st.session_state.get("ws_previous_result")
+        if previous is not None and st.session_state.get("ws_compare_previous",True):
+            if previous["config"]==c:
+                # Read-only historic result: retain before/after visibility even
+                # when obstacles are removed or the current geometry is cached.
+                baseline_geo=coverage_geojson(previous,level)
+                coverage.append({"geojson":baseline_geo,"color":"#ed8a2e",
+                                 "previous":True})
 
     obstacle_data=[]
     # A downloaded object's catalog polygon is already rendered in the
@@ -1185,9 +1246,14 @@ def _draw_map():
         "tool":_map_tool(),
         "live":bool(st.session_state.get("ws_live_adsb",False)),
         "coverage":coverage,
+        "airportGeometry":runway_geometry(st.session_state.get("ws_airport_geometry") or [])
+           if st.session_state.get("ws_show_runways",True) else [],
+        "airportCode":st.session_state.get("ws_airport_code",""),
         "opacity":alpha,
         "coverageVersion":signature([active,alpha,
-                                      result.get("completed_at") if result else None]),
+                                      result.get("completed_at") if result else None,
+                                      st.session_state.get("ws_compare_previous",False),
+                                      (st.session_state.get("ws_previous_result") or {}).get("completed_at")]),
         "obstacles":obstacle_data,
         "obstaclesVersion":signature(obstacle_data),
         "environment":environment_data,
@@ -1429,6 +1495,9 @@ def render_workspace():
                     st.caption(f"V mapě je vybráno {count} z {len(selected)} hladin.")
                 else:
                     st.caption("Zobrazuje se pokrytí pro cílovou výšku z nastavení radaru.")
+                if st.session_state.get("ws_previous_result") is not None:
+                    st.toggle("BEFORE / AFTER · původní krytí přerušovaně",
+                              value=True,key="ws_compare_previous")
                 with st.expander("Průhlednost krytí",expanded=False):
                     st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity",
                               label_visibility="collapsed")
@@ -1465,6 +1534,7 @@ def render_workspace():
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Přepočet z uloženého DEM selhal; předchozí výsledek zůstal zachován: {exc}")
+            _airport_controls()
             st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
             if result is not None:
                 if st.button("⇩ PŘIPRAVIT PRACOVNÍ PROJEKT · .cdproj",
