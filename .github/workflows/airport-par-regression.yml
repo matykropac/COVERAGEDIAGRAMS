@@ -10,6 +10,8 @@ on:
       - "airspace_geometry.py"
       - "tests/test_airspace_geometry.py"
       - "map_workspace.py"
+      - "position_export.py"
+      - "tests/test_position_export.py"
       - "radar_core.py"
       - "web_support.py"
       - "tests/test_par_3d_detection.py"
@@ -35,6 +37,7 @@ jobs:
           python -m compileall -q airport_geometry.py map_workspace.py project_file.py
           python -m unittest discover -s tests -p "test_airport_geometry.py" -v
           python -m unittest discover -s tests -p "test_airspace_geometry.py" -v
+          python -m unittest discover -s tests -p "test_position_export.py" -v
           python -m unittest discover -s tests -p "test_cached_par_recompute.py" -v
           python -m unittest discover -s tests -p "test_par_altitude_reference.py" -v
           python -m unittest discover -s tests -p "test_par_3d_detection.py" -v
