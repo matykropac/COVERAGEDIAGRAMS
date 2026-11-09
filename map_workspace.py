@@ -28,6 +28,7 @@ from traffic_overlay import fetch_snapshot, add_traffic_layer
 from obstacle_ui import render_obstacle_editor
 from live_simulation import simulation_tab
 from project_file import save_project, load_project
+from airport_geometry import airport_runways, runway_rows, runway_geometry, par_bearing_for_runway, validate_icao, validate_saved_geometry
 from ssr_custom import load_measured_ssr
 from wind_turbines import load_wind_turbines, add_wind_layer
 from geodata_obstacle_catalog import catalog_from_data, synchronize
@@ -82,6 +83,82 @@ iframe[title*="streamlit_folium"]{border-radius:9px!important;border:1px solid #
 """
 
 
+@st.cache_data(ttl=86400, show_spinner=False, max_entries=1)
+def _public_runways():
+    """Download at most once per day; UI may keep old loaded runway geometries."""
+    return runway_rows()
+
+
+def _airport_project_metadata():
+    return {
+        "airport_icao":st.session_state.get("ws_airport_code",""),
+        "airport_runways":st.session_state.get("ws_airport_geometry") or [],
+        "par_model":_par_model_metadata(),
+        "par_level_reference":st.session_state.get("ws_par_level_reference","AGL"),
+    }
+
+
+def _restore_airport_metadata(meta):
+    saved=meta.get("source_ui") or {}
+    code=saved.get("airport_icao")
+    runways=saved.get("airport_runways")
+    if code and runways:
+        code,runways=validate_saved_geometry(code,runways)
+        st.session_state["ws_airport_icao"]=code
+        st.session_state["ws_airport_code"]=code
+        st.session_state["ws_airport_geometry"]=runways
+        st.session_state["ws_runway_index"]=0
+        st.session_state["ws_runway_end"]=0
+        st.session_state["ws_show_runways"]=True
+    else:
+        st.session_state.pop("ws_airport_geometry",None)
+        st.session_state.pop("ws_airport_code",None)
+
+
+def _airport_controls():
+    st.markdown('<div class="cd-nav-title">LETIŠTĚ / GEOMETRIE RWY</div>',
+                unsafe_allow_html=True)
+    st.text_input("ICAO letiště",key="ws_airport_icao",placeholder="LKPD",
+                  max_chars=4,help="OurAirports: orientační veřejná geometrie, nikoli ověřené AIP souřadnice.")
+    if st.button("NAČÍST RWY PODLE ICAO",key="ws_load_runways",
+                 use_container_width=True):
+        try:
+            code=validate_icao(st.session_state.get("ws_airport_icao",""))
+            runways=airport_runways(code,_public_runways())
+            st.session_state["ws_airport_geometry"]=runways
+            st.session_state.pop("ws_snapshot_bytes",None)
+            st.session_state["ws_airport_code"]=code
+            st.session_state["ws_runway_index"]=0
+            st.session_state["ws_runway_end"]=0
+            st.session_state["ws_show_runways"]=True
+        except Exception as exc:
+            st.error(f"Nepodařilo se načíst RWY; poslední geometrie zůstala: {exc}")
+    runways=st.session_state.get("ws_airport_geometry") or []
+    if not runways:
+        st.caption("Zadej ICAO; zobrazím osy, prahy, midpoint a prodloužení RWY.")
+        return
+    st.caption(f"{st.session_state.get('ws_airport_code','')} · "
+               "OurAirports (informativní). Pro přesnou PAR studii ověř AIP AD 2.12.")
+    st.selectbox("Runway",range(len(runways)),
+                 format_func=lambda i:runways[i]["label"],key="ws_runway_index")
+    selected=runways[st.session_state["ws_runway_index"]]
+    st.selectbox("Přibližovací směr / práh",options=(0,1),
+                 format_func=lambda i:"RWY "+selected["ends"][i]["ident"],
+                 key="ws_runway_end")
+    st.caption(f"TRUE {selected['heading_deg_true']:.2f}° · "
+               f"{selected['length_m']:.0f} m · šířka {selected['width_m']:.0f} m")
+    st.toggle("Zobrazit geometrii všech RWY",value=True,key="ws_show_runways")
+    if config := st.session_state.get("ws_radar"):
+        if config=="PAR-NG" and st.button("NASTAVIT AZIMUT PAR PODLE RWY",
+                                         key="ws_align_par",use_container_width=True):
+            site=_cfg()
+            az=par_bearing_for_runway(selected,st.session_state["ws_runway_end"],
+                                       site.lat,site.lon)
+            st.session_state["ws_bearing"]=round(az,2)
+            st.info(f"Osa PAR nastavena na {az:.2f}° TRUE směrem k přibližovacímu koridoru (5 NM). "
+                    "Pokud se stanoviště liší, ověř mechanickou orientaci systému.")
+
+
 def _cfg():
     """Use explicit workspace keys; never modify legacy input widgets on a rerun."""
     model = st.session_state.get("ws_radar", "RL-2000")
@@ -107,9 +184,63 @@ def _cfg():
     )
 
 
+def _par_pattern_metadata(pattern):
+    if not isinstance(pattern,core.ParScanPattern):
+        return None
+    return {name:getattr(pattern,name) for name in (
+        "scan_mode","steering_loss_db_per_deg","detection_model",
+        "reference_snr_db","pd","pfa","pulses")}
+
+
+def _par_model_metadata():
+    """Settings are stored alongside the project without changing the polar DEM config."""
+    return {
+        "scan_mode":st.session_state.get("ws_par_scan_mode","TRACKING"),
+        "steering_loss_db_per_deg":float(st.session_state.get("ws_par_scan_loss",0.0)),
+        "detection_model":st.session_state.get("ws_par_detection","RELATIVE"),
+        "reference_snr_db":float(st.session_state.get("ws_par_snr",16.0)),
+        "pd":float(st.session_state.get("ws_par_pd",0.8)),
+        "pfa":float(st.session_state.get("ws_par_pfa",1e-6)),
+        "pulses":int(st.session_state.get("ws_par_pulses",1)),
+    }
+
+
+def _restore_par_model_metadata(meta):
+    values=(meta.get("source_ui") or {}).get("par_model")
+    if values is None:
+        values={}
+    if not isinstance(values,dict):
+        raise ValueError("Neplatný model PAR v projektu.")
+    allowed={
+        "scan_mode":"ws_par_scan_mode",
+        "steering_loss_db_per_deg":"ws_par_scan_loss",
+        "detection_model":"ws_par_detection",
+        "reference_snr_db":"ws_par_snr",
+        "pd":"ws_par_pd",
+        "pfa":"ws_par_pfa",
+        "pulses":"ws_par_pulses",
+    }
+    if set(values)-set(allowed):
+        raise ValueError("Neznámé parametry PAR v projektu.")
+    import dataclasses
+    pattern=dataclasses.replace(core.builtin_par_pattern(),**values)
+    pattern.validate_model()
+    # Legacy projects without PAR settings must restore safe defaults, not
+    # silently inherit a different project's session state.
+    st.session_state.update({widget:getattr(pattern,name)
+                             for name,widget in allowed.items()})
+    ref=(meta.get("source_ui") or {}).get("par_level_reference","AGL")
+    if ref not in ("AMSL","AGL"):
+        raise ValueError("Neplatná výšková reference PAR v projektu.")
+    st.session_state["ws_par_level_reference"]=ref
+
+
 def _pattern(config):
     if config.radar_mode == "PAR-NG":
-        return core.builtin_par_pattern()
+        import dataclasses
+        pattern=dataclasses.replace(core.builtin_par_pattern(),**_par_model_metadata())
+        pattern.validate_model()
+        return pattern
     if config.radar_mode == "SSR":
         if st.session_state.get("ws_ssr_diagram", "Generic Gaussian") == "Measured SSR.txt":
             return load_measured_ssr()
@@ -139,6 +270,10 @@ def radar_dialog():
         if uploaded_project is not None and st.button("NAČÍST PROJEKT",key="ws_project_load"):
             try:
                 result,meta=load_project(uploaded_project.getvalue())
+                airport_data=meta.get("source_ui") or {}
+                if airport_data.get("airport_icao") and airport_data.get("airport_runways"):
+                    validate_saved_geometry(airport_data["airport_icao"],airport_data["airport_runways"])
+                _restore_par_model_metadata(meta)
                 # Recreate the antenna-aware solution from the embedded DEM.
                 # Stored status/lower may already include obstacles; never reuse
                 # them as the base when editing or removing obstructions.
@@ -151,7 +286,10 @@ def radar_dialog():
                              obstacles_signature=obstacle_signature(meta.get("obstacles",[])))
                 result=fresh
                 _config_state_from_project(result["config"])
+                _restore_airport_metadata(meta)
                 st.session_state["result"]=result
+                st.session_state.pop("ws_previous_result",None)
+                st.session_state.pop("ws_before_geometry",None)
                 st.session_state["geometry"]={}
                 st.session_state.pop("ws_snapshot_bytes",None)
                 st.session_state["obstacles"]=meta.get("obstacles",[])
@@ -195,6 +333,29 @@ def radar_dialog():
         st.number_input("Min. elevace [°]",-5.,88.,-1.,key="ws_min")
         st.number_input("Max. elevace [°]",-4.,89.,45.,key="ws_max")
         st.number_input("Tilt antény [°]",-15.,15.,-1.,key="ws_tilt")
+        if st.session_state["ws_radar"]=="PAR-NG":
+            st.markdown("**PAR-NG · ANTÉNA / DETEKCE**")
+            st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
+                         format_func=lambda mode: "Ideální azimutální sken + ztráta vychýlení"
+                         if mode=="TRACKING" else "Pevný 3D diagram bez elektronického skenu",
+                         key="ws_par_scan_mode")
+            st.number_input("Ztráta skenu [dB/°] · orientační",min_value=0.,max_value=5.,
+                            value=0.,step=.05,key="ws_par_scan_loss")
+            st.selectbox("Detekční rozpočet",["RELATIVE","ALBERSHEIM"],
+                         format_func=lambda mode: "Relativní obálka 40 km"
+                         if mode=="RELATIVE" else "Ilustrační SNR / Pd / Pfa",
+                         key="ws_par_detection")
+            if st.session_state.get("ws_par_detection")=="ALBERSHEIM":
+                st.number_input("Referenční SNR na 40 km [dB] · předpoklad",
+                                min_value=-20.,max_value=60.,value=16.,step=.5,
+                                key="ws_par_snr")
+                st.number_input("Požadované Pd",min_value=.01,max_value=.99,
+                                value=.8,step=.01,key="ws_par_pd")
+                st.selectbox("Požadované Pfa",options=[1e-3,1e-4,1e-5,1e-6,1e-7,1e-8],
+                             index=3,key="ws_par_pfa",format_func=lambda n:f"{n:.0e}")
+                st.number_input("Počet ne-koherentních pulzů",min_value=1,max_value=1000,
+                                value=1,step=1,key="ws_par_pulses")
+            st.caption("Parametry skenu a SNR jsou modelové, nikoliv změřená specifikace PAR-NG.")
         if st.session_state["ws_radar"]=="RL-2000":
             st.selectbox("Svazek",["COMBINED","LOW","HIGH"],key="ws_beam")
         st.number_input("Výška cíle [m]",-500.,30000.,1000.,key="ws_target")
@@ -295,6 +456,8 @@ def _calculate_coverage():
                           completed_at=datetime.now(timezone.utc).isoformat(),
                           duration_s=round(time.perf_counter()-started,3))
             st.session_state.result=result
+            st.session_state.pop("ws_previous_result",None)
+            st.session_state.pop("ws_before_geometry",None)
             st.session_state.geometry={}
             st.session_state.pop("ws_snapshot_bytes",None)
             st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
@@ -342,6 +505,8 @@ def _recalculate_cached_terrain():
         duration_s=0,
         obstacles_signature=obstacle_signature(obstacles),
     )
+    st.session_state["ws_previous_result"]=previous
+    st.session_state["ws_before_geometry"]={}
     st.session_state["result"]=recalculated
     st.session_state["geometry"]={}
     st.session_state.pop("ws_snapshot_bytes",None)
@@ -881,7 +1046,8 @@ def exports_dialog():
                 proj=None
                 if selected["project"]:
                     proj=save_project(result,levels=st.session_state.get("ws_levels",[]),
-                                      obstacles=st.session_state.get("obstacles",[]))
+                                      obstacles=st.session_state.get("obstacles",[]),
+                                      source_ui=_airport_project_metadata())
                 html=st.session_state.get("ws_map_html")
                 blob=build_selected_zip(
                     result, selected=selected, flight_levels=chosen,
@@ -960,8 +1126,9 @@ def _draw_map_folium():
         add_openaip_map(m)
     if result is not None and st.session_state.get("ws_show_coverage",True):
         mode=st.session_state.get("ws_display_mode","Jedna hladina")
-        levels=[x for x in st.session_state.get("ws_levels",[3000,10000])
-                if x in core.flight_levels_for(c.radar_mode)]
+        levels=(list(core.flight_levels_for(c.radar_mode)) if c.radar_mode=="PAR-NG" else
+                [x for x in st.session_state.get("ws_levels",[3000,10000])
+                 if x in core.flight_levels_for(c.radar_mode)])
         if mode=="Cíl":active=[None]
         elif mode=="Porovnání":active=st.session_state.get("ws_comparison",levels[:3])
         elif levels:active=[st.session_state.get("ws_map_level",levels[0])]
@@ -969,7 +1136,9 @@ def _draw_map_folium():
         for level in active:
             if level is not None and level not in core.flight_levels_for(c.radar_mode):
                 continue
-            geo=coverage_geojson(result,level)
+            geo=coverage_geojson(result,level,
+                reference=st.session_state.get("ws_par_level_reference","AGL")
+                if c.radar_mode=="PAR-NG" else "AMSL")
             if geo.get("features"):
                 color="#247ad3" if level is None else to_hex(core.level_color(level))
                 layer=folium.FeatureGroup(name="Krytí cíle" if level is None else core.level_label(level))
@@ -1076,8 +1245,9 @@ def _draw_map():
     active=[]
     if result is not None and st.session_state.get("ws_show_coverage",True):
         mode=st.session_state.get("ws_display_mode","Jedna hladina")
-        available=[ft for ft in st.session_state.get("ws_levels",[3000,10000])
-                   if ft in core.flight_levels_for(c.radar_mode)]
+        available=(list(core.flight_levels_for(c.radar_mode)) if c.radar_mode=="PAR-NG" else
+                   [ft for ft in st.session_state.get("ws_levels",[3000,10000])
+                    if ft in core.flight_levels_for(c.radar_mode)])
         if not available:
             available=list(core.flight_levels_for(c.radar_mode))
         if mode=="Cíl":
@@ -1089,13 +1259,28 @@ def _draw_map():
             active=[wanted if wanted in available else available[0]]
 
     coverage=[]
+    reference=(st.session_state.get("ws_par_level_reference","AGL")
+               if c.radar_mode=="PAR-NG" else "AMSL")
     for level in active:
-        if level not in st.session_state.setdefault("geometry",{}):
-            st.session_state.geometry[level]=coverage_geojson(result,level)
+        cache_key=(level,reference)
+        if cache_key not in st.session_state.setdefault("geometry",{}):
+            st.session_state.geometry[cache_key]=coverage_geojson(
+                result,level,reference=reference)
         coverage.append({
-            "geojson":st.session_state.geometry[level],
+            "geojson":st.session_state.geometry[cache_key],
             "color":"#247ad3" if level is None else to_hex(core.level_color(level)),
         })
+        previous=st.session_state.get("ws_previous_result")
+        if previous is not None and st.session_state.get("ws_compare_previous",True):
+            if previous["config"]==c:
+                # Read-only historic result: retain before/after visibility even
+                # when obstacles are removed or the current geometry is cached.
+                before_cache=st.session_state.setdefault("ws_before_geometry",{})
+                if cache_key not in before_cache:
+                    before_cache[cache_key]=coverage_geojson(
+                        previous,level,reference=reference)
+                coverage.append({"geojson":before_cache[cache_key],"color":"#ed8a2e",
+                                 "previous":True})
 
     obstacle_data=[]
     # A downloaded object's catalog polygon is already rendered in the
@@ -1185,9 +1370,14 @@ def _draw_map():
         "tool":_map_tool(),
         "live":bool(st.session_state.get("ws_live_adsb",False)),
         "coverage":coverage,
+        "airportGeometry":runway_geometry(st.session_state.get("ws_airport_geometry") or [])
+           if st.session_state.get("ws_show_runways",True) else [],
+        "airportCode":st.session_state.get("ws_airport_code",""),
         "opacity":alpha,
-        "coverageVersion":signature([active,alpha,
-                                      result.get("completed_at") if result else None]),
+        "coverageVersion":signature([active,reference,alpha,
+                                      result.get("completed_at") if result else None,
+                                      st.session_state.get("ws_compare_previous",False),
+                                      (st.session_state.get("ws_previous_result") or {}).get("completed_at")]),
         "obstacles":obstacle_data,
         "obstaclesVersion":signature(obstacle_data),
         "environment":environment_data,
@@ -1289,7 +1479,8 @@ def _step_flight_level(direction):
     if result is None:
         return
     allowed=tuple(core.flight_levels_for(result["config"].radar_mode))
-    levels=[int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed]
+    levels=(list(allowed) if result["config"].radar_mode=="PAR-NG" else
+            [int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed])
     if not levels:
         levels=list(allowed)
     levels=sorted(set(levels))
@@ -1308,7 +1499,8 @@ def _select_comparison_levels(select_all):
     if result is None:
         return
     allowed=tuple(core.flight_levels_for(result["config"].radar_mode))
-    levels=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed))
+    levels=(list(allowed) if result["config"].radar_mode=="PAR-NG" else
+            sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed)))
     if not levels:
         levels=list(allowed)
     st.session_state["ws_comparison"]=levels if select_all else []
@@ -1382,7 +1574,12 @@ def render_workspace():
                 supported=tuple(core.flight_levels_for(result["config"].radar_mode))
                 selected=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[])
                                     if ft in supported))
-                if not selected:
+                if result["config"].radar_mode=="PAR-NG":
+                    selected=list(supported)
+                    st.radio("Výška PAR nad terénem / mořem",("AGL","AMSL"),
+                             horizontal=True,key="ws_par_level_reference",
+                             help="AGL = nad místním terénem. AMSL = nad hladinou moře.")
+                elif not selected:
                     selected=list(supported)
                 st.toggle("Zobrazit radarové krytí",value=True,key="ws_show_coverage")
                 st.segmented_control(
@@ -1401,8 +1598,9 @@ def render_workspace():
                                   use_container_width=True,on_click=_step_flight_level,
                                   args=(-1,))
                     with level_choice:
-                        st.selectbox("Aktivní letová hladina",selected,
-                                     key="ws_map_level",format_func=core.level_label)
+                        st.selectbox("Aktivní výška [ft]",selected,
+                                     key="ws_map_level",format_func=lambda ft:
+                                     f"{ft:,} ft {st.session_state.get('ws_par_level_reference','AGL') if result['config'].radar_mode=='PAR-NG' else 'AMSL'}")
                     with next_button:
                         st.button("▶",key="ws_level_next",help="Vyšší letová hladina",
                                   use_container_width=True,on_click=_step_flight_level,
@@ -1429,6 +1627,9 @@ def render_workspace():
                     st.caption(f"V mapě je vybráno {count} z {len(selected)} hladin.")
                 else:
                     st.caption("Zobrazuje se pokrytí pro cílovou výšku z nastavení radaru.")
+                if st.session_state.get("ws_previous_result") is not None:
+                    st.toggle("BEFORE / AFTER · původní krytí přerušovaně",
+                              value=True,key="ws_compare_previous")
                 with st.expander("Průhlednost krytí",expanded=False):
                     st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity",
                               label_visibility="collapsed")
@@ -1454,7 +1655,9 @@ def render_workspace():
                 _calculate_coverage()
             if result is not None:
                 stale=(result.get("obstacles_signature")!=obstacle_signature(
-                    st.session_state.get("obstacles",[])) or config!=result["config"])
+                    st.session_state.get("obstacles",[])) or config!=result["config"] or
+                    (result["config"].radar_mode=="PAR-NG" and
+                     _par_model_metadata()!=_par_pattern_metadata(result.get("antenna_pattern"))))
                 st.caption("Výsledek je potřeba přepočítat." if stale
                            else "Výpočet je aktuální.")
                 if st.button("↻ PŘEPOČÍTAT Z ULOŽENÉHO TERÉNU",
@@ -1465,6 +1668,7 @@ def render_workspace():
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Přepočet z uloženého DEM selhal; předchozí výsledek zůstal zachován: {exc}")
+            _airport_controls()
             st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
             if result is not None:
                 if st.button("⇩ PŘIPRAVIT PRACOVNÍ PROJEKT · .cdproj",
@@ -1473,11 +1677,16 @@ def render_workspace():
                     try:
                         st.session_state["ws_snapshot_bytes"]=save_project(
                             result,levels=st.session_state.get("ws_levels",[]),
-                            obstacles=st.session_state.get("obstacles",[]))
+                            obstacles=st.session_state.get("obstacles",[]),
+                            source_ui=_airport_project_metadata())
                         st.session_state["ws_snapshot_key"]=(
                             result.get("completed_at"),
                             obstacle_signature(st.session_state.get("obstacles",[])),
                             tuple(st.session_state.get("ws_levels",[])),
+                            st.session_state.get("ws_airport_code",""),
+                            tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
+                            tuple(sorted(_par_model_metadata().items())),
+                            st.session_state.get("ws_par_level_reference","AGL"),
                         )
                     except Exception as exc:
                         st.error(f"Projekt nelze uložit: {exc}")
@@ -1485,6 +1694,10 @@ def render_workspace():
                     result.get("completed_at"),
                     obstacle_signature(st.session_state.get("obstacles",[])),
                     tuple(st.session_state.get("ws_levels",[])),
+                    st.session_state.get("ws_airport_code",""),
+                    tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
+                    tuple(sorted(_par_model_metadata().items())),
+                    st.session_state.get("ws_par_level_reference","AGL"),
                 )
                 if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
                     st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
@@ -1554,7 +1767,9 @@ def render_workspace():
                    f"{len(st.session_state.get('obstacles',[]))} překážek")
     else:
         is_stale=(result.get("obstacles_signature")!=obstacle_signature(
-            st.session_state.get("obstacles",[])) or config!=result["config"])
+            st.session_state.get("obstacles",[])) or config!=result["config"] or
+            (result["config"].radar_mode=="PAR-NG" and
+             _par_model_metadata()!=_par_pattern_metadata(result.get("antenna_pattern"))))
         if is_stale:
             st.warning("Nastavení nebo překážky se změnily. Zobrazené krytí patří k předchozímu výpočtu.")
         else:

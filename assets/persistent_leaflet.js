@@ -71,6 +71,7 @@ function refreshControl(s) {
   for(const [name,layer] of s.baseLayers) bases[name]=layer;
   const overlay={
     "Radarové krytí":s.groups.coverage,
+    "RWY / Airport geometry":s.groups.airport,
     "Překážky":s.groups.obstacles,
     "Radar":s.groups.radar,
     "Další geodata":s.groups.environment,
@@ -295,6 +296,7 @@ function init(s) {
   s.map.attributionControl.setPrefix(false);
   s.baseLayers=new Map();s.groups={
     coverage:L.featureGroup().addTo(s.map),
+    airport:L.featureGroup().addTo(s.map),
     obstacles:L.featureGroup().addTo(s.map),
     radar:L.featureGroup().addTo(s.map),
     environment:L.featureGroup().addTo(s.map),
@@ -384,9 +386,38 @@ function updateCoverage(s,data) {
   for(const record of data.coverage||[]){
     if(!record.geojson?.features?.length)continue;
     const color=record.color||"#247ad3";
-    const item=L.geoJSON(record.geojson,{style:()=>({color,weight:1.5,
-      fillColor:color,fillOpacity:data.opacity??.4})});
+    const previous=!!record.previous;
+    const item=L.geoJSON(record.geojson,{style:()=>({color,
+      weight:previous?2.3:1.5,dashArray:previous?"7 5":null,
+      fillColor:color,fillOpacity:previous?0:(data.opacity??.4)})});
     item.addTo(s.groups.coverage);
+  }
+}
+function updateAirport(s,data){
+  const geometries=data.airportGeometry||[];
+  const sig=JSON.stringify([geometries,data.airportCode||""]);
+  if(s.last.airport===sig)return;
+  s.last.airport=sig;
+  s.groups.airport.clearLayers();
+  for(const g of geometries){
+    if(!g.centerline?.length||!g.extended?.length)continue;
+    const code=String(data.airportCode||"");
+    const label=code+" · RWY "+String(g.label||"");
+    L.polyline(g.extended,{color:"#b78b1c",weight:1.6,dashArray:"6 5",
+      interactive:false}).addTo(s.groups.airport);
+    L.polyline(g.centerline,{color:"#2c5266",weight:5,opacity:.9})
+      .bindTooltip(label+" · TRUE "+String(g.true_bearing)+"°")
+      .addTo(s.groups.airport);
+    for(let i=0;i<(g.thresholds||[]).length;i++){
+      const point=g.thresholds[i];
+      L.circleMarker(point,{radius:4,color:"#ffffff",weight:1.5,
+        fillColor:"#df6f37",fillOpacity:1})
+        .bindTooltip(label+" · THR "+String(i===0?"A":"B"))
+        .addTo(s.groups.airport);
+    }
+    L.circleMarker(g.midpoint,{radius:3,color:"#ffffff",weight:1.2,
+      fillColor:"#2676be",fillOpacity:1})
+      .bindTooltip(label+" · MIDPOINT").addTo(s.groups.airport);
   }
 }
 function highlightObstacle(s,layer){
@@ -536,6 +567,7 @@ function update(s){
   updateDayNight(s,data);
   updateOpenAip(s,data);
   updateCoverage(s,data);
+  updateAirport(s,data);
   updateObstacles(s,data);
   updateRadar(s,data);
   updateProfile(s,data);
