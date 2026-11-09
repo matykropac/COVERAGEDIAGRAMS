@@ -235,6 +235,71 @@ class ParScanPattern(AntennaPattern):
     gain_grid_db: np.ndarray  # elevation x relative azimuth
     source_peak_db: float
     source_sha256: str
+    scan_mode: str = 'TRACKING'
+    steering_loss_db_per_deg: float = 0.0
+    detection_model: str = 'RELATIVE'
+    reference_snr_db: float = 16.0
+    pd: float = 0.8
+    pfa: float = 1e-6
+    pulses: int = 1
+
+    def validate_model(self):
+        if self.scan_mode not in ('TRACKING', 'FIXED_3D'):
+            raise ValueError('PAR: neznámý režim skenování.')
+        if self.detection_model not in ('RELATIVE', 'ALBERSHEIM'):
+            raise ValueError('PAR: neznámý detekční model.')
+        if not np.isfinite(self.steering_loss_db_per_deg) or not 0 <= self.steering_loss_db_per_deg <= 5:
+            raise ValueError('PAR: neplatná ztráta vychýlením.')
+        if not np.isfinite(self.reference_snr_db) or not -20 <= self.reference_snr_db <= 60:
+            raise ValueError('PAR: neplatný referenční SNR.')
+        if not 0 < self.pd < 1 or not 0 < self.pfa < 1 or not isinstance(self.pulses, int) or not 1 <= self.pulses <= 1000:
+            raise ValueError('PAR: neplatné Pd, Pfa nebo počet pulzů.')
+
+    def required_snr_db(self):
+        """Albersheim approximation for N noncoherently integrated pulses.
+        Engineering estimate, not an experimentally verified PAR specification.
+        """
+        self.validate_model()
+        import math
+        a = math.log(0.62 / self.pfa)
+        b = math.log(self.pd / (1.0 - self.pd))
+        term = a + 0.12*a*b + 1.7*b
+        if term <= 0:
+            raise ValueError('PAR: zvolené Pd a Pfa nelze tímto modelem vyhodnotit.')
+        return -5*math.log10(self.pulses) + (6.2 + 4.54 / math.sqrt(self.pulses + 0.44))*math.log10(term)
+
+    def gain_at(self, elevation_rad, relative_azimuth_deg, tilt_deg=0.0):
+        """Interpolate gain in supplied 3D grid or scan its 0-degree cut.
+
+        TRACKING represents ideal beam steering with optional stated loss;
+        FIXED_3D uses the measured unsteered 3D grid. Neither claims that
+        the static pattern includes phased-array steering or dwell effects.
+        """
+        self.validate_model()
+        elevation_deg = np.rad2deg(np.asarray(elevation_rad,dtype=float)) - tilt_deg
+        relative = np.asarray(relative_azimuth_deg,dtype=float)
+        elevation_deg, relative = np.broadcast_arrays(elevation_deg,relative)
+        if self.scan_mode == 'TRACKING':
+            return (np.interp(elevation_deg, self.angles_deg, self.gains_db,
+                              left=-200.,right=-200.)
+                    - self.steering_loss_db_per_deg*np.abs(relative))
+        # Bilinear interpolation along the actual elevation x azimuth grid.
+        ei = np.searchsorted(self.angles_deg, elevation_deg, side='right') - 1
+        ai = np.searchsorted(self.azimuths_deg, relative, side='right') - 1
+        ei = np.clip(ei,0,len(self.angles_deg)-2)
+        ai = np.clip(ai,0,len(self.azimuths_deg)-2)
+        te = (elevation_deg-self.angles_deg[ei])/(self.angles_deg[ei+1]-self.angles_deg[ei])
+        ta = (relative-self.azimuths_deg[ai])/(self.azimuths_deg[ai+1]-self.azimuths_deg[ai])
+        g = ((1-te)*((1-ta)*self.gain_grid_db[ei,ai] + ta*self.gain_grid_db[ei,ai+1])
+              + te*((1-ta)*self.gain_grid_db[ei+1,ai] + ta*self.gain_grid_db[ei+1,ai+1]))
+        valid = ((elevation_deg>=self.angles_deg[0])&(elevation_deg<=self.angles_deg[-1])&
+                 (relative>=self.azimuths_deg[0])&(relative<=self.azimuths_deg[-1]))
+        return np.where(valid,g,-200.)
+
+    def effective_range_factor(self, elevation_rad, relative_azimuth_deg, tilt_deg=0.0):
+        gain = self.gain_at(elevation_rad,relative_azimuth_deg,tilt_deg)
+        margin = (self.reference_snr_db-self.required_snr_db())/40 if self.detection_model=='ALBERSHEIM' else 0.
+        return np.power(10.,np.clip(gain/20 + margin,-12,3))
 
 
 def builtin_par_pattern():
@@ -526,10 +591,14 @@ def pattern_range_factor(pattern, elevation, c, beam_mode=None):
     return pattern.range_factor(elevation, c.antenna_tilt_deg)
 
 
-def pattern_allows(distance, height, antenna_amsl, c, pattern, beam_mode=None):
+def pattern_allows(distance, height, antenna_amsl, c, pattern, beam_mode=None, azimuths=None):
     elevation = apparent_angle(distance, height, antenna_amsl, c.k)
-    limit = c.csc_range_km * 1000 * pattern_range_factor(
-        pattern, elevation, c, beam_mode)
+    if isinstance(pattern, ParScanPattern):
+        relative = 0.0 if azimuths is None else ((np.asarray(azimuths)-c.bearing_deg+180)%360-180)
+        factor = pattern.effective_range_factor(elevation,relative,c.antenna_tilt_deg)
+    else:
+        factor = pattern_range_factor(pattern, elevation, c, beam_mode)
+    limit = c.csc_range_km * 1000 * factor
     return (elevation >= np.deg2rad(c.min_elev)) & (elevation <= np.deg2rad(c.max_elev)) & \
            (slant_distance(distance, height, antenna_amsl, c.k) <= limit + 1e-6)
 
@@ -558,7 +627,7 @@ def status_at_height(result, height_m, reference='AMSL'):
     if result['config'].csc_enabled:
         if pattern is not None:
             visible &= pattern_allows(result['distance'][None, :], target, result['antenna'],
-                                      result['config'], pattern)
+                                      result['config'], pattern, azimuths=result['az'][:,None])
         else:
             visible &= csc_allows(result['distance'][None, :], target, result['antenna'],
                                   result['config'])
@@ -569,6 +638,8 @@ def solve(c, terrain, site_height, antenna_pattern=None):
     az, distance = axes(c)
     if c.radar_mode == 'PAR-NG' and (not c.csc_enabled or not isinstance(antenna_pattern, ParScanPattern)):
         raise ValueError('PAR-NG vyžaduje zapnutý diagram a načtený 3D PAR diagram.')
+    if c.radar_mode == 'PAR-NG':
+        antenna_pattern.validate_model()
     if c.radar_mode == 'SSR' and (not c.csc_enabled or not isinstance(antenna_pattern, GenericSSRPattern)):
         raise ValueError('SSR vyžaduje zapnutý obecný SSR model.')
     terrain = np.asarray(terrain, dtype=float)
@@ -592,7 +663,8 @@ def solve(c, terrain, site_height, antenna_pattern=None):
     visible = known & (target >= lower - 1e-6) & (target <= upper + 1e-6)
     if c.csc_enabled:
         if antenna_pattern is not None:
-            visible &= pattern_allows(distance[None, :], target, antenna, c, antenna_pattern)
+            visible &= pattern_allows(distance[None, :], target, antenna, c, antenna_pattern,
+                                      azimuths=az[:,None])
         else:
             visible &= csc_allows(distance[None, :], target, antenna, c)
     status = np.where(known, visible.astype(float), np.nan)
@@ -1054,8 +1126,12 @@ def calculation_metadata(result):
         radial_step_m=float(result['distance'][0]),
         antenna_pattern=pattern.name if pattern is not None else 'built-in csc2',
         beam_mode=c.beam_mode,
-        scan_model=('ideal azimuth sweep, boresight vertical cut; no elevation scan or steering loss'
-                    if c.radar_mode == 'PAR-NG' else 'full azimuth coverage'),
+        scan_model=(pattern.scan_mode if isinstance(pattern, ParScanPattern) else 'full azimuth coverage'),
+        par_detection=(dict(model=pattern.detection_model,reference_snr_db=pattern.reference_snr_db,
+             pd=pattern.pd,pfa=pattern.pfa,pulses=pattern.pulses,
+             steering_loss_db_per_deg=pattern.steering_loss_db_per_deg,
+             assumptions='40 km reference calibration, Albersheim is approximate, no measured steering/dwell or target RCS')
+            if isinstance(pattern, ParScanPattern) else None),
         azimuth_axis='continuous degrees; modulo 360 gives compass bearing',
         scan_limits_deg=([float(result['az'][0]), float(result['az'][-1])]
                          if c.radar_mode == 'PAR-NG' else [0,360]),
