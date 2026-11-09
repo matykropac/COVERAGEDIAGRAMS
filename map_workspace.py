@@ -106,9 +106,20 @@ def _airspace_controls():
     if st.button("NAČÍST CTR / TMA",use_container_width=True,key="ws_airspace_fetch"):
         try:
             from aviation_basemap import configured_key
-            key=configured_key()
+            import os
+            key=os.environ.get("OPENAIP_DATA_API_KEY","").strip()
             if not key:
-                raise ValueError("Chybí OPENAIP_API_KEY v Secrets / prostředí.")
+                try:
+                    key=str(st.secrets.get("OPENAIP_DATA_API_KEY","")).strip()
+                except (FileNotFoundError, KeyError, OSError):
+                    pass
+            if not key:
+                key=configured_key()
+            if not key:
+                raise ValueError(
+                    "Chybí OpenAIP API klíč. Nastav OPENAIP_DATA_API_KEY "
+                    "ve Streamlit Secrets pro vektorová data CTR/TMA."
+                )
             runways=st.session_state.get("ws_airport_geometry") or []
             if runways:
                 position=runways[0]["midpoint"]

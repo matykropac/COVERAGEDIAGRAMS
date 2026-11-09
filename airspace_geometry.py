@@ -8,6 +8,7 @@ import math
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 from shapely.geometry import shape, mapping, Point
 from shapely.ops import transform
@@ -82,8 +83,27 @@ def _geometry_valid(geometry):
 def _http_get(url, api_key):
     req=Request(url,headers={"x-openaip-api-key":api_key,"Accept":"application/json",
                              "User-Agent":"COVERAGEDIAGRAMS/1.0"})
-    with urlopen(req,timeout=18) as response:
-        content=response.read(MAX_RESPONSE_BYTES+1)
+    try:
+        with urlopen(req,timeout=18) as response:
+            content=response.read(MAX_RESPONSE_BYTES+1)
+    except HTTPError as exc:
+        if exc.code in (401,403):
+            raise PermissionError(
+                "OpenAIP Core API odmítlo přístup (HTTP "
+                +str(exc.code)+"). Klíč pro mapové dlaždice nemusí mít oprávnění "
+                "pro vektorové airspaces. Vytvoř/povol API klíč pro Core Data API "
+                "jako OPENAIP_DATA_API_KEY ve Streamlit Secrets. "
+                "Alternativně importuj CTR/TMA přes GeoJSON."
+            ) from None
+        if exc.code==429:
+            raise ConnectionError(
+                "OpenAIP omezuje počet dotazů (HTTP 429). "
+                "Použij uložená data nebo import GeoJSON."
+            ) from None
+        raise ConnectionError(f"OpenAIP Core API vrátilo HTTP {exc.code}.") from None
+    except (URLError, TimeoutError, OSError) as exc:
+        raise ConnectionError("OpenAIP Core API není dostupné z tohoto serveru; "
+                              "použij dříve uložené vrstvy nebo import GeoJSON.") from exc
     if len(content)>MAX_RESPONSE_BYTES:
         raise ValueError("OpenAIP vrátil příliš mnoho dat.")
     return json.loads(content.decode("utf-8"))

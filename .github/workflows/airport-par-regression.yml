@@ -4,10 +4,13 @@ on:
   push:
     branches:
       - "feature/icao-runways-and-par-comparison-*"
+      - "fix/openaip-overpass-provider-recovery-*"
   pull_request:
     paths:
       - "airport_geometry.py"
       - "airspace_geometry.py"
+      - "environment_layers.py"
+      - "tests/test_provider_recovery.py"
       - "tests/test_airspace_geometry.py"
       - "map_workspace.py"
       - "position_export.py"
@@ -31,12 +34,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install minimal model dependencies
-        run: python -m pip install numpy matplotlib pyproj shapely folium branca
+        run: python -m pip install numpy matplotlib pyproj shapely folium branca streamlit
       - name: Compile and test runway plus cached PAR model
         run: |
           python -m compileall -q airport_geometry.py map_workspace.py project_file.py
           python -m unittest discover -s tests -p "test_airport_geometry.py" -v
           python -m unittest discover -s tests -p "test_airspace_geometry.py" -v
+          python -m unittest discover -s tests -p "test_provider_recovery.py" -v
           python -m unittest discover -s tests -p "test_position_export.py" -v
           python -m unittest discover -s tests -p "test_cached_par_recompute.py" -v
           python -m unittest discover -s tests -p "test_par_altitude_reference.py" -v

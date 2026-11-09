@@ -72,6 +72,41 @@ def _feature(kind, coords, tags, source_id):
                 coordinates=coords, height_m=height, height_quality=quality,
                 source="OpenStreetMap", source_id=str(source_id))
 
+OVERPASS_ENDPOINTS = (
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.maprva.org/api/interpreter",
+)
+
+def _overpass_json_with_fallback(payload, *, opener=None, endpoints=None):
+    """Retry allowlisted Overpass servers, safely bounding JSON payloads."""
+    import urllib.error
+    opener = opener or urllib.request.urlopen
+    endpoints = endpoints or OVERPASS_ENDPOINTS
+    errors = []
+    for url in endpoints:
+        try:
+            request = urllib.request.Request(
+                url, data=payload,
+                headers={"User-Agent":"COVERAGEDIAGRAMS/2.0 (on-demand geospatial analysis)",
+                         "Content-Type":"application/x-www-form-urlencoded",
+                         "Accept":"application/json"})
+            with opener(request, timeout=40) as response:
+                body = response.read(24_000_001)
+            if len(body)>24_000_000:
+                raise ValueError("příliš velká odpověď (nad 24 MB)")
+            parsed = json.loads(body.decode("utf-8"))
+            if not isinstance(parsed,dict) or not isinstance(parsed.get("elements"),list):
+                raise ValueError("neplatná odpověď Overpass")
+            return parsed
+        except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,
+                OSError,ValueError,UnicodeError) as exc:
+            short = "HTTP "+str(exc.code) if isinstance(exc,urllib.error.HTTPError) else type(exc).__name__
+            errors.append(url.split("/")[2]+" ("+short+")")
+    raise RuntimeError(
+        "Žádný Overpass server neodpověděl: "+"; ".join(errors)
+        +". Server může blokovat odchozí spojení; zkus lokální GeoJSON import.")
+
 @st.cache_data(ttl=86400, show_spinner=False, max_entries=32)
 def fetch_osm(lat, lon, radius_km):
     """Small on-demand Overpass query. No background scans or bulk tile downloads."""
@@ -87,12 +122,7 @@ def fetch_osm(lat, lon, radius_km):
              f'node(around:{meters},{lat:.6f},{lon:.6f})["man_made"~"^(tower|mast|chimney)$"];'
              ');out geom;')
     payload = urllib.parse.urlencode({"data": query}).encode()
-    request = urllib.request.Request(
-        "https://overpass-api.de/api/interpreter", data=payload,
-        headers={"User-Agent": "COVERAGEDIAGRAMS/2.0 (on-demand geospatial analysis)",
-                 "Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(request, timeout=48) as response:
-        data = json.load(response)
+    data = _overpass_json_with_fallback(payload)
     items = []
     for element in data.get("elements", []):
         tags = element.get("tags") or {}
