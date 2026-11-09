@@ -113,7 +113,9 @@ def fetch_airspaces(lat,lon,radius_km,api_key,fetch=None):
     else:
         if total_pages>4:
             raise ValueError("Zdroj obsahuje příliš mnoho prostorů; zmenši poloměr.")
-    center=Point(lon,lat)
+    from pyproj import CRS, Transformer
+    crs=CRS.from_proj4(f"+proj=aeqd +lat_0={lat:.8f} +lon_0={lon:.8f} +datum=WGS84 +units=m")
+    project=Transformer.from_crs("EPSG:4326",crs,always_xy=True).transform
     selected=[]
     for item in items:
         if not isinstance(item,dict) or item.get("type") not in KINDS:
@@ -124,9 +126,7 @@ def fetch_airspaces(lat,lon,radius_km,api_key,fetch=None):
             continue
         # OpenAIP radius lookup might return features by centroid; recheck
         # actual boundary distance geodesically using a local equidistant CRS.
-        from pyproj import CRS, Transformer
-        crs=CRS.from_proj4(f"+proj=aeqd +lat_0={lat:.8f} +lon_0={lon:.8f} +datum=WGS84 +units=m")
-        projected=transform(Transformer.from_crs("EPSG:4326",crs,always_xy=True).transform,geom)
+        projected=transform(project,geom)
         if projected.distance(Point(0,0))>radius*1000:
             continue
         lower=_datum_limit(item.get("lowerLimit"))
