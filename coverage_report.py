@@ -16,12 +16,23 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.utils import ImageReader
 from PIL import Image
+import numpy as np
+from urllib.parse import quote
+
+from aviation_basemap import configured_key, URL as OPENAIP_TILE_URL
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import Paragraph
 
 import radar_core as core
 from customer_delivery import customer_metrics
+
+REPORT_BASEMAP_OPTIONS = (
+    "Satelitní · Esri",
+    "Esri · Topographic (legacy)",
+    "OpenStreetMap",
+    "OpenStreetMap + OpenAIP",
+)
 
 NAVY = colors.HexColor("#17354F")
 BLUE = colors.HexColor("#236EAB")
@@ -327,6 +338,54 @@ def _image_page(c, title, project, page_number, image, caption):
     c.showPage()
 
 
+def _report_basemap(config, options, viewport):
+    """Load the exact exported viewport; optionally blend aviation chart tiles.
+
+    The aviation overlay is applied to the reprojected OSM image, before
+    radar polygons and range rings are drawn by the regular report renderer.
+    """
+    use_aip = options.basemap == "OpenStreetMap + OpenAIP"
+    base_provider = "OpenStreetMap" if use_aip else options.basemap
+    base = core.load_basemap(config, viewport=viewport, out_size=(1300, 1300),
+                             provider=base_provider)
+    if base is None or base.get("image") is None:
+        raise ValueError("Mapový podklad není dostupný; PDF nebylo vytvořeno.")
+    if not use_aip:
+        return base
+
+    key = configured_key()
+    if not key:
+        raise ValueError("Pro export OpenStreetMap + OpenAIP nastav OPENAIP_API_KEY.")
+    # The OpenAIP raster service uses transparent chart tiles, so a correctly
+    # reprojected overlay can be composited in the same AEQD pixel geometry.
+    provider_name = "_pdf_openaip_overlay"
+    if provider_name in core.BASEMAP_PROVIDERS:
+        raise RuntimeError("OpenAIP report provider collision.")
+    core.BASEMAP_PROVIDERS[provider_name] = {
+        "cache": "openaip_report",
+        "url": OPENAIP_TILE_URL.format(z="{z}", x="{x}", y="{y}",
+                                        key=quote(key, safe="")),
+        "max_zoom": 18,
+        "attribution": "Aeronautical data © OpenAIP",
+    }
+    try:
+        aviation = core.load_basemap(config, viewport=viewport,
+                                     out_size=(1300, 1300), provider=provider_name)
+    finally:
+        core.BASEMAP_PROVIDERS.pop(provider_name, None)
+    if aviation is None or aviation.get("image") is None:
+        raise ValueError("Letecké dlaždice OpenAIP nejsou dostupné; PDF nebylo vytvořeno.")
+    if not np.any(np.asarray(aviation["image"])[..., 3]):
+        raise ValueError("OpenAIP vrátil prázdnou mapu; PDF nebylo vytvořeno.")
+    background = Image.fromarray(np.asarray(base["image"], dtype=np.uint8), "RGBA")
+    chart = Image.fromarray(np.asarray(aviation["image"], dtype=np.uint8), "RGBA")
+    chart.putalpha(chart.getchannel("A").point(lambda value: int(value * 0.88)))
+    base["image"] = np.asarray(Image.alpha_composite(background, chart))
+    base["provider"] = options.basemap
+    base["attribution"] = "© OpenStreetMap contributors · Aeronautical data © OpenAIP"
+    return base
+
+
 def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -> bytes:
     """Build one PDF independently of ZIP, KML and raster exports."""
     if result is None or "config" not in result:
@@ -334,8 +393,8 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
     levels = sorted({int(ft) for ft in options.flight_levels_ft}, reverse=True)
     if not levels or any(ft <= 0 for ft in levels):
         raise ValueError("Select at least one valid flight altitude.")
-    if options.basemap not in ("Satelitní · Esri", "Esri · Topographic (legacy)"):
-        raise ValueError("Unsupported Esri basemap selection.")
+    if options.basemap not in REPORT_BASEMAP_OPTIONS:
+        raise ValueError("Unsupported report basemap selection.")
     if options.dpi not in (300, 600):
         raise ValueError("DPI must be 300 or 600.")
     project = (options.project_name or "Radar Coverage Study").strip()[:95]
@@ -353,8 +412,7 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
     viewport = (-view_radius_km, view_radius_km,
                 -view_radius_km, view_radius_km)
     # Fetch/reproject once: all report maps share the same AEQD geometry.
-    basemap = core.load_basemap(config, viewport=viewport, out_size=(1300, 1300),
-                                provider=options.basemap)
+    basemap = _report_basemap(config, options, viewport)
     if basemap is None or basemap.get("image") is None:
         raise ValueError("Esri basemap is unavailable. Report not generated.")
     buffer = BytesIO()
