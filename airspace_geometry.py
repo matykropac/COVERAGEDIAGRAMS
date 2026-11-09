@@ -140,7 +140,7 @@ def fetch_airspaces(lat,lon,radius_km,api_key,fetch=None):
             "upper":upper,
             "geometry":json.loads(json.dumps(mapping(geom))),
             "source":"OpenAIP",
-            "verified_aip":False,
+            "verified_aip":False,"hidden":False,
         })
         if len(selected)>=MAX_ITEMS:
             break
@@ -169,6 +169,7 @@ def validate_saved_airspaces(entries):
         clone["name"]=_limit_text(item.get("name"))
         clone["id"]=_limit_text(item.get("id"),80)
         clone["class"]=_limit_text(item.get("class"),20)
+        clone["hidden"]=bool(item.get("hidden",False))
         for side in ("lower","upper"):
             limit=item.get(side)
             if not isinstance(limit,dict):
@@ -184,6 +185,8 @@ def validate_saved_airspaces(entries):
 def visible_airspaces(entries,show_ctr=True,show_tma=True,altitude_ft=None):
     out=[]
     for item in entries:
+        if item.get("hidden",False):
+            continue
         if item["kind"]=="CTR" and not show_ctr or item["kind"]=="TMA" and not show_tma:
             continue
         if altitude_ft is not None:
@@ -199,7 +202,7 @@ def visible_airspaces(entries,show_ctr=True,show_tma=True,altitude_ft=None):
 def as_geojson(entries):
     return {"type":"FeatureCollection","features":[{
         "type":"Feature","geometry":item["geometry"],
-        "properties":{key:item[key] for key in ("id","name","kind","class","lower","upper","source","verified_aip")}
+        "properties":{key:item[key] for key in ("id","name","kind","class","lower","upper","source","verified_aip","hidden")}
     } for item in validate_saved_airspaces(entries)]}
 
 
@@ -224,5 +227,5 @@ def import_geojson(blob):
             "lower":props.get("lower") if isinstance(props.get("lower"),dict) else {"text":"N/A","amsl_ft":None},
             "upper":props.get("upper") if isinstance(props.get("upper"),dict) else {"text":"N/A","amsl_ft":None},
             "geometry":feature.get("geometry"),"source":"GeoJSON import",
-            "verified_aip":False})
+            "verified_aip":False,"hidden":False})
     return validate_saved_airspaces(zones)
