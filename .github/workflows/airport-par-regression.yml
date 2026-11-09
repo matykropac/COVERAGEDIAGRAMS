@@ -8,6 +8,10 @@ on:
     paths:
       - "airport_geometry.py"
       - "map_workspace.py"
+      - "radar_core.py"
+      - "web_support.py"
+      - "tests/test_par_3d_detection.py"
+      - "tests/test_par_altitude_reference.py"
       - "assets/persistent_leaflet.js"
       - "tests/test_airport_geometry.py"
       - "tests/test_cached_par_recompute.py"
@@ -30,5 +34,6 @@ jobs:
           python -m unittest discover -s tests -p "test_airport_geometry.py" -v
           python -m unittest discover -s tests -p "test_cached_par_recompute.py" -v
           python -m unittest discover -s tests -p "test_par_altitude_reference.py" -v
+          python -m unittest discover -s tests -p "test_par_3d_detection.py" -v
       - name: Check Leaflet module syntax
         run: node --check --input-type=module < assets/persistent_leaflet.js
