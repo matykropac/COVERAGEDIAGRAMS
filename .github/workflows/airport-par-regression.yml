@@ -29,5 +29,6 @@ jobs:
           python -m compileall -q airport_geometry.py map_workspace.py project_file.py
           python -m unittest discover -s tests -p "test_airport_geometry.py" -v
           python -m unittest discover -s tests -p "test_cached_par_recompute.py" -v
+          python -m unittest discover -s tests -p "test_par_altitude_reference.py" -v
       - name: Check Leaflet module syntax
         run: node --check --input-type=module < assets/persistent_leaflet.js
