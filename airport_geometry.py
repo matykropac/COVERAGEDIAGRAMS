@@ -137,3 +137,39 @@ def par_bearing_for_runway(runway, selected_end, radar_lat, radar_lon, *, lookah
     lon, lat, _ = GEOD.fwd(threshold[1], threshold[0], approach_outbound, lookahead_nm * 1852)
     bearing, _, _ = GEOD.inv(float(radar_lon), float(radar_lat), lon, lat)
     return float(bearing % 360)
+
+
+def validate_saved_geometry(icao, runways):
+    """Reject malformed untrusted project metadata before drawing it."""
+    code = validate_icao(icao)
+    if not isinstance(runways, list) or len(runways) > 40:
+        raise ValueError("Neplatný počet RWY v projektu.")
+    validated = []
+    for item in runways:
+        if not isinstance(item, dict) or item.get("source") != "OurAirports public-domain runways.csv":
+            raise ValueError("Neplatný zdroj geometrie RWY.")
+        ends = item.get("ends")
+        thresholds = item.get("thresholds")
+        midpoint = item.get("midpoint")
+        if not isinstance(ends, list) or len(ends) != 2 or not isinstance(thresholds, list) or len(thresholds) != 2:
+            raise ValueError("Neplatné prahy RWY.")
+        for endpoint in ends:
+            if not isinstance(endpoint, dict) or not isinstance(endpoint.get("ident"), str) or len(endpoint["ident"]) > 5:
+                raise ValueError("Neplatné označení RWY.")
+            _validate_point([endpoint.get("lat"), endpoint.get("lon")])
+        for point in thresholds + [midpoint]:
+            _validate_point(point)
+        heading = float(item.get("heading_deg_true", -1))
+        if not 0 <= heading < 360:
+            raise ValueError("Neplatný zeměpisný azimut dráhy.")
+        validated.append(item)
+    return code, validated
+
+
+def _validate_point(point):
+    import math
+    if not isinstance(point, (list, tuple)) or len(point) != 2:
+        raise ValueError("Neplatné souřadnice RWY.")
+    lat, lon = (float(value) for value in point)
+    if not math.isfinite(lat) or not math.isfinite(lon) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError("Neplatné zeměpisné souřadnice RWY.")
