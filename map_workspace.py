@@ -21,7 +21,7 @@ import environment_layers as env
 import aviation_layers as aviation
 import canopy_layers as canopy
 from aviation_basemap import add_to_map as add_openaip_map
-from web_support import coverage_geojson
+from web_support import coverage_geojson, coverage_diagnostic, coverage_diagnostic_message
 from obstacles import apply_obstacles, obstacle_polygon, obstacle_signature
 from site_picker import coordinates_from_map_click
 from traffic_overlay import fetch_snapshot, add_traffic_layer
@@ -1048,10 +1048,21 @@ def _draw_map():
     for level in active:
         if level not in st.session_state.setdefault("geometry",{}):
             st.session_state.geometry[level]=coverage_geojson(result,level)
+        geo = st.session_state.geometry[level]
         coverage.append({
-            "geojson":st.session_state.geometry[level],
+            "geojson":geo,
             "color":"#247ad3" if level is None else to_hex(core.level_color(level)),
         })
+        if c.radar_mode == "PAR-NG" and not geo.get("features"):
+            stats = coverage_diagnostic(result, level, geo.get("features", []))
+            label = "Cílová výška" if level is None else core.level_label(level)
+            st.warning(
+                f"PAR-NG · {label}: prázdná vrstva. "
+                f"{coverage_diagnostic_message(stats)} "
+                f"Diagnostika: DEM {stats['known']}/{stats['samples']}, "
+                f"geometrie {stats['geometric']}, anténa {stats['covered']}, "
+                f"polygony {stats['features']}."
+            )
 
     obstacle_data=[]
     # A downloaded object's catalog polygon is already rendered in the
