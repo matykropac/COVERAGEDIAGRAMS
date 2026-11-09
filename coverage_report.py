@@ -414,7 +414,7 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
     # Fetch/reproject once: all report maps share the same AEQD geometry.
     basemap = _report_basemap(config, options, viewport)
     if basemap is None or basemap.get("image") is None:
-        raise ValueError("Esri basemap is unavailable. Report not generated.")
+        raise ValueError("Selected basemap is unavailable. Report not generated.")
     buffer = BytesIO()
     pdf = Canvas(buffer, pagesize=(PAGE_W, PAGE_H), pageCompression=1)
     pdf.setTitle(f"Coverage Maps - {project}")
