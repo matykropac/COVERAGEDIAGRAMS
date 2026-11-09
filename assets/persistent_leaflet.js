@@ -72,6 +72,7 @@ function refreshControl(s) {
   const overlay={
     "Radarové krytí":s.groups.coverage,
     "RWY / Airport geometry":s.groups.airport,
+    "CTR / TMA · OpenAIP":s.groups.airspaces,
     "Překážky":s.groups.obstacles,
     "Radar":s.groups.radar,
     "Další geodata":s.groups.environment,
@@ -297,6 +298,7 @@ function init(s) {
   s.baseLayers=new Map();s.groups={
     coverage:L.featureGroup().addTo(s.map),
     airport:L.featureGroup().addTo(s.map),
+    airspaces:L.featureGroup().addTo(s.map),
     obstacles:L.featureGroup().addTo(s.map),
     radar:L.featureGroup().addTo(s.map),
     environment:L.featureGroup().addTo(s.map),
@@ -393,6 +395,41 @@ function updateCoverage(s,data) {
     item.addTo(s.groups.coverage);
   }
 }
+function updateAirspaces(s,data){
+  const sig=data.airspacesVersion||"empty";
+  if(s.last.airspaces===sig)return;
+  s.last.airspaces=sig;
+  s.groups.airspaces.clearLayers();
+  const zones=(data.airspaces||[]).slice(0,200);
+  for(const z of zones){
+    if(!z.geometry||!["CTR","TMA"].includes(z.kind))continue;
+    const ctr=z.kind==="CTR";
+    const color=ctr?"#2075dc":"#7356c7";
+    const line=L.geoJSON(z.geometry,{
+      style:()=>({color,weight:ctr?2.1:2.4,
+        dashArray:ctr?null:"8 5",fillColor:color,fillOpacity:ctr?.065:.045}),
+      bubblingMouseEvents:false
+    });
+    const details=[String(z.name||z.kind),z.kind+" · CLASS "+String(z.class||"?"),
+      "LOWER: "+String(z.lower?.text||"N/A"),
+      "UPPER: "+String(z.upper?.text||"N/A"),
+      "SOURCE: "+String(z.source||"OpenAIP")+" · unofficial"].join("\n");
+    line.bindTooltip(details,{sticky:true});
+    line.bindPopup(
+      "<strong>"+escapeAirspaceText(z.name||z.kind)+"</strong>"+
+      "<p>TYPE: "+escapeAirspaceText(z.kind)+" · CLASS: "+escapeAirspaceText(z.class||"?")+"</p>"+
+      "<p>LOWER: "+escapeAirspaceText(z.lower?.text||"N/A")+
+      "<br>UPPER: "+escapeAirspaceText(z.upper?.text||"N/A")+"</p>"+
+      "<small>"+escapeAirspaceText(z.source||"OpenAIP")+" · reference only, verify with official AIP</small>"
+    );
+    line.addTo(s.groups.airspaces);
+  }
+}
+function escapeAirspaceText(v){
+  return String(v).replace(/[&<>"']/g,c=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
 function updateAirport(s,data){
   const geometries=data.airportGeometry||[];
   const sig=JSON.stringify([geometries,data.airportCode||""]);
@@ -568,6 +605,7 @@ function update(s){
   updateOpenAip(s,data);
   updateCoverage(s,data);
   updateAirport(s,data);
+  updateAirspaces(s,data);
   updateObstacles(s,data);
   updateRadar(s,data);
   updateProfile(s,data);
