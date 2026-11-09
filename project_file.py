@@ -1,7 +1,7 @@
 """Portable, versioned COVERAGEDIAGRAMS project archive (.cdproj).
 
 Only JSON and NumPy numeric arrays are loaded; pickle and executable content are
-never accepted. The embedded raw DEM matrix enables read-only coverage recovery.
+never accepted. The embedded raw DEM matrix enables reproducible coverage recovery.
 """
 from dataclasses import asdict
 from io import BytesIO
@@ -71,7 +71,7 @@ def load_project(blob, antenna_pattern=None):
         if data[key].shape != expected or data[key].dtype.kind not in 'biuf':
             raise ValueError('Neplatná data matice ' + key)
     obstacles = meta.get('obstacles', [])
-    if not isinstance(obstacles, list) or len(obstacles) > 100:
+    if not isinstance(obstacles, list) or len(obstacles) > 1000:
         raise ValueError('Neplatný seznam překážek.')
     for item in obstacles:
         if not isinstance(item, dict):

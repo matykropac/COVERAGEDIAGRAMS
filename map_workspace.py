@@ -139,8 +139,21 @@ def radar_dialog():
         if uploaded_project is not None and st.button("NAČÍST PROJEKT",key="ws_project_load"):
             try:
                 result,meta=load_project(uploaded_project.getvalue())
+                # Recreate the antenna-aware solution from the embedded DEM.
+                # Stored status/lower may already include obstacles; never reuse
+                # them as the base when editing or removing obstructions.
+                cfg=result["config"]
+                fresh=core.solve(cfg,result["terrain"],result["site_height"],_pattern(cfg))
+                apply_obstacles(fresh,meta.get("obstacles",[]))
+                fresh.update(source=result.get("source","PROJECT"),
+                             completed_at=result.get("completed_at",""),
+                             duration_s=result.get("duration_s",0),
+                             obstacles_signature=obstacle_signature(meta.get("obstacles",[])))
+                result=fresh
                 _config_state_from_project(result["config"])
                 st.session_state["result"]=result
+                st.session_state["geometry"]={}
+                st.session_state.pop("ws_snapshot_bytes",None)
                 st.session_state["obstacles"]=meta.get("obstacles",[])
                 st.session_state["ws_levels"]=meta.get("levels",[])
                 st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
@@ -283,6 +296,7 @@ def _calculate_coverage():
                           duration_s=round(time.perf_counter()-started,3))
             st.session_state.result=result
             st.session_state.geometry={}
+            st.session_state.pop("ws_snapshot_bytes",None)
             st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
             st.session_state["ws_result_notice"]="Krytí úspěšně vypočteno."
             st.session_state["ws_next_section"]="MAPA"
@@ -304,6 +318,36 @@ def _calculate_coverage():
                  use_container_width=True):
         st.session_state["ws_next_section"]="MAPA"
         st.rerun()
+
+
+def _recalculate_cached_terrain():
+    """Recalculate against the already sampled DEM; no network or DEM download."""
+    previous=st.session_state.get("result")
+    if previous is None:
+        raise ValueError("Nejprve vypočítej nebo načti projekt.")
+    requested=_cfg()
+    base=previous["config"]
+    if requested != base:
+        raise ValueError(
+            "Parametry radaru se změnily. Pro změnu stanoviště nebo výpočetní "
+            "mřížky spusť úplný výpočet; uložený DEM platí pro původní nastavení."
+        )
+    obstacles=[dict(item) for item in st.session_state.get("obstacles",[])]
+    # Transactional: previous result remains untouched on any failure.
+    recalculated=core.solve(base,previous["terrain"],previous["site_height"],_pattern(base))
+    apply_obstacles(recalculated,obstacles)
+    recalculated.update(
+        source=previous.get("source","CACHED DEM"),
+        completed_at=datetime.now(timezone.utc).isoformat(),
+        duration_s=0,
+        obstacles_signature=obstacle_signature(obstacles),
+    )
+    st.session_state["result"]=recalculated
+    st.session_state["geometry"]={}
+    st.session_state.pop("ws_snapshot_bytes",None)
+    st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
+    st.session_state["ws_result_notice"]="Překážky přepočteny z uloženého terénu."
+    st.session_state["ws_next_section"]="MAPA"
 
 
 def _focused_obstacle_controls(catalog,manual):
@@ -1413,7 +1457,42 @@ def render_workspace():
                     st.session_state.get("obstacles",[])) or config!=result["config"])
                 st.caption("Výsledek je potřeba přepočítat." if stale
                            else "Výpočet je aktuální.")
+                if st.button("↻ PŘEPOČÍTAT Z ULOŽENÉHO TERÉNU",
+                             use_container_width=True,key="ws_recalculate_cached",
+                             help="Rychle zapracuje přidané, změněné či odstraněné překážky bez dalšího stažení DEM."):
+                    try:
+                        _recalculate_cached_terrain()
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Přepočet z uloženého DEM selhal; předchozí výsledek zůstal zachován: {exc}")
             st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
+            if result is not None:
+                if st.button("⇩ PŘIPRAVIT PRACOVNÍ PROJEKT · .cdproj",
+                             use_container_width=True,key="ws_prepare_snapshot",
+                             help="Snapshot DEM a výpočtu připravit až na vyžádání."):
+                    try:
+                        st.session_state["ws_snapshot_bytes"]=save_project(
+                            result,levels=st.session_state.get("ws_levels",[]),
+                            obstacles=st.session_state.get("obstacles",[]))
+                        st.session_state["ws_snapshot_key"]=(
+                            result.get("completed_at"),
+                            obstacle_signature(st.session_state.get("obstacles",[])),
+                            tuple(st.session_state.get("ws_levels",[])),
+                        )
+                    except Exception as exc:
+                        st.error(f"Projekt nelze uložit: {exc}")
+                snapshot_key=(
+                    result.get("completed_at"),
+                    obstacle_signature(st.session_state.get("obstacles",[])),
+                    tuple(st.session_state.get("ws_levels",[])),
+                )
+                if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
+                    st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
+                        data=st.session_state["ws_snapshot_bytes"],
+                        file_name="COVERAGEDIAGRAMS_working.cdproj",
+                        mime="application/octet-stream",use_container_width=True,
+                        key="ws_save_working_project",
+                        help="Přenosný snapshot včetně DEM, nezávislý na dočasné cache.")
             if st.button("⇩ Export ZIP",key="ws_command_export",use_container_width=True):
                 exports_dialog()
 
