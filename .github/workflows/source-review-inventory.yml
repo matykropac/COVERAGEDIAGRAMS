@@ -1,0 +1,51 @@
+name: Source line review inventory
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/generate_source_audit.py"
+      - "docs/engineering/**"
+      - ".github/workflows/source-review-inventory.yml"
+  pull_request:
+    paths:
+      - "tools/generate_source_audit.py"
+      - "docs/engineering/**"
+      - ".github/workflows/source-review-inventory.yml"
+
+jobs:
+  source-review-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify reviewed docs and Python audit generator
+        run: |
+          python -m py_compile tools/generate_source_audit.py
+          test -s docs/engineering/SOFTWARE_DESIGN_DESCRIPTION.md
+          test -s docs/engineering/SOURCE_CODE_REVIEW.md
+          test -s docs/engineering/DEVELOPMENT_AND_OPERATIONS.md
+          test -s docs/engineering/REQUIREMENTS_AND_VERIFICATION.md
+      - name: Generate source line review register
+        run: |
+          python tools/generate_source_audit.py --out source_line_review.csv
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          path=Path("source_line_review.csv")
+          with path.open(encoding="utf-8",newline="") as f:
+              rows=list(csv.DictReader(f))
+          assert len(rows)>10000, f"unexpectedly small inventory: {len(rows)}"
+          assert all(row["review_status"]=="UNREVIEWED" for row in rows)
+          assert any(row["path"]=="radar_core.py" for row in rows)
+          assert any(row["path"]=="map_workspace.py" for row in rows)
+          print(f"Line inventory: {len(rows):,} source lines across {len({r['path'] for r in rows})} files.")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: COVERAGEDIAGRAMS-source-line-review
+          path: source_line_review.csv
+          if-no-files-found: error
