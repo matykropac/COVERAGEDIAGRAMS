@@ -1741,7 +1741,7 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
             # Maximize the square map inside the report graphic. The previous
             # 0.345 / 0.155 / 0.60 / 0.775 layout left excessive white space.
             # Matplotlib maintains equal geographic aspect without stretching tiles.
-            ax.set_position((0.19, 0.045, 0.79, 0.91))
+            ax.set_position((0.29, 0.055, 0.70, 0.90))
         else:
             fig.subplots_adjust(left=0.075, right=0.75, bottom=0.25, top=0.90)
         handles = []
@@ -1757,18 +1757,12 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                 handles.append(Patch(facecolor=color, edgecolor=color,
                                      label=labels[typ]))
         if handles:
-            if report_layout:
-                # Legend lives in the compact left sidebar, not below the map.
-                legend = fig.legend(handles=handles, loc='lower left',
-                                    bbox_to_anchor=(0.025, 0.11), fontsize=9,
-                                    frameon=False,
-                                    title='Legend' if english else 'Legenda')
-            else:
+            if not report_layout:
                 legend = fig.legend(handles=handles, loc='upper left',
                                     bbox_to_anchor=(0.77, 0.88), fontsize=9,
                                     title='Legend' if english else 'Legenda')
-            style_legend(legend)
-            legend.get_title().set_color(UI_TEXT)
+                style_legend(legend)
+                legend.get_title().set_color(UI_TEXT)
         c = result['config']
         if not report_layout:
             fig.text(0.075, 0.955, 'ELDIS · RADAR COVERAGE', color=UI_TEXT, fontsize=18, weight='bold')
@@ -1784,18 +1778,59 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                if english else f'Geometrický model · výškové řezy AMSL · {dpi} DPI · 330 × 229 mm')
         )
         if report_layout:
-            # Compact metadata; the complete parameters are on the technical
-            # pages. Do not shrink the actual map to fit long labels here.
-            details = (
-                f'RADAR\n{c.lat:.4f}°\n{c.lon:.4f}°\n\n'
-                f'ANTENNA\n{c.antenna_agl:g} m AGL\nTilt {c.antenna_tilt_deg:g}°\n\n'
-                f'RANGE\n{c.range_km / 1.852:.1f} NM\n\n'
-                f'MODEL\nk = {c.k:.3f}\n'
-                f'Elev. {c.min_elev:g}° to {c.max_elev:g}°\n'
-                f'Grid {c.step_m:g} m'
-            )
-            fig.text(0.025, 0.82, details, color=UI_TEXT, fontsize=10,
-                     va='top', linespacing=1.35)
+            # Fixed sidebar table: technical parameters and map legend share
+            # one bounded layout so labels cannot float over the export map.
+            from matplotlib.patches import FancyBboxPatch, Rectangle
+            from matplotlib.lines import Line2D as FigureLine
+            panel_x, panel_y, panel_w, panel_h = 0.018, 0.095, 0.252, 0.785
+            panel = FancyBboxPatch((panel_x, panel_y), panel_w, panel_h,
+                                   boxstyle='round,pad=0.004,rounding_size=0.009',
+                                   transform=fig.transFigure, facecolor='#f8fafc',
+                                   edgecolor='#d5dee7', linewidth=1.15, zorder=0.5)
+            fig.add_artist(panel)
+            def panel_text(x, y, value, *, size=9, bold=False, color='#152333'):
+                fig.text(x, y, str(value), fontsize=size, color=color,
+                         weight='bold' if bold else 'normal', va='center', zorder=2)
+            def panel_line(y):
+                fig.add_artist(FigureLine([0.03, 0.258], [y, y],
+                                          transform=fig.transFigure,
+                                          color='#d5dee7', lw=0.75, zorder=1))
+            panel_text(0.035, 0.85, 'RADAR PARAMETERS' if english else 'PARAMETRY RADARU',
+                       size=10.2, bold=True, color='#17354f')
+            panel_line(0.824)
+            table_rows = [
+                ('Site latitude', f'{c.lat:.5f}°'),
+                ('Site longitude', f'{c.lon:.5f}°'),
+                ('Antenna AGL', f'{c.antenna_agl:g} m'),
+                ('Antenna tilt', f'{c.antenna_tilt_deg:g}°'),
+                ('Radar range', f'{c.range_km / 1.852:.1f} NM'),
+                ('Earth factor k', f'{c.k:.3f}'),
+                ('Elevation', f'{c.min_elev:g}° – {c.max_elev:g}°'),
+                ('Grid step', f'{c.step_m:g} m'),
+            ]
+            for index, (label, value) in enumerate(table_rows):
+                row_y = 0.793 - index * 0.061
+                if index % 2 == 0:
+                    fig.add_artist(Rectangle((0.026, row_y - 0.027), 0.236, 0.055,
+                                             transform=fig.transFigure,
+                                             facecolor='#edf3f8', edgecolor='none',
+                                             zorder=0.75))
+                panel_text(0.035, row_y, label, size=8.4, color='#46576a')
+                panel_text(0.161, row_y, value, size=8.8, bold=True)
+            panel_line(0.292)
+            panel_text(0.035, 0.266, 'MAP LEGEND' if english else 'LEGENDA MAPY',
+                       size=9.5, bold=True, color='#17354f')
+            for index, handle in enumerate(handles[:4]):
+                swatch_y = 0.225 - index * 0.036
+                fig.add_artist(FigureLine([0.036, 0.065], [swatch_y, swatch_y],
+                                          transform=fig.transFigure,
+                                          color=handle.get_color() if hasattr(handle, 'get_color') else '#687888',
+                                          lw=3, zorder=2))
+                panel_text(0.075, swatch_y, handle.get_label(), size=8.5)
+            if len(handles) > 4:
+                panel_text(0.075, 0.075, f'+ {len(handles)-4} additional layers', size=7.5)
+            panel_text(0.035, 0.111, 'AMSL · 600 DPI' if english else 'AMSL · 600 DPI',
+                       size=7.5, color='#597185')
         else:
             fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)
         if environment_items:
@@ -1804,8 +1839,8 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                      + '\\nInformational OSM/Microsoft/import layers'
                      + '\\nNot certified survey data',
                      color=UI_TEXT, fontsize=8)
-        fig.text(0.025 if report_layout else 0.075,
-                 0.02 if report_layout else 0.035,
+        fig.text(0.29 if report_layout else 0.075,
+                 0.012 if report_layout else 0.035,
                  'Terrain and basemap resolution reflect the original source data.' if english else 'Rozlišení terénu a mapového podkladu odpovídá zdrojovým datům.',
                  color=UI_MUTED, fontsize=8)
         style_export_theme(fig, theme)
