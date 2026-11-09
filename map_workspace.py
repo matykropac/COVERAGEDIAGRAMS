@@ -93,6 +93,7 @@ def _airport_project_metadata():
     return {
         "airport_icao":st.session_state.get("ws_airport_code",""),
         "airport_runways":st.session_state.get("ws_airport_geometry") or [],
+        "par_model":_par_model_metadata(),
     }
 
 
@@ -182,9 +183,56 @@ def _cfg():
     )
 
 
+def _par_pattern_metadata(pattern):
+    if not isinstance(pattern,core.ParScanPattern):
+        return None
+    return {name:getattr(pattern,name) for name in (
+        "scan_mode","steering_loss_db_per_deg","detection_model",
+        "reference_snr_db","pd","pfa","pulses")}
+
+
+def _par_model_metadata():
+    """Settings are stored alongside the project without changing the polar DEM config."""
+    return {
+        "scan_mode":st.session_state.get("ws_par_scan_mode","TRACKING"),
+        "steering_loss_db_per_deg":float(st.session_state.get("ws_par_scan_loss",0.0)),
+        "detection_model":st.session_state.get("ws_par_detection","RELATIVE"),
+        "reference_snr_db":float(st.session_state.get("ws_par_snr",16.0)),
+        "pd":float(st.session_state.get("ws_par_pd",0.8)),
+        "pfa":float(st.session_state.get("ws_par_pfa",1e-6)),
+        "pulses":int(st.session_state.get("ws_par_pulses",1)),
+    }
+
+
+def _restore_par_model_metadata(meta):
+    values=(meta.get("source_ui") or {}).get("par_model")
+    if values is None:
+        values={}
+    if not isinstance(values,dict):
+        raise ValueError("Neplatný model PAR v projektu.")
+    allowed={
+        "scan_mode":"ws_par_scan_mode",
+        "steering_loss_db_per_deg":"ws_par_scan_loss",
+        "detection_model":"ws_par_detection",
+        "reference_snr_db":"ws_par_snr",
+        "pd":"ws_par_pd",
+        "pfa":"ws_par_pfa",
+        "pulses":"ws_par_pulses",
+    }
+    if set(values)-set(allowed):
+        raise ValueError("Neznámé parametry PAR v projektu.")
+    import dataclasses
+    pattern=dataclasses.replace(core.builtin_par_pattern(),**values)
+    pattern.validate_model()
+    st.session_state.update({allowed[k]:v for k,v in values.items()})
+
+
 def _pattern(config):
     if config.radar_mode == "PAR-NG":
-        return core.builtin_par_pattern()
+        import dataclasses
+        pattern=dataclasses.replace(core.builtin_par_pattern(),**_par_model_metadata())
+        pattern.validate_model()
+        return pattern
     if config.radar_mode == "SSR":
         if st.session_state.get("ws_ssr_diagram", "Generic Gaussian") == "Measured SSR.txt":
             return load_measured_ssr()
@@ -217,6 +265,7 @@ def radar_dialog():
                 airport_data=meta.get("source_ui") or {}
                 if airport_data.get("airport_icao") and airport_data.get("airport_runways"):
                     validate_saved_geometry(airport_data["airport_icao"],airport_data["airport_runways"])
+                _restore_par_model_metadata(meta)
                 # Recreate the antenna-aware solution from the embedded DEM.
                 # Stored status/lower may already include obstacles; never reuse
                 # them as the base when editing or removing obstructions.
@@ -276,6 +325,29 @@ def radar_dialog():
         st.number_input("Min. elevace [°]",-5.,88.,-1.,key="ws_min")
         st.number_input("Max. elevace [°]",-4.,89.,45.,key="ws_max")
         st.number_input("Tilt antény [°]",-15.,15.,-1.,key="ws_tilt")
+        if st.session_state["ws_radar"]=="PAR-NG":
+            st.markdown("**PAR-NG · ANTÉNA / DETEKCE**")
+            st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
+                         format_func=lambda mode: "Ideální azimutální sken + ztráta vychýlení"
+                         if mode=="TRACKING" else "Pevný 3D diagram bez elektronického skenu",
+                         key="ws_par_scan_mode")
+            st.number_input("Ztráta skenu [dB/°] · orientační",min_value=0.,max_value=5.,
+                            value=0.,step=.05,key="ws_par_scan_loss")
+            st.selectbox("Detekční rozpočet",["RELATIVE","ALBERSHEIM"],
+                         format_func=lambda mode: "Relativní obálka 40 km"
+                         if mode=="RELATIVE" else "Ilustrační SNR / Pd / Pfa",
+                         key="ws_par_detection")
+            if st.session_state.get("ws_par_detection")=="ALBERSHEIM":
+                st.number_input("Referenční SNR na 40 km [dB] · předpoklad",
+                                min_value=-20.,max_value=60.,value=16.,step=.5,
+                                key="ws_par_snr")
+                st.number_input("Požadované Pd",min_value=.01,max_value=.99,
+                                value=.8,step=.01,key="ws_par_pd")
+                st.selectbox("Požadované Pfa",options=[1e-3,1e-4,1e-5,1e-6,1e-7,1e-8],
+                             index=3,key="ws_par_pfa",format_func=lambda n:f"{n:.0e}")
+                st.number_input("Počet ne-koherentních pulzů",min_value=1,max_value=1000,
+                                value=1,step=1,key="ws_par_pulses")
+            st.caption("Parametry skenu a SNR jsou modelové, nikoliv změřená specifikace PAR-NG.")
         if st.session_state["ws_radar"]=="RL-2000":
             st.selectbox("Svazek",["COMBINED","LOW","HIGH"],key="ws_beam")
         st.number_input("Výška cíle [m]",-500.,30000.,1000.,key="ws_target")
@@ -1575,7 +1647,9 @@ def render_workspace():
                 _calculate_coverage()
             if result is not None:
                 stale=(result.get("obstacles_signature")!=obstacle_signature(
-                    st.session_state.get("obstacles",[])) or config!=result["config"])
+                    st.session_state.get("obstacles",[])) or config!=result["config"] or
+                    (result["config"].radar_mode=="PAR-NG" and
+                     _par_model_metadata()!=_par_pattern_metadata(result.get("antenna_pattern"))))
                 st.caption("Výsledek je potřeba přepočítat." if stale
                            else "Výpočet je aktuální.")
                 if st.button("↻ PŘEPOČÍTAT Z ULOŽENÉHO TERÉNU",
@@ -1603,6 +1677,7 @@ def render_workspace():
                             tuple(st.session_state.get("ws_levels",[])),
                             st.session_state.get("ws_airport_code",""),
                             tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
+                            tuple(sorted(_par_model_metadata().items())),
                         )
                     except Exception as exc:
                         st.error(f"Projekt nelze uložit: {exc}")
@@ -1612,6 +1687,7 @@ def render_workspace():
                     tuple(st.session_state.get("ws_levels",[])),
                     st.session_state.get("ws_airport_code",""),
                     tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
+                    tuple(sorted(_par_model_metadata().items())),
                 )
                 if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
                     st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
