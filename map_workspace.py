@@ -124,6 +124,7 @@ def _airport_controls():
             code=validate_icao(st.session_state.get("ws_airport_icao",""))
             runways=airport_runways(code,_public_runways())
             st.session_state["ws_airport_geometry"]=runways
+            st.session_state.pop("ws_snapshot_bytes",None)
             st.session_state["ws_airport_code"]=code
             st.session_state["ws_runway_index"]=0
             st.session_state["ws_runway_end"]=0
@@ -231,6 +232,7 @@ def radar_dialog():
                 _restore_airport_metadata(meta)
                 st.session_state["result"]=result
                 st.session_state.pop("ws_previous_result",None)
+                st.session_state.pop("ws_before_geometry",None)
                 st.session_state["geometry"]={}
                 st.session_state.pop("ws_snapshot_bytes",None)
                 st.session_state["obstacles"]=meta.get("obstacles",[])
@@ -375,6 +377,7 @@ def _calculate_coverage():
                           duration_s=round(time.perf_counter()-started,3))
             st.session_state.result=result
             st.session_state.pop("ws_previous_result",None)
+            st.session_state.pop("ws_before_geometry",None)
             st.session_state.geometry={}
             st.session_state.pop("ws_snapshot_bytes",None)
             st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
@@ -423,6 +426,7 @@ def _recalculate_cached_terrain():
         obstacles_signature=obstacle_signature(obstacles),
     )
     st.session_state["ws_previous_result"]=previous
+    st.session_state["ws_before_geometry"]={}
     st.session_state["result"]=recalculated
     st.session_state["geometry"]={}
     st.session_state.pop("ws_snapshot_bytes",None)
@@ -1183,8 +1187,10 @@ def _draw_map():
             if previous["config"]==c:
                 # Read-only historic result: retain before/after visibility even
                 # when obstacles are removed or the current geometry is cached.
-                baseline_geo=coverage_geojson(previous,level)
-                coverage.append({"geojson":baseline_geo,"color":"#ed8a2e",
+                before_cache=st.session_state.setdefault("ws_before_geometry",{})
+                if level not in before_cache:
+                    before_cache[level]=coverage_geojson(previous,level)
+                coverage.append({"geojson":before_cache[level],"color":"#ed8a2e",
                                  "previous":True})
 
     obstacle_data=[]
