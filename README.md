@@ -1,5 +1,24 @@
 # ELDIS · Radar Coverage
 
+## Technická a vývojová dokumentace (engineering baseline)
+
+- [Software Design Description — architektura a datové toky](docs/engineering/SOFTWARE_DESIGN_DESCRIPTION.md)
+- [Vývoj, nasazení, testování a incidenty](docs/engineering/DEVELOPMENT_AND_OPERATIONS.md)
+- [Source code review / registr technických dluhů](docs/engineering/SOURCE_CODE_REVIEW.md)
+- [Požadavky a verifikační matice](docs/engineering/REQUIREMENTS_AND_VERIFICATION.md)
+
+Pro podrobnou kontrolu *každého řádku* vytvoř revizní CSV příkazem:
+`python tools/generate_source_audit.py --out source_line_review.csv`.
+Každý záznam obsahuje SHA256 souboru, číslo řádku, funkční kontext a pole pro
+review. **Automaticky sestavený index není sám o sobě schválenou revizí.**
+
+**Poznámka k zastaralému textu README:** některá níže uvedená historická tvrzení
+(o PAR sektoru ±20°, bez Pd/Pfa, nebo webovém limitu sítě) nebyla sladěna s
+aktuálním kódem. Před technickým použitím se řiď výše uvedenou dokumentací
+a ověřenými výstupy konkrétního commitu. Broad CI dosud vykazuje problémy
+web/desktop parity a části starých testů.
+
+
 ## 💻 Nový samostatný desktop klient
 
 **Windows x64 · macOS Apple Silicon · macOS Intel** — stejné rozhraní a radarové
