@@ -866,7 +866,8 @@ def exports_dialog():
         default=[x for x in st.session_state.get("ws_levels",[]) if x in opts],
         format_func=core.level_label,key="ws_report_levels")
     report_basemap=st.selectbox("Report basemap",
-        ("Satelitní · Esri","Esri · Topographic (legacy)"),key="ws_report_basemap")
+        ("Satelitní · Esri","Esri · Topographic (legacy)",
+         "OpenStreetMap","OpenStreetMap + OpenAIP"),key="ws_report_basemap")
     if st.button("GENERATE COVERAGE REPORT · PDF",type="primary",
                  use_container_width=True,key="ws_report_generate"):
         try:
@@ -876,7 +877,7 @@ def exports_dialog():
                 flight_levels_ft=report_levels,
                 basemap=report_basemap,
                 dpi=600)
-            with st.spinner("Generating high-resolution 600 DPI report with Esri basemap..."):
+            with st.spinner("Generating high-resolution 600 DPI report with selected map layers..."):
                 st.session_state["ws_report_pdf"]=generate_coverage_report_pdf(
                     result,report_options)
                 st.session_state["ws_report_filename"]="Coverage_Report_600dpi.pdf"
