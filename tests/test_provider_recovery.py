@@ -2,15 +2,10 @@
 import io
 import json
 import unittest
-import sys
-from types import ModuleType
 from urllib.error import URLError, HTTPError
 from unittest.mock import patch
 
-st = ModuleType("streamlit")
-st.cache_data = lambda **kwargs: (lambda f: f)
-with patch.dict(sys.modules, {"streamlit": st}):
-    from environment_layers import _overpass_json_with_fallback
+from environment_layers import _overpass_json_with_fallback
 from airspace_geometry import _http_get
 
 
