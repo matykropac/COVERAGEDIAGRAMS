@@ -156,11 +156,30 @@ def _airspace_controls():
         st.session_state.get("ws_airspace_filter_ft",3000)
           if st.session_state.get("ws_airspace_altfilter",False) else None)
     st.caption(f"Zobrazeno: {len(selected)} / {len(zones)}")
-    with st.expander("Seznam prostorů",expanded=False):
+    with st.expander("Seznam a správa prostorů",expanded=False):
         st.dataframe([{"Název":x["name"],"Typ":x["kind"],"Třída":x["class"],
-                       "Od":x["lower"]["text"],"Do":x["upper"]["text"]}
-                      for x in selected],hide_index=True,use_container_width=True,
+                       "Od":x["lower"]["text"],"Do":x["upper"]["text"],
+                       "Viditelný":not x.get("hidden",False)}
+                      for x in zones],hide_index=True,use_container_width=True,
                      height=220)
+        indexes=list(range(len(zones)))
+        active=st.session_state.get("ws_airspace_active",0)
+        if active not in indexes:
+            st.session_state["ws_airspace_active"]=0
+        st.selectbox("Vybraný prostor",indexes,key="ws_airspace_active",
+                     format_func=lambda i:zones[i]["kind"]+" · "+zones[i]["name"])
+        index=st.session_state["ws_airspace_active"]
+        selected_zone=zones[index]
+        action=("ZOBRAZIT" if selected_zone.get("hidden",False) else "SKRÝT")
+        if st.button(action+" VYBRANÝ PROSTOR",use_container_width=True,
+                     key="ws_airspace_toggle_one"):
+            updated=[dict(z) for z in zones]
+            updated[index]["hidden"]=not updated[index].get("hidden",False)
+            st.session_state["ws_airspaces"]=updated
+            st.session_state.pop("ws_snapshot_bytes",None)
+            st.session_state.pop("ws_airspace_export_bytes",None)
+            st.session_state["ws_airspace_source_time"]=datetime.now(timezone.utc).isoformat()
+            st.rerun()
     if st.button("PŘIPRAVIT GEOJSON CTR/TMA",use_container_width=True,
                  key="ws_airspace_prepare_export"):
         import json
