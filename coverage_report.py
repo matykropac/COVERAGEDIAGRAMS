@@ -5,6 +5,7 @@ Does not modify the selectable ZIP presets or recompute radar visibility.
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from io import BytesIO
+from zipfile import ZipFile, BadZipFile
 from html import escape
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -78,6 +79,46 @@ class CoverageReportOptions:
     flight_levels_ft: Sequence[int] = ()
     basemap: str = "Satelitní · Esri"
     dpi: int = 600
+    cover_docx: bytes | None = None
+
+
+def _cover_page(c, source_docx):
+    """Reproduce the authentic ELDIS artwork embedded in COVERAGE MAPS.docx.
+
+    The source template contains a full-page portrait background image;
+    its COVERAGE MAPS title is text in the Word document. We draw that
+    title in the same position to preserve its editability and clarity.
+    """
+    if not source_docx:
+        return False
+    try:
+        with ZipFile(BytesIO(source_docx)) as archive:
+            images = []
+            for name in archive.namelist():
+                if not name.startswith("word/media/"):
+                    continue
+                if not name.lower().endswith((".jpg", ".jpeg", ".png")):
+                    continue
+                content = archive.read(name)
+                with Image.open(BytesIO(content)) as picture:
+                    width, height = picture.size
+                if height > width * 1.25 and width >= 700:
+                    images.append((width * height, content))
+            if not images:
+                raise ValueError("The DOCX template contains no portrait cover artwork.")
+            picture_bytes = max(images, key=lambda item: item[0])[1]
+    except (BadZipFile, OSError, ValueError) as exc:
+        raise ValueError(f"Invalid ELDIS cover template: {exc}") from exc
+
+    c.setPageSize(A4)
+    width, height = A4
+    c.drawImage(ImageReader(BytesIO(picture_bytes)), 0, 0,
+                width=width, height=height, preserveAspectRatio=False)
+    c.setFillColor(colors.HexColor("#28577B"))
+    c.setFont("Helvetica-Bold", 27)
+    c.drawCentredString(width / 2, height * 0.275, "COVERAGE MAPS")
+    c.showPage()
+    return True
 
 
 def _page(c, title, project, page_number):
@@ -110,10 +151,10 @@ def _paragraph(c, body, x, y, width, size=9.4, leading=14.0, bold=False):
     return y - height
 
 
-def _intro_page(c, project):
+def _intro_page(c, project, page_number=1):
     c.setPageSize(A4)
     w, h = c._pagesize
-    _page(c, "Coverage Maps", project, 1)
+    _page(c, "Coverage Maps", project, page_number)
     y = h - 100
     y = _paragraph(c, escape(INTRO[0]), MARGIN, y, w - 2 * MARGIN, 10, 15) - 18
     y = _paragraph(c, "Coverage Prediction, Preliminary", MARGIN, y,
@@ -420,8 +461,9 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
     pdf.setTitle(f"Coverage Maps - {project}")
     pdf.setAuthor("COVERAGEDIAGRAMS")
     pdf.setSubject("Preliminary engineering radar coverage prediction")
-    _intro_page(pdf, project)
-    next_page = _technical_pages(pdf, result, project, start_page=2)
+    has_cover = _cover_page(pdf, options.cover_docx)
+    _intro_page(pdf, project, page_number=2 if has_cover else 1)
+    next_page = _technical_pages(pdf, result, project, start_page=3 if has_cover else 2)
     _summary_page(pdf, result, metrics, project, page_number=next_page)
     next_page += 1
     with TemporaryDirectory(prefix="cd_coverage_report_") as temp:
