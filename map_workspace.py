@@ -1474,9 +1474,19 @@ def render_workspace():
                         st.session_state["ws_snapshot_bytes"]=save_project(
                             result,levels=st.session_state.get("ws_levels",[]),
                             obstacles=st.session_state.get("obstacles",[]))
+                        st.session_state["ws_snapshot_key"]=(
+                            result.get("completed_at"),
+                            obstacle_signature(st.session_state.get("obstacles",[])),
+                            tuple(st.session_state.get("ws_levels",[])),
+                        )
                     except Exception as exc:
                         st.error(f"Projekt nelze uložit: {exc}")
-                if st.session_state.get("ws_snapshot_bytes"):
+                snapshot_key=(
+                    result.get("completed_at"),
+                    obstacle_signature(st.session_state.get("obstacles",[])),
+                    tuple(st.session_state.get("ws_levels",[])),
+                )
+                if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
                     st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
                         data=st.session_state["ws_snapshot_bytes"],
                         file_name="COVERAGEDIAGRAMS_working.cdproj",
