@@ -28,6 +28,7 @@ from traffic_overlay import fetch_snapshot, add_traffic_layer
 from obstacle_ui import render_obstacle_editor
 from live_simulation import simulation_tab
 from project_file import save_project, load_project
+from position_export import make_layer_features, kml_bytes as position_kml_bytes, kmz_bytes as position_kmz_bytes, geojson_bytes as position_geojson_bytes
 from airport_geometry import airport_runways, runway_rows, runway_geometry, par_bearing_for_runway, validate_icao, validate_saved_geometry
 from airspace_geometry import fetch_airspaces, validate_saved_airspaces, visible_airspaces, as_geojson, import_geojson
 from ssr_custom import load_measured_ssr
@@ -195,6 +196,144 @@ def _airspace_controls():
             file_name="COVERAGEDIAGRAMS_airspaces.geojson",
             mime="application/geo+json",use_container_width=True,
             key="ws_airspace_export")
+
+
+def _position_nearby_controls():
+    st.markdown('<div class="cd-nav-title">OKOLNÍ OBJEKTY · 2 KM</div>',
+                unsafe_allow_html=True)
+    runways=st.session_state.get("ws_airport_geometry") or []
+    radar=_cfg()
+    if runways:
+        ref=runways[0]["midpoint"]
+        description=f"střed RWY letiště {st.session_state.get('ws_airport_code','')}"
+    else:
+        ref=[radar.lat,radar.lon]
+        description="aktuální poloha radaru"
+    st.caption(f"Střed hledání: {description} · "
+               f"{ref[0]:.6f}°, {ref[1]:.6f}° · OpenStreetMap")
+    if st.button("NAČÍST BUDOVY / LESY / STOŽÁRY · 2 KM",
+                 use_container_width=True,key="ws_position_osm_2km"):
+        try:
+            with st.spinner("Načítám objekty OSM do 2 km…"):
+                fetched=env.fetch_osm(round(ref[0],5),round(ref[1],5),2.0)
+            if not fetched:
+                st.warning("V okruhu 2 km nejsou dostupné objekty ve zdroji OSM.")
+                return
+            # Preserve all previous manual obstacles and user edits for
+            # repeated OSM objects. Never invent missing heights.
+            previous_environment=st.session_state.get("ws_environment",[])
+            key=lambda item:(str(item.get("source","")),str(item.get("source_id","")),
+                             str(item.get("kind","")))
+            deduplicated={key(item):item for item in previous_environment}
+            for item in fetched:
+                deduplicated[key(item)]=item
+            environment=list(deduplicated.values())
+            if len(environment)>env.MAX_ENVIRONMENT_ITEMS:
+                raise ValueError("Příliš mnoho OSM objektů; menší oblast nebo GeoJSON import.")
+            old_catalog={x["id"]:x for x in st.session_state.get("ws_imported_catalog",[])}
+            deleted=set(st.session_state.get("ws_imported_deleted_ids",[]))
+            catalog=[x for x in catalog_from_data(
+                environment,st.session_state.get("ws_wind_data",[]))
+                if x["id"] not in deleted]
+            for item in catalog:
+                old=old_catalog.get(item["id"])
+                if old:
+                    item.update(name=old["name"],height_m=old["height_m"],
+                                enabled=old["enabled"])
+            actual,errors=synchronize(
+                st.session_state.get("obstacles",[]),catalog,radar.lat,radar.lon,
+                auto_enable=False)
+            # Commit together only on success: previous map survives an outage.
+            st.session_state["ws_environment"]=environment
+            st.session_state["ws_imported_catalog"]=catalog
+            st.session_state["obstacles"]=actual
+            st.session_state["ws_geodata_site"]=(round(ref[0],5),round(ref[1],5))
+            st.session_state["ws_obstacle_revision"]=st.session_state.get("ws_obstacle_revision",0)+1
+            st.session_state.pop("ws_snapshot_bytes",None)
+            st.session_state.pop("ws_position_export_bytes",None)
+            st.success(f"Načteno {len(fetched)} objektů. "
+                       f"Zobrazeny v mapě a v editoru překážek; "
+                       f"neznámé výšky zůstávají neznámé.")
+            if errors:
+                st.warning(f"{errors} objektů nelze zařadit do výpočtu bez úpravy.")
+        except Exception as exc:
+            st.error(f"OSM načítání selhalo; předchozí vrstvy zůstaly: {exc}")
+    if st.session_state.get("ws_imported_catalog"):
+        st.caption(f"Geodata v editoru: {len(st.session_state['ws_imported_catalog']):,} objektů")
+    if st.button("SPRAVOVAT / UPRAVIT OBJEKTY",key="ws_position_edit",
+                 use_container_width=True):
+        obstacles_dialog()
+    if st.button("DALŠÍ ZDROJE GEODAT",key="ws_position_sources",
+                 use_container_width=True):
+        layers_dialog()
+
+
+@st.dialog("MAPA / EXPORT VRSTEV",width="large")
+def position_layers_export_dialog():
+    """Export map layers without requiring an existing computed coverage."""
+    st.caption("Vyber vrstvy pro QGIS / Google Earth. Radarový výpočet není potřeba. "
+               "Výšky překážek jsou atributy AGL; vrstvy jsou 2D.")
+    names=[
+        ("runways","RWY · prahy, osy, středy"),
+        ("airspaces","CTR / TMA · vzdušné prostory"),
+        ("obstacles","Ručně vložené a aktivní překážky"),
+        ("environment","Budovy, lesy, stožáry, větrné elektrárny"),
+    ]
+    cols=st.columns(2,gap="small")
+    for i,(key,label) in enumerate(names):
+        with cols[i%2]:
+            st.checkbox(label,value=True,key="ws_pos_export_"+key)
+    format_name=st.segmented_control(
+        "Formát",["KMZ","KML","GeoJSON"],default="KMZ",
+        key="ws_pos_export_format",width="stretch")
+    selected=tuple(bool(st.session_state.get("ws_pos_export_"+key,True))
+                   for key,_ in names)
+    result=st.session_state.get("result")
+    if result is not None:
+        st.caption("Samostatný export radarového krytí je zachován v původním ZIP exportu.")
+    if st.button("PŘIPRAVIT EXPORT VRSTEV",type="primary",
+                 use_container_width=True,key="ws_pos_export_prepare"):
+        try:
+            cfg=_cfg()
+            catalog=st.session_state.get("ws_imported_catalog")
+            environment=(catalog if catalog is not None else
+                         st.session_state.get("ws_environment",[]))
+            features=make_layer_features(
+                runways=st.session_state.get("ws_airport_geometry") or [],
+                airspaces=visible_airspaces(st.session_state.get("ws_airspaces") or [],
+                    st.session_state.get("ws_airspace_ctr",True),
+                    st.session_state.get("ws_airspace_tma",True),
+                    st.session_state.get("ws_airspace_filter_ft",3000)
+                    if st.session_state.get("ws_airspace_altfilter",False) else None),
+                obstacles=st.session_state.get("obstacles",[]),
+                environment=environment,
+                site_lat=cfg.lat,site_lon=cfg.lon,
+                include_runways=selected[0],include_airspaces=selected[1],
+                include_obstacles=selected[2],include_environment=selected[3])
+            if not features:
+                raise ValueError("Nejsou dostupné žádné prvky ve zvolených vrstvách.")
+            fmt=(format_name or "KMZ").upper()
+            pack={"KML":position_kml_bytes,
+                  "KMZ":position_kmz_bytes,
+                  "GEOJSON":position_geojson_bytes}
+            st.session_state["ws_position_export_bytes"]=pack[fmt](features)
+            st.session_state["ws_position_export_stamp"]=(selected,fmt)
+            st.session_state["ws_position_export_count"]=len(features)
+        except Exception as exc:
+            st.session_state.pop("ws_position_export_bytes",None)
+            st.error(f"Export selhal: {exc}")
+    current_stamp=(selected,(format_name or "KMZ").upper())
+    if (st.session_state.get("ws_position_export_bytes") and
+        st.session_state.get("ws_position_export_stamp")==current_stamp):
+        ext=current_stamp[1].lower()
+        st.success(f"Připraveno {st.session_state.get('ws_position_export_count',0):,} prvků.")
+        st.download_button("STÁHNOUT VRSTVY · "+current_stamp[1],
+            data=st.session_state["ws_position_export_bytes"],
+            file_name="COVERAGEDIAGRAMS_layers."+ext,
+            mime={"KML":"application/vnd.google-earth.kml+xml",
+                  "KMZ":"application/vnd.google-earth.kmz",
+                  "GEOJSON":"application/geo+json"}[current_stamp[1]],
+            use_container_width=True,key="ws_pos_export_download")
 
 
 def _airport_project_metadata():
@@ -1579,6 +1718,7 @@ def _map_tool():
     return {
         "MAPA": "Prohlížení",
         "RADAR": "Radar",
+        "POZICE": "Prohlížení",
         "PŘEKÁŽKY": "Polygon",
     }.get(st.session_state.get("ws_section","MAPA"),"Prohlížení")
 
@@ -1634,7 +1774,7 @@ def _select_comparison_levels(select_all):
 
 
 def render_workspace():
-    """One persistent map; three task-oriented sections in the 400px sidebar."""
+    """One persistent map; four task-oriented sections in the 400px sidebar."""
     previous=st.session_state.get("result")
     if previous is not None and "ws_radar" not in st.session_state:
         _config_state_from_project(previous["config"])
@@ -1643,7 +1783,7 @@ def render_workspace():
     _restore_sidebar_preferences()
 
     next_section=st.session_state.pop("ws_next_section",None)
-    if next_section in ("MAPA","RADAR","PŘEKÁŽKY"):
+    if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE"):
         st.session_state["ws_section"]=next_section
 
     st.markdown(STYLES,unsafe_allow_html=True)
@@ -1684,7 +1824,7 @@ def render_workspace():
 
         section=st.segmented_control(
             "Pracovní sekce",
-            options=["MAPA","PŘEKÁŽKY","RADAR"],
+            options=["MAPA","PŘEKÁŽKY","RADAR","POZICE"],
             default="MAPA",key="ws_section",selection_mode="single",
             width="stretch",label_visibility="collapsed")
         if section is None:
@@ -1767,6 +1907,15 @@ def render_workspace():
                 if not configured_key():
                     st.caption("OpenAIP vyžaduje OPENAIP_API_KEY v nastavení aplikace.")
             st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
+            st.markdown('<div class="cd-nav-title">EXPORT MAPOVÝCH VRSTEV</div>',
+                        unsafe_allow_html=True)
+            if st.button("⇩ EXPORTOVAT VRSTVY · KML / KMZ / GEOJSON",
+                         key="ws_map_export_layers",use_container_width=True):
+                position_layers_export_dialog()
+            if result is not None and st.button("⇩ EXPORT RADAROVÉHO KRYTÍ · ZIP",
+                                                 key="ws_command_export",
+                                                 use_container_width=True):
+                exports_dialog()
 
         elif section=="RADAR":
             st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
@@ -1795,8 +1944,6 @@ def render_workspace():
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Přepočet z uloženého DEM selhal; předchozí výsledek zůstal zachován: {exc}")
-            _airport_controls()
-            _airspace_controls()
             st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
             if result is not None:
                 if st.button("⇩ PŘIPRAVIT PRACOVNÍ PROJEKT · .cdproj",
@@ -1813,7 +1960,6 @@ def render_workspace():
                             tuple(st.session_state.get("ws_levels",[])),
                             st.session_state.get("ws_airport_code",""),
                             tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
-                    st.session_state.get("ws_airspace_source_time",""),
                             st.session_state.get("ws_airspace_source_time",""),
                             tuple(sorted(_par_model_metadata().items())),
                             st.session_state.get("ws_par_level_reference","AGL"),
@@ -1826,6 +1972,7 @@ def render_workspace():
                     tuple(st.session_state.get("ws_levels",[])),
                     st.session_state.get("ws_airport_code",""),
                     tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
+                    st.session_state.get("ws_airspace_source_time",""),
                     tuple(sorted(_par_model_metadata().items())),
                     st.session_state.get("ws_par_level_reference","AGL"),
                 )
@@ -1836,8 +1983,14 @@ def render_workspace():
                         mime="application/octet-stream",use_container_width=True,
                         key="ws_save_working_project",
                         help="Přenosný snapshot včetně DEM, nezávislý na dočasné cache.")
-            if st.button("⇩ Export ZIP",key="ws_command_export",use_container_width=True):
-                exports_dialog()
+ 
+        elif section=="POZICE":
+            st.markdown('<div class="cd-nav-title">POZICE / AIRPORT & AIRSPACE</div>',
+                        unsafe_allow_html=True)
+            st.caption("Práce s polohou a vektorovými vrstvami funguje bez radarového výpočtu.")
+            _airport_controls()
+            _airspace_controls()
+            _position_nearby_controls()
 
         else:  # PŘEKÁŽKY
             st.markdown('<div class="cd-nav-title">ZAKRESLENÍ PŘEKÁŽEK</div>',unsafe_allow_html=True)
