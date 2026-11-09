@@ -314,7 +314,8 @@ def _image_page(c, title, project, page_number, image, caption):
         encoded.seek(0)
     reader = ImageReader(encoded)
     width, height = reader.getSize()
-    box = (MARGIN - 8, 62, PAGE_W - 2 * MARGIN + 16, PAGE_H - 145)
+    # Give the map graphic virtually the entire printable landscape page.
+    box = (MARGIN - 23, 59, PAGE_W - 2 * MARGIN + 46, PAGE_H - 129)
     x, y, w, h = box
     scale = min(w / width, h / height)
     render_w, render_h = width * scale, height * scale
