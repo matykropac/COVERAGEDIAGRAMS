@@ -94,6 +94,7 @@ def _airport_project_metadata():
         "airport_icao":st.session_state.get("ws_airport_code",""),
         "airport_runways":st.session_state.get("ws_airport_geometry") or [],
         "par_model":_par_model_metadata(),
+        "par_level_reference":st.session_state.get("ws_par_level_reference","AGL"),
     }
 
 
@@ -224,7 +225,14 @@ def _restore_par_model_metadata(meta):
     import dataclasses
     pattern=dataclasses.replace(core.builtin_par_pattern(),**values)
     pattern.validate_model()
-    st.session_state.update({allowed[k]:v for k,v in values.items()})
+    # Legacy projects without PAR settings must restore safe defaults, not
+    # silently inherit a different project's session state.
+    st.session_state.update({widget:getattr(pattern,name)
+                             for name,widget in allowed.items()})
+    ref=(meta.get("source_ui") or {}).get("par_level_reference","AGL")
+    if ref not in ("AMSL","AGL"):
+        raise ValueError("Neplatná výšková reference PAR v projektu.")
+    st.session_state["ws_par_level_reference"]=ref
 
 
 def _pattern(config):
@@ -1678,6 +1686,7 @@ def render_workspace():
                             st.session_state.get("ws_airport_code",""),
                             tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
                             tuple(sorted(_par_model_metadata().items())),
+                            st.session_state.get("ws_par_level_reference","AGL"),
                         )
                     except Exception as exc:
                         st.error(f"Projekt nelze uložit: {exc}")
@@ -1688,6 +1697,7 @@ def render_workspace():
                     st.session_state.get("ws_airport_code",""),
                     tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
                     tuple(sorted(_par_model_metadata().items())),
+                    st.session_state.get("ws_par_level_reference","AGL"),
                 )
                 if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
                     st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
@@ -1757,7 +1767,9 @@ def render_workspace():
                    f"{len(st.session_state.get('obstacles',[]))} překážek")
     else:
         is_stale=(result.get("obstacles_signature")!=obstacle_signature(
-            st.session_state.get("obstacles",[])) or config!=result["config"])
+            st.session_state.get("obstacles",[])) or config!=result["config"] or
+            (result["config"].radar_mode=="PAR-NG" and
+             _par_model_metadata()!=_par_pattern_metadata(result.get("antenna_pattern"))))
         if is_stale:
             st.warning("Nastavení nebo překážky se změnily. Zobrazené krytí patří k předchozímu výpočtu.")
         else:
