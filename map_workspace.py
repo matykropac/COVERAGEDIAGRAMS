@@ -29,6 +29,7 @@ from obstacle_ui import render_obstacle_editor
 from live_simulation import simulation_tab
 from project_file import save_project, load_project
 from airport_geometry import airport_runways, runway_rows, runway_geometry, par_bearing_for_runway, validate_icao, validate_saved_geometry
+from airspace_geometry import fetch_airspaces, validate_saved_airspaces, visible_airspaces, as_geojson, import_geojson
 from ssr_custom import load_measured_ssr
 from wind_turbines import load_wind_turbines, add_wind_layer
 from geodata_obstacle_catalog import catalog_from_data, synchronize
@@ -89,10 +90,119 @@ def _public_runways():
     return runway_rows()
 
 
+@st.cache_data(ttl=3600,show_spinner=False,max_entries=8)
+def _cached_airspaces(lat,lon,radius,api_key):
+    return fetch_airspaces(lat,lon,radius,api_key)
+
+
+def _airspace_controls():
+    st.markdown('<div class="cd-nav-title">CTR / TMA · VEKTOROVÉ PROSTORY</div>',
+                unsafe_allow_html=True)
+    st.caption("Načítání je nezávislé na výpočtu radaru. Zdroj OpenAIP · "
+               "orientační podklady, ne oficiální AIP/NOTAM.")
+    st.slider("Poloměr od letiště / radaru [km]",10,200,80,10,
+              key="ws_airspace_radius")
+    if st.button("NAČÍST CTR / TMA",use_container_width=True,key="ws_airspace_fetch"):
+        try:
+            from aviation_basemap import configured_key
+            key=configured_key()
+            if not key:
+                raise ValueError("Chybí OPENAIP_API_KEY v Secrets / prostředí.")
+            runways=st.session_state.get("ws_airport_geometry") or []
+            if runways:
+                position=runways[0]["midpoint"]
+            else:
+                site=_cfg()
+                position=[site.lat,site.lon]
+            zones=_cached_airspaces(round(position[0],5),round(position[1],5),
+                                    st.session_state.get("ws_airspace_radius",80),key)
+            st.session_state["ws_airspaces"]=zones
+            st.session_state["ws_airspace_source_time"]=datetime.now(timezone.utc).isoformat()
+            st.session_state.pop("ws_snapshot_bytes",None)
+            if not zones:
+                st.warning("Pro zvolenou oblast nejsou ve zdroji dostupné CTR/TMA.")
+        except Exception as exc:
+            st.error(f"Načítání CTR/TMA selhalo; předchozí vrstva zůstala: {exc}")
+    upload=st.file_uploader("Nebo importovat GeoJSON CTR/TMA",type=["geojson","json"],
+                           key="ws_airspace_upload")
+    if upload is not None and st.button("IMPORTOVAT GEOJSON",use_container_width=True,
+                                        key="ws_airspace_import"):
+        try:
+            zones=import_geojson(upload.getvalue())
+            st.session_state["ws_airspaces"]=zones
+            st.session_state["ws_airspace_source_time"]=datetime.now(timezone.utc).isoformat()
+            st.session_state.pop("ws_snapshot_bytes",None)
+        except Exception as exc:
+            st.error(f"Neplatný import; dosavadní prostory zůstaly: {exc}")
+    zones=st.session_state.get("ws_airspaces") or []
+    if not zones:
+        return
+    st.caption(f"Uloženo {len(zones)} polygonů · "
+               f"{st.session_state.get('ws_airspace_source_time','bez času stažení')}")
+    a,b=st.columns(2,gap="small")
+    with a:
+        st.toggle("CTR",value=True,key="ws_airspace_ctr")
+    with b:
+        st.toggle("TMA",value=True,key="ws_airspace_tma")
+    st.toggle("Filtrovat podle letové výšky AMSL",value=False,
+              key="ws_airspace_altfilter",
+              help="Neznámá vertikální reference se nikdy automaticky neskryje.")
+    if st.session_state.get("ws_airspace_altfilter"):
+        st.number_input("Výška filtru [ft AMSL]",min_value=0,max_value=66000,
+                        value=3000,step=100,key="ws_airspace_filter_ft")
+    selected=visible_airspaces(
+        zones,st.session_state.get("ws_airspace_ctr",True),
+        st.session_state.get("ws_airspace_tma",True),
+        st.session_state.get("ws_airspace_filter_ft",3000)
+          if st.session_state.get("ws_airspace_altfilter",False) else None)
+    st.caption(f"Zobrazeno: {len(selected)} / {len(zones)}")
+    with st.expander("Seznam a správa prostorů",expanded=False):
+        st.dataframe([{"Název":x["name"],"Typ":x["kind"],"Třída":x["class"],
+                       "Od":x["lower"]["text"],"Do":x["upper"]["text"],
+                       "Viditelný":not x.get("hidden",False)}
+                      for x in zones],hide_index=True,use_container_width=True,
+                     height=220)
+        indexes=list(range(len(zones)))
+        active=st.session_state.get("ws_airspace_active",0)
+        if active not in indexes:
+            st.session_state["ws_airspace_active"]=0
+        st.selectbox("Vybraný prostor",indexes,key="ws_airspace_active",
+                     format_func=lambda i:zones[i]["kind"]+" · "+zones[i]["name"])
+        index=st.session_state["ws_airspace_active"]
+        selected_zone=zones[index]
+        action=("ZOBRAZIT" if selected_zone.get("hidden",False) else "SKRÝT")
+        if st.button(action+" VYBRANÝ PROSTOR",use_container_width=True,
+                     key="ws_airspace_toggle_one"):
+            updated=[dict(z) for z in zones]
+            updated[index]["hidden"]=not updated[index].get("hidden",False)
+            st.session_state["ws_airspaces"]=updated
+            st.session_state.pop("ws_snapshot_bytes",None)
+            st.session_state.pop("ws_airspace_export_bytes",None)
+            st.session_state["ws_airspace_source_time"]=datetime.now(timezone.utc).isoformat()
+            st.rerun()
+    if st.button("PŘIPRAVIT GEOJSON CTR/TMA",use_container_width=True,
+                 key="ws_airspace_prepare_export"):
+        import json
+        st.session_state["ws_airspace_export_bytes"]=json.dumps(
+            as_geojson(zones),ensure_ascii=False).encode("utf-8")
+        st.session_state["ws_airspace_export_time"]=st.session_state.get(
+            "ws_airspace_source_time","")
+    if (st.session_state.get("ws_airspace_export_bytes") and
+        st.session_state.get("ws_airspace_export_time")==
+        st.session_state.get("ws_airspace_source_time","")):
+        st.download_button("STÁHNOUT CTR/TMA · GeoJSON",
+            st.session_state["ws_airspace_export_bytes"],
+            file_name="COVERAGEDIAGRAMS_airspaces.geojson",
+            mime="application/geo+json",use_container_width=True,
+            key="ws_airspace_export")
+
+
 def _airport_project_metadata():
     return {
         "airport_icao":st.session_state.get("ws_airport_code",""),
         "airport_runways":st.session_state.get("ws_airport_geometry") or [],
+        "airspaces":st.session_state.get("ws_airspaces") or [],
+        "airspace_source_time":st.session_state.get("ws_airspace_source_time",""),
         "par_model":_par_model_metadata(),
         "par_level_reference":st.session_state.get("ws_par_level_reference","AGL"),
     }
@@ -100,6 +210,8 @@ def _airport_project_metadata():
 
 def _restore_airport_metadata(meta):
     saved=meta.get("source_ui") or {}
+    st.session_state["ws_airspaces"]=validate_saved_airspaces(saved.get("airspaces",[]))
+    st.session_state["ws_airspace_source_time"]=str(saved.get("airspace_source_time",""))[:100]
     code=saved.get("airport_icao")
     runways=saved.get("airport_runways")
     if code and runways:
@@ -273,6 +385,7 @@ def radar_dialog():
                 airport_data=meta.get("source_ui") or {}
                 if airport_data.get("airport_icao") and airport_data.get("airport_runways"):
                     validate_saved_geometry(airport_data["airport_icao"],airport_data["airport_runways"])
+                validate_saved_airspaces(airport_data.get("airspaces",[]))
                 _restore_par_model_metadata(meta)
                 # Recreate the antenna-aware solution from the embedded DEM.
                 # Stored status/lower may already include obstacles; never reuse
@@ -1373,6 +1486,12 @@ def _draw_map():
         "airportGeometry":runway_geometry(st.session_state.get("ws_airport_geometry") or [])
            if st.session_state.get("ws_show_runways",True) else [],
         "airportCode":st.session_state.get("ws_airport_code",""),
+        "airspaces":visible_airspaces(
+             st.session_state.get("ws_airspaces") or [],
+             st.session_state.get("ws_airspace_ctr",True),
+             st.session_state.get("ws_airspace_tma",True),
+             st.session_state.get("ws_airspace_filter_ft",3000)
+              if st.session_state.get("ws_airspace_altfilter",False) else None),
         "opacity":alpha,
         "coverageVersion":signature([active,reference,alpha,
                                       result.get("completed_at") if result else None,
@@ -1382,6 +1501,14 @@ def _draw_map():
         "obstaclesVersion":signature(obstacle_data),
         "environment":environment_data,
         "environmentVersion":signature(environment_data),
+        "airspacesVersion":signature([
+            st.session_state.get("ws_airspace_source_time",""),
+            st.session_state.get("ws_airspace_ctr",True),
+            st.session_state.get("ws_airspace_tma",True),
+            st.session_state.get("ws_airspace_altfilter",False),
+            st.session_state.get("ws_airspace_filter_ft",3000),
+            [z["id"] for z in st.session_state.get("ws_airspaces") or []]
+        ]),
         "profile":profile,
     }
     action=show_persistent_map(payload)
@@ -1669,6 +1796,7 @@ def render_workspace():
                     except Exception as exc:
                         st.error(f"Přepočet z uloženého DEM selhal; předchozí výsledek zůstal zachován: {exc}")
             _airport_controls()
+            _airspace_controls()
             st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
             if result is not None:
                 if st.button("⇩ PŘIPRAVIT PRACOVNÍ PROJEKT · .cdproj",
@@ -1685,6 +1813,8 @@ def render_workspace():
                             tuple(st.session_state.get("ws_levels",[])),
                             st.session_state.get("ws_airport_code",""),
                             tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
+                    st.session_state.get("ws_airspace_source_time",""),
+                            st.session_state.get("ws_airspace_source_time",""),
                             tuple(sorted(_par_model_metadata().items())),
                             st.session_state.get("ws_par_level_reference","AGL"),
                         )
