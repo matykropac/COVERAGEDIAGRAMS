@@ -1617,19 +1617,23 @@ def add_export_range_rings(ax, config, *, expand_view=True):
 
     for nm in rings_nm:
         r = nm * 1.852
-        circle = Circle((0, 0), r, facecolor='none', edgecolor='#f8fafc',
-                        linewidth=0.9, linestyle=(0, (5, 4)), alpha=0.8,
-                        zorder=12)
-        circle.set_path_effects([pe.Stroke(linewidth=2.0, foreground='#182434', alpha=0.85),
+        # Thin continuous rings with a subtle white halo remain visible over
+        # OSM, Esri, OpenAIP and semi-transparent coverage polygons.
+        circle = Circle((0, 0), r, facecolor='none', edgecolor='#244862',
+                        linewidth=0.75, linestyle='-', alpha=0.85, zorder=12)
+        circle.set_path_effects([pe.Stroke(linewidth=1.7, foreground='#ffffff', alpha=0.9),
                                  pe.Normal()])
         circle.set_gid(f'range-ring-{nm}NM')
         ax.add_patch(circle)
-        theta = np.deg2rad(42)
+        # Put a readable horizontal distance label on the north-east arc,
+        # including the 100 NM ring even when the radar range is only 60 NM.
+        theta = np.deg2rad(48)
         label = ax.text(r * np.sin(theta), r * np.cos(theta), f'{nm} NM',
-                        color='#ffffff', fontsize=7, ha='center', va='center',
-                        rotation=-42, rotation_mode='anchor', zorder=13,
-                        clip_on=True)
-        label.set_path_effects([pe.withStroke(linewidth=2.5, foreground='#182434')])
+                        color='#17354f', fontsize=8, weight='bold',
+                        ha='center', va='center', rotation=0, zorder=20,
+                        clip_on=True,
+                        bbox=dict(boxstyle='round,pad=0.18', facecolor='white',
+                                  edgecolor='#b1c5d3', linewidth=0.35, alpha=0.88))
         label.set_gid(f'range-ring-label-{nm}NM')
     return rings_nm
 
