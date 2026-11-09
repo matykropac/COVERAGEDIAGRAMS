@@ -856,8 +856,12 @@ def exports_dialog():
     # Independent English customer PDF atlas, not part of the ZIP preset.
     st.divider()
     st.markdown("#### COVERAGE REPORT · PDF · 600 DPI")
-    st.caption("Standalone English report: introduction, descending FL coverage chart, "
-               "terrain model and one Esri-backed diagram per flight level.")
+    st.caption("English ELDIS report with optional authentic COVERAGE MAPS title page, "
+               "terrain model, technical settings and flight-level diagrams.")
+    cover_docx = st.file_uploader(
+        "ELDIS cover template · COVERAGE MAPS.docx (optional)",
+        type=["docx"], key="ws_report_cover_docx",
+        help="Upload the original Word document to reproduce its title page artwork in the PDF.")
     report_name=st.text_input("Report / project title",
                               value=customer_name.strip() or "Radar Coverage Study",
                               key="ws_report_title")
@@ -876,7 +880,8 @@ def exports_dialog():
                 project_name=report_name,
                 flight_levels_ft=report_levels,
                 basemap=report_basemap,
-                dpi=600)
+                dpi=600,
+                cover_docx=cover_docx.getvalue() if cover_docx is not None else None)
             with st.spinner("Generating high-resolution 600 DPI report with selected map layers..."):
                 st.session_state["ws_report_pdf"]=generate_coverage_report_pdf(
                     result,report_options)
