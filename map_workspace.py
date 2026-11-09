@@ -161,12 +161,21 @@ def _airspace_controls():
                        "Od":x["lower"]["text"],"Do":x["upper"]["text"]}
                       for x in selected],hide_index=True,use_container_width=True,
                      height=220)
-    st.download_button("EXPORT CTR/TMA · GeoJSON",
-        as_geojson(zones) and __import__("json").dumps(
-            as_geojson(zones),ensure_ascii=False).encode("utf-8"),
-        file_name="COVERAGEDIAGRAMS_airspaces.geojson",
-        mime="application/geo+json",use_container_width=True,
-        key="ws_airspace_export")
+    if st.button("PŘIPRAVIT GEOJSON CTR/TMA",use_container_width=True,
+                 key="ws_airspace_prepare_export"):
+        import json
+        st.session_state["ws_airspace_export_bytes"]=json.dumps(
+            as_geojson(zones),ensure_ascii=False).encode("utf-8")
+        st.session_state["ws_airspace_export_time"]=st.session_state.get(
+            "ws_airspace_source_time","")
+    if (st.session_state.get("ws_airspace_export_bytes") and
+        st.session_state.get("ws_airspace_export_time")==
+        st.session_state.get("ws_airspace_source_time","")):
+        st.download_button("STÁHNOUT CTR/TMA · GeoJSON",
+            st.session_state["ws_airspace_export_bytes"],
+            file_name="COVERAGEDIAGRAMS_airspaces.geojson",
+            mime="application/geo+json",use_container_width=True,
+            key="ws_airspace_export")
 
 
 def _airport_project_metadata():
