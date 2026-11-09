@@ -339,8 +339,20 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
         raise ValueError("DPI must be 300 or 600.")
     project = (options.project_name or "Radar Coverage Study").strip()[:95]
     metrics = customer_metrics(result, levels)
-    # Fetch/reproject once: all maps share precisely the same AEQD geometry.
-    basemap = core.load_basemap(result["config"], out_size=(1300, 1300),
+    # Match the basemap viewport to the full exported plot, including the
+    # outer reference range ring. Otherwise a 60 NM radar produces a 60 NM
+    # square of tiles inside a plot expanded to the 100 NM reference ring.
+    config = result["config"]
+    radar_mode = str(config.radar_mode).upper()
+    if radar_mode == "PAR-NG":
+        view_radius_km = float(config.range_km)
+    else:
+        outer_ring_nm = 260 if "SSR" in radar_mode else 100
+        view_radius_km = max(float(config.range_km), outer_ring_nm * 1.852) * 1.035
+    viewport = (-view_radius_km, view_radius_km,
+                -view_radius_km, view_radius_km)
+    # Fetch/reproject once: all report maps share the same AEQD geometry.
+    basemap = core.load_basemap(config, viewport=viewport, out_size=(1300, 1300),
                                 provider=options.basemap)
     if basemap is None or basemap.get("image") is None:
         raise ValueError("Esri basemap is unavailable. Report not generated.")
