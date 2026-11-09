@@ -58,7 +58,7 @@ def _geometry_valid(geometry):
     if not isinstance(geometry,dict) or geometry.get("type") not in ("Polygon","MultiPolygon"):
         raise ValueError("Vzdušný prostor musí být Polygon nebo MultiPolygon.")
     data=geometry.get("coordinates")
-    if not isinstance(data,list):
+    if not isinstance(data,(list,tuple)):
         raise ValueError("Geometrie bez souřadnic.")
     def iter_coordinates(value):
         if isinstance(value, (tuple,list)) and len(value)>=2 and all(isinstance(x,(int,float)) for x in value[:2]):
@@ -138,7 +138,7 @@ def fetch_airspaces(lat,lon,radius_km,api_key,fetch=None):
             "class":CLASS_NAMES.get(item.get("icaoClass"),"?"),
             "lower":lower,
             "upper":upper,
-            "geometry":mapping(geom),
+            "geometry":json.loads(json.dumps(mapping(geom))),
             "source":"OpenAIP",
             "verified_aip":False,
         })
@@ -165,7 +165,7 @@ def validate_saved_airspaces(entries):
         if item.get("source") not in ("OpenAIP","GeoJSON import"):
             raise ValueError("Neznámý zdroj vzdušného prostoru.")
         clone=dict(item)
-        clone["geometry"]=mapping(geom)
+        clone["geometry"]=json.loads(json.dumps(mapping(geom)))
         clone["name"]=_limit_text(item.get("name"))
         clone["id"]=_limit_text(item.get("id"),80)
         clone["class"]=_limit_text(item.get("class"),20)
