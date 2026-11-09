@@ -28,7 +28,7 @@ from traffic_overlay import fetch_snapshot, add_traffic_layer
 from obstacle_ui import render_obstacle_editor
 from live_simulation import simulation_tab
 from project_file import save_project, load_project
-from airport_geometry import airport_runways, runway_rows, runway_geometry, par_bearing_for_runway, validate_icao
+from airport_geometry import airport_runways, runway_rows, runway_geometry, par_bearing_for_runway, validate_icao, validate_saved_geometry
 from ssr_custom import load_measured_ssr
 from wind_turbines import load_wind_turbines, add_wind_layer
 from geodata_obstacle_catalog import catalog_from_data, synchronize
@@ -87,6 +87,30 @@ iframe[title*="streamlit_folium"]{border-radius:9px!important;border:1px solid #
 def _public_runways():
     """Download at most once per day; UI may keep old loaded runway geometries."""
     return runway_rows()
+
+
+def _airport_project_metadata():
+    return {
+        "airport_icao":st.session_state.get("ws_airport_code",""),
+        "airport_runways":st.session_state.get("ws_airport_geometry") or [],
+    }
+
+
+def _restore_airport_metadata(meta):
+    saved=meta.get("source_ui") or {}
+    code=saved.get("airport_icao")
+    runways=saved.get("airport_runways")
+    if code and runways:
+        code,runways=validate_saved_geometry(code,runways)
+        st.session_state["ws_airport_icao"]=code
+        st.session_state["ws_airport_code"]=code
+        st.session_state["ws_airport_geometry"]=runways
+        st.session_state["ws_runway_index"]=0
+        st.session_state["ws_runway_end"]=0
+        st.session_state["ws_show_runways"]=True
+    else:
+        st.session_state.pop("ws_airport_geometry",None)
+        st.session_state.pop("ws_airport_code",None)
 
 
 def _airport_controls():
@@ -189,6 +213,9 @@ def radar_dialog():
         if uploaded_project is not None and st.button("NAČÍST PROJEKT",key="ws_project_load"):
             try:
                 result,meta=load_project(uploaded_project.getvalue())
+                airport_data=meta.get("source_ui") or {}
+                if airport_data.get("airport_icao") and airport_data.get("airport_runways"):
+                    validate_saved_geometry(airport_data["airport_icao"],airport_data["airport_runways"])
                 # Recreate the antenna-aware solution from the embedded DEM.
                 # Stored status/lower may already include obstacles; never reuse
                 # them as the base when editing or removing obstructions.
@@ -201,6 +228,7 @@ def radar_dialog():
                              obstacles_signature=obstacle_signature(meta.get("obstacles",[])))
                 result=fresh
                 _config_state_from_project(result["config"])
+                _restore_airport_metadata(meta)
                 st.session_state["result"]=result
                 st.session_state.pop("ws_previous_result",None)
                 st.session_state["geometry"]={}
@@ -934,7 +962,8 @@ def exports_dialog():
                 proj=None
                 if selected["project"]:
                     proj=save_project(result,levels=st.session_state.get("ws_levels",[]),
-                                      obstacles=st.session_state.get("obstacles",[]))
+                                      obstacles=st.session_state.get("obstacles",[]),
+                                      source_ui=_airport_project_metadata())
                 html=st.session_state.get("ws_map_html")
                 blob=build_selected_zip(
                     result, selected=selected, flight_levels=chosen,
@@ -1543,11 +1572,14 @@ def render_workspace():
                     try:
                         st.session_state["ws_snapshot_bytes"]=save_project(
                             result,levels=st.session_state.get("ws_levels",[]),
-                            obstacles=st.session_state.get("obstacles",[]))
+                            obstacles=st.session_state.get("obstacles",[]),
+                            source_ui=_airport_project_metadata())
                         st.session_state["ws_snapshot_key"]=(
                             result.get("completed_at"),
                             obstacle_signature(st.session_state.get("obstacles",[])),
                             tuple(st.session_state.get("ws_levels",[])),
+                            st.session_state.get("ws_airport_code",""),
+                            tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
                         )
                     except Exception as exc:
                         st.error(f"Projekt nelze uložit: {exc}")
@@ -1555,6 +1587,8 @@ def render_workspace():
                     result.get("completed_at"),
                     obstacle_signature(st.session_state.get("obstacles",[])),
                     tuple(st.session_state.get("ws_levels",[])),
+                    st.session_state.get("ws_airport_code",""),
+                    tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
                 )
                 if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
                     st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
