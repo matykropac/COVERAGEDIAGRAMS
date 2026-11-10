@@ -1365,7 +1365,8 @@ def exports_dialog():
                 if selected["project"]:
                     proj=save_project(result,levels=st.session_state.get("ws_levels",[]),
                                       obstacles=st.session_state.get("obstacles",[]),
-                                      source_ui=_airport_project_metadata())
+                                      source_ui=_airport_project_metadata(),
+                                      display=_visual_project_state())
                 html=st.session_state.get("ws_map_html")
                 blob=build_selected_zip(
                     result, selected=selected, flight_levels=chosen,
@@ -2129,7 +2130,8 @@ def render_workspace():
                             st.session_state["ws_snapshot_bytes"]=save_project(
                                 result,levels=st.session_state.get("ws_levels",[]),
                                 obstacles=st.session_state.get("obstacles",[]),
-                                source_ui=_airport_project_metadata())
+                                source_ui=_airport_project_metadata(),
+                                display=_visual_project_state())
                             st.session_state["ws_snapshot_key"]=(
                                 result.get("completed_at"),
                                 obstacle_signature(st.session_state.get("obstacles",[])),
