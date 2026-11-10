@@ -1977,9 +1977,9 @@ def render_workspace():
     subtitle=("COVERAGE READY" if result is not None else "NO CALCULATION")
     st.markdown(header("EDITOR",str(project_name),subtitle),unsafe_allow_html=True)
     st.markdown("""<style>
-    [data-testid="stSidebar"]{width:448px!important;min-width:448px!important;
+    [data-testid="stSidebar"]{width:476px!important;min-width:476px!important;
       background:#10243b!important;border-right:1px solid #35506c!important}
-    [data-testid="stSidebar"]>div:first-child{width:448px!important}
+    [data-testid="stSidebar"]>div:first-child{width:476px!important}
     [data-testid="stSidebarUserContent"]{padding:12px 10px!important;background:#10243b!important}
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.36rem!important}
     [data-testid="stSidebar"] [data-testid="stButton"]>button{
@@ -1994,20 +1994,34 @@ def render_workspace():
     [data-testid="stSidebar"] label{color:#c2d8ea!important}
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]{gap:.35rem!important}
     [data-testid="stSidebar"] [data-testid="stExpander"]{background:#142c45!important}
-    [data-testid="stSidebar"] .cd-rail-label{font:650 8px/1.25 system-ui!important;
-        color:#a2bdd0!important;white-space:normal;overflow-wrap:anywhere;
-        text-align:center;letter-spacing:0!important;margin:1px 0 9px!important}
-    [data-testid="stSidebar"] [data-testid="stButton"] button[kind]{
-        padding:4px 5px!important;white-space:normal!important;line-height:1.1!important}
-    .cd-viewer-rail-link{display:flex;flex-direction:column;align-items:center;
+    /* Tool rail: one button per section; all states share the dark palette. */
+    [data-testid="stSidebar"] .st-key-cd_nav_rail [data-testid="stVerticalBlock"]{
+        gap:6px!important}
+    [data-testid="stSidebar"] .st-key-cd_nav_rail [data-testid="stButton"]>button,
+    [data-testid="stSidebar"] .st-key-cd_nav_rail [data-testid="stButton"] button{
+        width:100%!important;min-height:42px!important;height:42px!important;
+        padding:0 5px!important;display:flex!important;justify-content:center!important;
+        align-items:center!important;gap:5px!important;text-align:center!important;
+        font:700 10px/1.2 system-ui!important;white-space:nowrap!important;
+        background:#182d44!important;color:#bed8eb!important;
+        border:1px solid #34526c!important;border-radius:8px!important;
+        box-shadow:none!important;overflow:hidden!important}
+    [data-testid="stSidebar"] .st-key-cd_nav_rail [data-testid="stButton"]>button[kind="primary"],
+    [data-testid="stSidebar"] .st-key-cd_nav_rail [data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
+        background:#174b71!important;color:#ebfaff!important;
+        border-color:#5bc7f0!important;box-shadow:inset 3px 0 #63c9ef!important}
+    [data-testid="stSidebar"] .st-key-cd_nav_rail [data-testid="stButton"]>button:hover{
+        background:#244762!important;color:white!important;border-color:#68bfe5!important}
+    .cd-viewer-rail-link{display:flex;flex-direction:row;align-items:center;
         justify-content:center;text-align:center;text-decoration:none!important;
-        color:#fff!important;border:1px solid #ef7179;border-radius:8px;
-        background:#ad3041;padding:7px 2px;margin-top:9px;gap:2px;min-width:0}
-    .cd-viewer-rail-link:hover{background:#d03c51;color:white!important}
-    .cd-viewer-rail-glyph{font:800 20px/1.1 system-ui}
-    .cd-viewer-rail-label{font:750 8px/1.25 system-ui;white-space:nowrap}
-    .cd-rail-marker{font:750 9px system-ui;letter-spacing:.15em;color:#70b8d9;
-       text-align:center;margin:5px 0 10px}
+        width:100%;box-sizing:border-box;height:44px;
+        color:#fff!important;border:1px solid #f17c86;border-radius:8px;
+        background:#a92e43;padding:0 5px;margin-top:7px;gap:6px;min-width:0}
+    .cd-viewer-rail-link:hover{background:#ce3b52;color:#fff!important}
+    .cd-viewer-rail-glyph{font:800 16px/1 system-ui}
+    .cd-viewer-rail-label{font:750 10px/1.2 system-ui;white-space:nowrap}
+    .cd-rail-marker{font:800 9px/1.2 system-ui;letter-spacing:.12em;
+        color:#83cae9;text-align:center;margin:3px 0 8px}
     @media(max-width:700px){[data-testid="stSidebar"]{width:100vw!important;min-width:0!important}
       [data-testid="stSidebar"]>div:first-child{width:100%!important}}
     </style>""",unsafe_allow_html=True)
@@ -2015,31 +2029,32 @@ def render_workspace():
     result=st.session_state.get("result")
     config=_cfg()
     with st.sidebar:
-        rail, panel = st.columns([1.65,5],gap="small")
+        rail, panel = st.columns([1.9,4.75],gap="medium")
         with rail:
-            st.markdown('<div class="cd-rail-marker">TOOLS</div>',unsafe_allow_html=True)
-            for name,symbol,tip in (
-                ("MAPA","▧","Mapa a krytí"),
-                ("RADAR","◉","Radar / výpočet"),
-                ("TERÉN","△","Terén / DEM"),
-                ("PŘEKÁŽKY","▤","Vrstvy a překážky"),
-                ("POZICE","✈","Aviation / ICAO"),
-                ("EXPORT","⇩","Export Studio")):
-                if st.button(symbol,key="cd_rail_"+name,help=tip,
-                             use_container_width=True,type="primary" if
-                             st.session_state.get("ws_section","MAPA")==name else "secondary"):
-                    st.session_state["ws_section"]=name
-                    st.rerun()
-                st.markdown('<div class="cd-rail-label">'+
-                            {"MAPA":"MAPA","RADAR":"RADAR","TERÉN":"DEM",
-                             "PŘEKÁŽKY":"VRSTVY","POZICE":"AIP","EXPORT":"EXPORT"}[name]+
-                            '</div>',unsafe_allow_html=True)
-            st.markdown(
-                '<a class="cd-viewer-rail-link" href="?viewer=1" target="_blank" '
-                'rel="noopener noreferrer" title="Otevřít samostatný VIEWER">'
-                '<span class="cd-viewer-rail-glyph">◈</span>'
-                '<span class="cd-viewer-rail-label">VIEWER</span></a>',
-                unsafe_allow_html=True)
+            # A single native button contains both symbol and name. No
+            # independent labels, so Streamlit vertical spacing cannot overlap.
+            with st.container(key="cd_nav_rail"):
+                st.markdown('<div class="cd-rail-marker">TOOLS</div>',
+                            unsafe_allow_html=True)
+                for name,symbol,label,tip in (
+                    ("MAPA","▧","MAPA","Mapa a krytí"),
+                    ("RADAR","◉","RADAR","Radar / výpočet"),
+                    ("TERÉN","△","TERÉN","Terén / DEM"),
+                    ("PŘEKÁŽKY","▤","VRSTVY","Vrstvy a překážky"),
+                    ("POZICE","✈","AIP","Aviation / ICAO"),
+                    ("EXPORT","⇩","EXPORT","Export Studio")):
+                    active=st.session_state.get("ws_section","MAPA")==name
+                    if st.button(f"{symbol}  {label}",key="cd_rail_"+name,
+                                 help=tip,use_container_width=True,
+                                 type="primary" if active else "secondary"):
+                        st.session_state["ws_section"]=name
+                        st.rerun()
+                st.markdown(
+                    '<a class="cd-viewer-rail-link" href="?viewer=1" target="_blank" '
+                    'rel="noopener noreferrer" title="Otevřít samostatný VIEWER">'
+                    '<span class="cd-viewer-rail-glyph">◈</span>'
+                    '<span class="cd-viewer-rail-label">VIEWER</span></a>',
+                    unsafe_allow_html=True)
         with panel:
             st.markdown('<div class="cd-panel-title">'+
                 {"MAPA":"MAPA / ANALÝZA","RADAR":"RADAR / ENGINE",
