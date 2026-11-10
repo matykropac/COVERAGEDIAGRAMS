@@ -2250,8 +2250,8 @@ def render_workspace():
                 key_available=bool(configured_key())
                 enabled=st.toggle("OpenAIP · letecká mapa",value=True,key="ws_openaip")
                 if enabled and not key_available:
-                    st.warning("AIP není připojena: chybí OPENAIP_API_KEY v "
-                               "Streamlit Secrets nebo serverovém prostředí.")
+                    st.warning("AIP není připojena: chybí OPENAIP_API_KEY nebo "
+                               "OPENAIP_DATA_API_KEY v nastavení Streamlitu.")
                 if st.button("OVĚŘIT OPENAIP · API / DLAŽDICE",
                              key="ws_aip_test",use_container_width=True):
                     with st.spinner("Kontroluji odpověď mapového serveru…"):
