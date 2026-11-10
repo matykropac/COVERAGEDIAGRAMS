@@ -617,10 +617,14 @@ def radar_dialog():
     [data-testid="stDialog"] [data-testid="stTabs"] [role="tab"]{
         font-size:11px!important;min-width:0!important;white-space:nowrap}
     .cd-radar-summary{background:#173149;border:1px solid #355875;
-        border-radius:8px;padding:12px 16px;margin-bottom:11px}
-    .cd-radar-caption{font:750 10px system-ui;letter-spacing:.12em;color:#79cbed}
-    .cd-radar-value{font:750 23px system-ui;color:#f3f8ff;margin-top:4px}
-    .cd-radar-unit{font:500 11px system-ui;color:#a5c8df}
+        border-radius:8px;padding:11px 12px;margin-bottom:11px;min-width:0;
+        min-height:92px;overflow-wrap:anywhere}
+    .cd-radar-caption{font:750 9px/1.3 system-ui;letter-spacing:.07em;
+        color:#79cbed;overflow-wrap:anywhere}
+    .cd-radar-value{font:750 clamp(15px,1.7vw,21px)/1.2 system-ui;
+        color:#f3f8ff;margin-top:4px;overflow-wrap:anywhere}
+    .cd-radar-unit{font:500 10px/1.4 system-ui;color:#a5c8df;
+        overflow-wrap:anywhere}
     .cd-radar-guide{border-left:3px solid #63c9ef;padding:6px 11px;
         font:12px/1.5 system-ui;color:#b9d2e3;background:#172a40;
         border-radius:0 6px 6px 0;margin:6px 0 12px}
@@ -668,54 +672,47 @@ def radar_dialog():
         st.caption("Změna souřadnic nebo výšky vyžaduje nové vyhodnocení krytí.")
 
     with antenna_tab:
-        st.markdown('<div class="cd-radar-guide">Vyzařovací geometrie a provozní '
-                    'omezení antény. Ilustrace níže je schéma, nikoli '
-                    'kalibrovaný anténní diagram.</div>',unsafe_allow_html=True)
+        st.markdown('<div class="cd-radar-guide">Skutečný relativní elevační řez '
+                    'anténního modelu použitého při výpočtu krytí. Pod grafem je '
+                    'uveden původ dat a případná omezení kalibrace.</div>',
+                    unsafe_allow_html=True)
         mode=st.session_state.get("ws_radar","RL-2000")
-        left,right=st.columns([1,1],gap="medium")
-        with left:
+        control_a,control_b=st.columns(2,gap="medium")
+        with control_a:
             if mode=="RL-2000":
-                st.selectbox("Dosah PSR [NM]",list(core.PSR_RANGES_NM),index=2,key="ws_psr_nm")
+                st.selectbox("Dosah PSR [NM]",list(core.PSR_RANGES_NM),
+                             index=2,key="ws_psr_nm")
                 st.selectbox("Svazek",["COMBINED","LOW","HIGH"],key="ws_beam")
             if mode=="PAR-NG":
                 st.number_input("Azimut osy [°]",0.,359.99,0.,key="ws_bearing")
             if mode=="SSR":
                 st.selectbox("SSR anténa",["Generic Gaussian","Measured SSR.txt"],
                              key="ws_ssr_diagram")
+        with control_b:
             st.number_input("Min. elevace [°]",-5.,88.,-1.,key="ws_min")
             st.number_input("Max. elevace [°]",-4.,89.,45.,key="ws_max")
             st.number_input("Tilt antény [°]",-15.,15.,-1.,key="ws_tilt")
-        with right:
-            st.markdown("""<div style="border:1px solid #365673;border-radius:9px;
-                background:#0d2236;padding:9px;max-width:100%">
-            <svg viewBox="0 0 360 225" role="img" aria-label="Schematic antenna tilt and elevation"
-                style="width:100%;height:auto;display:block">
-              <defs><linearGradient id="cdbeam" x1="0" x2="1" y1="1" y2="0">
-                <stop offset="0" stop-color="#4cb5e6" stop-opacity=".35"/>
-                <stop offset="1" stop-color="#84e4fb" stop-opacity=".04"/></linearGradient></defs>
-              <path d="M16 174H344" stroke="#41607d" stroke-width="2"/>
-              <path d="M70 176L326 39A290 290 0 0 0 329 139Z"
-                    fill="url(#cdbeam)" stroke="#63c9ef" stroke-width="1.5"
-                    stroke-dasharray="5 5"/>
-              <path d="M70 176L329 116" stroke="#8be9fc" stroke-width="3"/>
-              <path d="M70 176V111" stroke="#b5cfe3" stroke-width="7"/>
-              <rect x="51" y="100" width="38" height="11" rx="5"
-                    fill="#63c9ef"/>
-              <circle cx="70" cy="176" r="4" fill="#f8d17c"/>
-              <text x="16" y="23" fill="#96bad6" font-size="11"
-                    font-family="system-ui">SCHEMATIC ELEVATION / TILT</text>
-              <text x="270" y="30" fill="#a5dff6" font-size="10"
-                    font-family="system-ui">MAX EL</text>
-              <text x="284" y="159" fill="#a5dff6" font-size="10"
-                    font-family="system-ui">MIN EL</text>
-              <text x="20" y="208" fill="#8daac1" font-size="10"
-                    font-family="system-ui">RADAR SITE · AGL</text>
-            </svg></div>""",unsafe_allow_html=True)
-            minel=float(st.session_state.get("ws_min",-1.))
-            maxel=float(st.session_state.get("ws_max",45.))
-            tilt=float(st.session_state.get("ws_tilt",-1.))
-            st.caption(f"Min {minel:.2f}° · Max {maxel:.2f}° · Tilt {tilt:+.2f}°")
-            st.caption("Schéma není zdrojem výpočtu; používá se stávající anténní model.")
+        st.markdown('<div class="cd-panel-title">ANTENNA GAIN / ELEVATION CUT</div>',
+                    unsafe_allow_html=True)
+        try:
+            from antenna_workspace_preview import antenna_figure
+            diagram_config=_cfg()
+            diagram_pattern=_pattern(diagram_config)
+            diagram,source_name,limitations=antenna_figure(
+                diagram_config,diagram_pattern)
+            st.plotly_chart(diagram,use_container_width=True,
+                            key="ws_radar_antenna_chart",
+                            config={"displaylogo":False,"responsive":True})
+            st.caption("DATA SOURCE · "+source_name)
+            st.caption(limitations)
+            if mode=="RL-2000":
+                st.caption("LOW = vysílací/přijímací svazek · "
+                           "HIGH = pouze přijímací svazek. Průběhy jsou "
+                           "normalizované, nikoli absolutní zisk dBi.")
+        except (ValueError,TypeError,KeyError,OSError) as exc:
+            st.warning("Anténní náhled není dostupný: "+str(exc))
+        st.caption("Graf je pouze čtecí náhled. RF výpočet stále používá "
+                   "původní anténní objekt a jeho interpolaci.")
 
     with terrain_tab:
         st.markdown('<div class="cd-radar-guide">Terénní zdroj a numerická mřížka '
@@ -2020,8 +2017,6 @@ def render_workspace():
     .cd-viewer-rail-link:hover{background:#ce3b52;color:#fff!important}
     .cd-viewer-rail-glyph{font:800 16px/1 system-ui}
     .cd-viewer-rail-label{font:750 10px/1.2 system-ui;white-space:nowrap}
-    .cd-rail-marker{font:800 9px/1.2 system-ui;letter-spacing:.12em;
-        color:#83cae9;text-align:center;margin:3px 0 8px}
     @media(max-width:700px){[data-testid="stSidebar"]{width:100vw!important;min-width:0!important}
       [data-testid="stSidebar"]>div:first-child{width:100%!important}}
     </style>""",unsafe_allow_html=True)
@@ -2029,13 +2024,11 @@ def render_workspace():
     result=st.session_state.get("result")
     config=_cfg()
     with st.sidebar:
-        rail, panel = st.columns([1.9,4.75],gap="medium")
+        rail, gutter, panel = st.columns([1.85,.42,4.65],gap="small")
         with rail:
             # A single native button contains both symbol and name. No
             # independent labels, so Streamlit vertical spacing cannot overlap.
             with st.container(key="cd_nav_rail"):
-                st.markdown('<div class="cd-rail-marker">TOOLS</div>',
-                            unsafe_allow_html=True)
                 for name,symbol,label,tip in (
                     ("MAPA","▧","MAPA","Mapa a krytí"),
                     ("RADAR","◉","RADAR","Radar / výpočet"),
@@ -2055,6 +2048,8 @@ def render_workspace():
                     '<span class="cd-viewer-rail-glyph">◈</span>'
                     '<span class="cd-viewer-rail-label">VIEWER</span></a>',
                     unsafe_allow_html=True)
+        with gutter:
+            st.empty()
         with panel:
             st.markdown('<div class="cd-panel-title">'+
                 {"MAPA":"MAPA / ANALÝZA","RADAR":"RADAR / ENGINE",
