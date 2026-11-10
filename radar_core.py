@@ -176,7 +176,7 @@ def parse_par_flight_levels(text):
     raw=str(text or "").strip()
     if not raw:
         return ()
-    tokens=[x for x in re.split(r"[,;\\s]+",raw) if x]
+    tokens=[x for x in re.split(r"[,;\s]+",raw) if x]
     if len(tokens)>PAR_CUSTOM_MAX_COUNT:
         raise ValueError(f"Maximálně {PAR_CUSTOM_MAX_COUNT} vlastních hladin.")
     if any(not re.fullmatch(r"[0-9]+",token) for token in tokens):
