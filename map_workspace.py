@@ -538,7 +538,7 @@ def _par_pattern_metadata(pattern):
         return None
     return {name:getattr(pattern,name) for name in (
         "scan_mode","steering_loss_db_per_deg","detection_model",
-        "reference_snr_db","pd","pfa","pulses")}
+        "reference_snr_db","pd","pfa","pulses","channel_mode")}
 
 
 def _par_model_metadata():
@@ -551,6 +551,7 @@ def _par_model_metadata():
         "pd":float(st.session_state.get("ws_par_pd",0.8)),
         "pfa":float(st.session_state.get("ws_par_pfa",1e-6)),
         "pulses":int(st.session_state.get("ws_par_pulses",1)),
+        "channel_mode":st.session_state.get("ws_par_channels","BOTH"),
     }
 
 
@@ -568,6 +569,7 @@ def _restore_par_model_metadata(meta):
         "pd":"ws_par_pd",
         "pfa":"ws_par_pfa",
         "pulses":"ws_par_pulses",
+        "channel_mode":"ws_par_channels",
     }
     if set(values)-set(allowed):
         raise ValueError("Neznámé parametry PAR v projektu.")
@@ -888,6 +890,19 @@ def radar_dialog():
                            format_func=core.level_label,key="ws_levels")
         if st.session_state.get("ws_radar")=="PAR-NG":
             st.markdown("**PAR-NG · ANTÉNA / DETEKCE**")
+            st.radio("Anténa použitá pro výpočet krytí",
+                options=["AZ","EL","BOTH"],horizontal=True,
+                format_func=lambda mode:{
+                    "AZ":"HORIZONTAL · AZ",
+                    "EL":"VERTICAL · EL",
+                    "BOTH":"OBĚ · AZ + EL",
+                }[mode],key="ws_par_channels")
+            st.caption("AZ = dostupný importovaný 3D diagram (přiřazení "
+                       "anténě je pracovní předpoklad). EL = ideální "
+                       "elevační sken −1° až +14°; chybí druhé měření. "
+                       "OBĚ = průnik samostatných dosahových podmínek, "
+                       "nikoli součet zisků či SNR.")
+
             st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
                          format_func=lambda mode:"Ideální azimutální sken + ztráta vychýlení"
                          if mode=="TRACKING" else "Pevný 3D diagram bez elektronického skenu",
@@ -909,6 +924,11 @@ def radar_dialog():
                              index=3,key="ws_par_pfa",format_func=lambda n:f"{n:.0e}")
                 st.number_input("Počet ne-koherentních pulzů",min_value=1,
                                 max_value=1000,value=1,step=1,key="ws_par_pulses")
+            if (st.session_state.get("ws_par_scan_mode","TRACKING")=="FIXED_3D"
+                    and st.session_state.get("ws_par_channels","BOTH")!="AZ"):
+                st.warning("FIXED_3D umí jen dostupný importovaný diagram. "
+                           "Pro EL či OBĚ je nutný TRACKING, jinak "
+                           "výpočet záměrně skončí chybou.")
             st.caption("Parametry PAR skenu a SNR jsou modelové, nikoliv změřená specifikace.")
     st.divider()
     if st.button("▶ VYPOČÍTAT RADAROVÉ KRYTÍ",type="primary",
