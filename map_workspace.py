@@ -2221,11 +2221,25 @@ def render_workspace():
                         st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity",
                                   label_visibility="collapsed")
                 st.markdown('<div class="cd-nav-title">LETECKÁ MAPA A PROVOZ</div>',unsafe_allow_html=True)
+                from aviation_basemap import configured_key,test_tiles_connection
+                key_available=bool(configured_key())
                 enabled=st.toggle("OpenAIP · letecká mapa",value=True,key="ws_openaip")
-                if enabled:
-                    from aviation_basemap import configured_key
-                    if not configured_key():
-                        st.caption("OpenAIP vyžaduje OPENAIP_API_KEY v nastavení aplikace.")
+                if enabled and not key_available:
+                    st.warning("AIP není připojena: chybí OPENAIP_API_KEY v "
+                               "Streamlit Secrets nebo serverovém prostředí.")
+                if st.button("OVĚŘIT OPENAIP · API / DLAŽDICE",
+                             key="ws_aip_test",use_container_width=True):
+                    with st.spinner("Kontroluji odpověď mapového serveru…"):
+                        st.session_state["ws_aip_test_result"]=test_tiles_connection()
+                diag=st.session_state.get("ws_aip_test_result")
+                if diag is not None:
+                    ok,message=diag
+                    if ok:
+                        st.success(message)
+                    else:
+                        st.error(message)
+                st.caption("Test ověřuje skutečnou odpověď serveru, nikoliv jen "
+                           "přítomnost API klíče. Klíč se nevypisuje.")
                 st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
                 st.markdown('<div class="cd-nav-title">EXPORTNÍ CENTRUM</div>',
                             unsafe_allow_html=True)
