@@ -2062,54 +2062,54 @@ def render_workspace():
                 st.caption("Mapové vrstvy lze exportovat i bez radarového výpočtu.")
                 st.markdown('<div class="cd-nav-title">SPRÁVA PROJEKTU / CDPROJ</div>',
                             unsafe_allow_html=True)
-            first_btn,second_btn=st.columns(2,gap="small")
-            with first_btn:
-                if st.button("OPEN · CDPROJ",key="ws_export_project_load",
-                             use_container_width=True):
-                    project_load_dialog()
-            with second_btn:
-                if result is not None and st.button("SAVE · CDPROJ",
-                                                     key="ws_export_save_project",
-                                                     use_container_width=True):
-                    try:
-                        st.session_state["ws_top_project_bytes"]=save_project(
-                            result,levels=st.session_state.get("ws_levels",[]),
-                            obstacles=st.session_state.get("obstacles",[]),
-                            source_ui=_airport_project_metadata(),
-                            display=_visual_project_state())
-                    except Exception as exc:
-                        st.error(f"Projekt nelze připravit: {exc}")
-            if st.session_state.get("ws_top_project_bytes"):
-                st.download_button("⇩ STÁHNOUT CDPROJ",
-                    data=st.session_state["ws_top_project_bytes"],
-                    file_name="COVERAGEDIAGRAMS_project.cdproj",
-                    mime="application/octet-stream",use_container_width=True,
-                    key="ws_export_cdproj_download")
+                first_btn,second_btn=st.columns(2,gap="small")
+                with first_btn:
+                    if st.button("OPEN · CDPROJ",key="ws_export_project_load",
+                                 use_container_width=True):
+                        project_load_dialog()
+                with second_btn:
+                    if result is not None and st.button("SAVE · CDPROJ",
+                                                         key="ws_export_save_project",
+                                                         use_container_width=True):
+                        try:
+                            st.session_state["ws_top_project_bytes"]=save_project(
+                                result,levels=st.session_state.get("ws_levels",[]),
+                                obstacles=st.session_state.get("obstacles",[]),
+                                source_ui=_airport_project_metadata(),
+                                display=_visual_project_state())
+                        except Exception as exc:
+                            st.error(f"Projekt nelze připravit: {exc}")
+                if st.session_state.get("ws_top_project_bytes"):
+                    st.download_button("⇩ STÁHNOUT CDPROJ",
+                        data=st.session_state["ws_top_project_bytes"],
+                        file_name="COVERAGEDIAGRAMS_project.cdproj",
+                        mime="application/octet-stream",use_container_width=True,
+                        key="ws_export_cdproj_download")
 
                 st.markdown('<div class="cd-nav-title">VIEWER / PŘENOS VÝSLEDKU</div>',
-                            unsafe_allow_html=True)
-            if result is not None:
-                if st.button("↗ VIEWER S VÝSLEDKEM",
-                             key="ws_export_viewer_snapshot",use_container_width=True,
-                             help="Přenese vypočtené hladiny a DEM do nového okna."):
-                    try:
-                        from viewer_bridge import publish
-                        chosen=st.session_state.get("ws_levels",[])
-                        allowed=set(core.flight_levels_for(result["config"].radar_mode))
-                        chosen=[int(x) for x in chosen if int(x) in allowed]
-                        token=publish(result,chosen,st.session_state.get("obstacles",[]),
-                                      source_ui=_airport_project_metadata())
-                        st.session_state["ws_viewer_handoff"]=token
-                    except Exception as exc:
-                        st.error(f"VIEWER nelze připravit: {exc}")
-                token=st.session_state.get("ws_viewer_handoff")
-                if token:
-                    st.markdown(
-                        '<a href="?viewer=1&amp;snapshot='+token+'" target="_blank" '
-                        'rel="noopener" style="display:block;text-align:center;'
-                        'border:1px solid #478eae;background:#193d57;color:#c9f3ff;'
-                        'padding:8px;border-radius:7px;text-decoration:none;font-weight:700">'
-                        '↗ OTEVŘÍT VÝSLEDEK</a>',unsafe_allow_html=True)
+                                unsafe_allow_html=True)
+                if result is not None:
+                    if st.button("↗ VIEWER S VÝSLEDKEM",
+                                 key="ws_export_viewer_snapshot",use_container_width=True,
+                                 help="Přenese vypočtené hladiny a DEM do nového okna."):
+                        try:
+                            from viewer_bridge import publish
+                            chosen=st.session_state.get("ws_levels",[])
+                            allowed=set(core.flight_levels_for(result["config"].radar_mode))
+                            chosen=[int(x) for x in chosen if int(x) in allowed]
+                            token=publish(result,chosen,st.session_state.get("obstacles",[]),
+                                          source_ui=_airport_project_metadata())
+                            st.session_state["ws_viewer_handoff"]=token
+                        except Exception as exc:
+                            st.error(f"VIEWER nelze připravit: {exc}")
+                    token=st.session_state.get("ws_viewer_handoff")
+                    if token:
+                        st.markdown(
+                            '<a href="?viewer=1&amp;snapshot='+token+'" target="_blank" '
+                            'rel="noopener" style="display:block;text-align:center;'
+                            'border:1px solid #478eae;background:#193d57;color:#c9f3ff;'
+                            'padding:8px;border-radius:7px;text-decoration:none;font-weight:700">'
+                            '↗ OTEVŘÍT VÝSLEDEK</a>',unsafe_allow_html=True)
 
             elif section=="RADAR":
                 st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
