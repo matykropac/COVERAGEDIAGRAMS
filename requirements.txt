@@ -9,3 +9,5 @@ shapely==2.1.2
 Pillow==12.3.0
 pandas==2.2.3
 reportlab==4.4.4
+plotly>=6.0,<7
+scipy>=1.15,<2
