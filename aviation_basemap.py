@@ -51,3 +51,32 @@ def add_to_map(map_obj, key=None, *, show=True):
         opacity=0.88,
     ).add_to(map_obj)
     return True
+
+def test_tiles_connection(key=None, *, timeout=7):
+    """Probe one fixed OpenAIP tile without returning the API key or URL."""
+    from urllib.request import Request, urlopen
+    from urllib.error import HTTPError, URLError
+    key=key or configured_key()
+    if not key:
+        return False, "Chybí OPENAIP_API_KEY v nastavení aplikace."
+    url=URL.format(z=6,x=34,y=21,key=quote(key,safe=""))
+    try:
+        req=Request(url,headers={"User-Agent":"COVERAGEDIAGRAMS-AIP-Check/1.0"})
+        with urlopen(req,timeout=timeout) as response:
+            code=response.status
+            mime=response.headers.get("Content-Type","").lower()
+            blob=response.read(24)
+        if code==200 and (mime.startswith("image/") or blob[:3]==b"PNG"):
+            return True, "OpenAIP HTTP 200: mapová dlaždice je dostupná."
+        return False, f"OpenAIP HTTP {code}: odpověď není obrázek."
+    except HTTPError as exc:
+        reasons={401:"Neplatný či expirovaný API klíč.",
+                 403:"Přístup zakázán (oprávnění/omezení klíče).",
+                 404:"Mapový endpoint nenalezen.",
+                 429:"Limit požadavků překročen.",
+                 500:"Chyba na straně OpenAIP.",
+                 502:"Chyba brány OpenAIP.",
+                 503:"OpenAIP dočasně nedostupný."}
+        return False,f"OpenAIP HTTP {exc.code}: {reasons.get(exc.code,'Požadavek odmítnut.')}"
+    except (URLError,TimeoutError,OSError):
+        return False,"Ze serveru nelze OpenAIP kontaktovat (síť, DNS nebo timeout)."
