@@ -978,6 +978,11 @@ def _calculate_coverage():
             phase("Kontroluji parametry radaru")
             c=_cfg()
             c.validate()
+            # Validate AZ/EL channel availability before expensive DEM download.
+            pattern_for_run=_pattern(c)
+            if c.radar_mode=="PAR-NG":
+                log("PAR kanály: "+pattern_for_run.channel_mode+
+                    " · AZ: importovaný relativní vzor · EL: provizorní Y8600 model")
             az,distance=core.axes(c)
             samples=len(az)*len(distance)
             log(f"Radar: {c.radar_mode} · {c.lat:.6f}°, {c.lon:.6f}°")
@@ -1021,7 +1026,7 @@ def _calculate_coverage():
             log(f"Výška stanoviště: {ground:.1f} m AMSL")
             phase("Počítám radarový horizont a výškové krytí")
             solve_started=time.perf_counter()
-            result=core.solve(c,terrain,ground,_pattern(c))
+            result=core.solve(c,terrain,ground,pattern_for_run)
             log(f"Výpočet krytí dokončen · {time.perf_counter()-solve_started:.1f} s")
 
             obstacles=st.session_state.get("obstacles",[])
