@@ -2054,7 +2054,7 @@ def _draw_map():
              st.session_state.get("ws_airspace_filter_ft",3000)
               if st.session_state.get("ws_airspace_altfilter",False) else None),
         "opacity":alpha,
-        "coverageVersion":signature([active,reference,alpha,
+        "coverageVersion":signature([active,reference,channel_view,alpha,
                                       result.get("completed_at") if result else None,
                                       st.session_state.get("ws_compare_previous",False),
                                       (st.session_state.get("ws_previous_result") or {}).get("completed_at")]),
