@@ -538,7 +538,8 @@ def _par_pattern_metadata(pattern):
         return None
     return {name:getattr(pattern,name) for name in (
         "scan_mode","steering_loss_db_per_deg","detection_model",
-        "reference_snr_db","pd","pfa","pulses","channel_mode")}
+        "reference_snr_db","pd","pfa","pulses","channel_mode",
+        "az_beam_step_deg","el_beam_step_deg")}
 
 
 def _par_model_metadata():
@@ -552,6 +553,8 @@ def _par_model_metadata():
         "pfa":float(st.session_state.get("ws_par_pfa",1e-6)),
         "pulses":int(st.session_state.get("ws_par_pulses",1)),
         "channel_mode":st.session_state.get("ws_par_channels","BOTH"),
+        "az_beam_step_deg":float(st.session_state.get("ws_par_az_beam_step",0.3)),
+        "el_beam_step_deg":float(st.session_state.get("ws_par_el_beam_step",0.2)),
     }
 
 
@@ -570,6 +573,8 @@ def _restore_par_model_metadata(meta):
         "pfa":"ws_par_pfa",
         "pulses":"ws_par_pulses",
         "channel_mode":"ws_par_channels",
+        "az_beam_step_deg":"ws_par_az_beam_step",
+        "el_beam_step_deg":"ws_par_el_beam_step",
     }
     if set(values)-set(allowed):
         raise ValueError("Neznámé parametry PAR v projektu.")
@@ -775,17 +780,31 @@ def radar_dialog():
                     "EL":"VERTICAL · EL",
                     "BOTH":"OBĚ · AZ + EL",
                 }[mode],key="ws_par_channels")
-            st.caption("AZ = dostupný importovaný 3D diagram (přiřazení "
-                       "anténě je pracovní předpoklad). EL = ideální "
-                       "elevační sken −1° až +14°; chybí druhé měření. "
-                       "OBĚ = průnik samostatných dosahových podmínek, "
-                       "nikoli součet zisků či SNR.")
+            st.caption("AZ: úzký svazek skenuje zleva doprava (±15°). "
+                       "EL: úzký svazek skenuje zdola nahoru (−1 až +14°). "
+                       "OBĚ: průnik dosažitelného krytí obou kanálů. "
+                       "Zisky ani SNR se nesčítají.")
+            az_step_col,el_step_col=st.columns(2,gap="small")
+            with az_step_col:
+                st.number_input("Krok poloh AZ svazku [°]",min_value=.05,
+                    max_value=.9,value=.3,step=.05,format="%.2f",
+                    key="ws_par_az_beam_step",
+                    help="Simulační krok elektronicky povelovaných směrů; "
+                         "skutečný režim sekvence Y8600 zatím není doložen.")
+            with el_step_col:
+                st.number_input("Krok poloh EL svazku [°]",min_value=.05,
+                    max_value=.65,value=.2,step=.05,format="%.2f",
+                    key="ws_par_el_beam_step",
+                    help="Simulační krok v elevaci; nenahrazuje měření skutečné skenovací sekvence.")
+            st.caption("Směry svazků se kvantují do naprogramovaných poloh. "
+                       "V každém výpočetním bodě se vyhodnotí odchylka od "
+                       "nejbližší polohy, úhlový zisk a steering loss.")
 
             if st.session_state.get("ws_par_channels","BOTH") in ("EL","BOTH"):
-                st.warning("EL anténa zatím používá pouze ideální "
-                           "Y8600 sektorový model, protože nemáme "
-                           "její nezávislý kalibrovaný 3D diagram. "
-                           "Výsledek není ověřená detekční obálka.")
+                st.warning("EL anténa používá provizorní úzký "
+                           "elektronicky vychylovaný svazek (Gaussian ≤0,65° HPBW), "
+                           "nikoli změřenou charakteristiku. Výstup je "
+                           "simulace skenování, ne validovaná detekční obálka.")
         st.markdown('<div class="cd-panel-title">ANTENNA GAIN / ELEVATION CUT</div>',
                     unsafe_allow_html=True)
         try:
@@ -937,9 +956,8 @@ def radar_dialog():
                                 max_value=1000,value=1,step=1,key="ws_par_pulses")
             if (st.session_state.get("ws_par_scan_mode","TRACKING")=="FIXED_3D"
                     and st.session_state.get("ws_par_channels","BOTH")!="AZ"):
-                st.warning("FIXED_3D umí jen dostupný importovaný diagram. "
-                           "Pro EL či OBĚ je nutný TRACKING, jinak "
-                           "výpočet záměrně skončí chybou.")
+                st.warning("FIXED_3D umí jen statický dostupný diagram. "
+                           "Pro elektronický sken EL či OBĚ přepni na TRACKING.")
             st.caption("Parametry PAR skenu a SNR jsou modelové, nikoliv změřená specifikace.")
     st.divider()
     if st.button("▶ VYPOČÍTAT RADAROVÉ KRYTÍ",type="primary",
