@@ -471,6 +471,35 @@ def _viewer_legend(layers,visible,styles):
     return '<div class="v-legend"><b>LAYERS / '+str(len(visible))+'</b>'+''.join(chunks)+'</div>'
 
 
+def _restore_viewer_workspace():
+    """Uploader callback runs before widgets are instantiated this rerun."""
+    upload=st.session_state.get("viewer_project_upload")
+    if upload is None:
+        return
+    try:
+        from viewer_workspace_file import load_workspace
+        layers,styles,settings=load_workspace(upload.getvalue())
+        st.session_state["viewer_imported_workspace_layers"]=layers
+        st.session_state["viewer_styles"]=styles
+        allowed={"viewer_mode":("2D MAPA","3D TERÉN / HYPSOMETRIE"),
+                 "viewer_basemap":tuple(BASEMAPS)}
+        for key,choices in allowed.items():
+            value=settings.get(key)
+            if value in choices:
+                st.session_state[key]=value
+        for key in ("viewer_map_title","viewer_legend","viewer_north"):
+            if key in settings:
+                value=settings[key]
+                if (key=="viewer_map_title" and isinstance(value,str)) or (
+                    key!="viewer_map_title" and isinstance(value,bool)):
+                    st.session_state[key]=value
+        st.session_state["viewer_workspace_notice"]="VIEWER projekt načten včetně vrstev a grafických vlastností."
+        st.session_state.pop("viewer_workspace_error",None)
+        st.session_state["v_grid_version"]=st.session_state.get("v_grid_version",0)+1
+    except Exception as exc:
+        st.session_state["viewer_workspace_error"]=str(exc)
+
+
 def render_viewer():
     from workspace_theme import COMMON_CSS,header
     st.markdown(COMMON_CSS,unsafe_allow_html=True)
@@ -511,16 +540,24 @@ def render_viewer():
     if editor_result is not None:
         st.caption("● EDITOR LINK · výpočty a výškový model převzaty bez přepočtu")
     with st.expander("IMPORT / PROJEKT / SPRÁVA DAT",expanded=False):
+        project_upload=st.file_uploader("Otevřít uložené rozložení · CDVIEW",
+            type=["cdview"],key="viewer_project_upload",
+            on_change=_restore_viewer_workspace)
+        if st.session_state.get("viewer_workspace_error"):
+            st.error(st.session_state["viewer_workspace_error"])
+        elif st.session_state.get("viewer_workspace_notice"):
+            st.success(st.session_state["viewer_workspace_notice"])
         if editor_result is not None:
             st.toggle("Načíst všechny dostupné letové hladiny",value=False,
                       key="viewer_import_all_fl")
         uploads=st.file_uploader("Přidat KML / KMZ / GeoJSON",
             type=["kml","kmz","geojson","json"],accept_multiple_files=True,
             key="viewer_uploads")
-        st.caption("KML/KMZ lze kombinovat s výpočtem z EDITORU. Původní vrstvy se nemění.")
+        st.caption("CDVIEW ukládá vrstvy a vzhled; CDPROJ ukládá výpočet a DEM.")
     # uploader persists even when expander is closed
     uploads=st.session_state.get("viewer_uploads") or []
     layers=_editor_layers(editor_result,editor_meta) if editor_result is not None else {}
+    layers.update(st.session_state.get("viewer_imported_workspace_layers") or {})
     for file in uploads:
         try:
             for folder,features in _load_layers(file).items():
@@ -570,6 +607,27 @@ def render_viewer():
                 use_container_width=True,key="viewer_print_download")
         st.caption("Tisk obsahuje data a legendu. Online mapové dlaždice "
                    "se do tohoto vektorového výstupu nepřebírají.")
+        st.divider()
+        if st.button("ULOŽIT ROZLOŽENÍ · CDVIEW",
+                     key="viewer_workspace_save",use_container_width=True):
+            try:
+                from viewer_workspace_file import make_workspace
+                st.session_state["viewer_workspace_bytes"]=make_workspace(
+                    layers,styles,{"viewer_mode":mode,
+                                   "viewer_basemap":basemap,
+                                   "viewer_map_title":title,
+                                   "viewer_legend":show_legend,
+                                   "viewer_north":show_north})
+            except Exception as exc:
+                st.error(f"VIEWER projekt nelze uložit: {exc}")
+        if st.session_state.get("viewer_workspace_bytes"):
+            st.download_button("⇩ STÁHNOUT CDVIEW",
+                data=st.session_state["viewer_workspace_bytes"],
+                file_name="COVERAGEDIAGRAMS_viewer.cdview",
+                mime="application/octet-stream",use_container_width=True,
+                key="viewer_workspace_download")
+        st.caption("Přenositelný VIEWER preset: vrstvy, barvy, průhlednost, "
+                   "mapová kompozice. DEM zůstává v CDPROJ nebo cache.")
     with canvas:
         if mode=="3D TERÉN / HYPSOMETRIE":
             _three_dimensional(layers,visible,editor_result,center,styles,title)
