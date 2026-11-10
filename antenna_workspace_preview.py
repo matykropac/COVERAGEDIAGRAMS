@@ -130,3 +130,38 @@ def par_pattern_info(pattern):
         "elevation_step_deg":float(np.median(np.diff(pattern.angles_deg))),
         "azimuth_step_deg":float(np.median(np.diff(pattern.azimuths_deg))),
     }
+
+
+def par_scanned_coverage_figure(pattern, *, reference_range_km=40.0):
+    """Operational scan-envelope visualization, NOT the raw static gain grid.
+
+    Every pixel uses a nearest commanded AZ/EL steering position, directional
+    gain and optional steering loss; the channel combination matches the
+    solver's independent range-factor logic.
+    """
+    if not isinstance(pattern,core.ParScanPattern):
+        raise TypeError("PAR scanning preview requires ParScanPattern.")
+    az=np.linspace(-15.,15.,151)
+    el=np.linspace(-1.,14.,101)
+    az_grid,el_grid=np.meshgrid(az,el,indexing="xy")
+    factor=pattern.effective_range_factor(np.deg2rad(el_grid),az_grid)
+    # Display maximum nominal slant range in km, capped by instrumental range.
+    nominal=np.minimum(reference_range_km,reference_range_km*factor)
+    fig=go.Figure(go.Heatmap(
+        x=az,y=el,z=np.round(nominal,2),
+        zmin=0,zmax=reference_range_km,
+        colorscale=[[0,"#14283f"],[.25,"#1d5478"],[.5,"#32799b"],
+                    [.75,"#49b2ce"],[1,"#a8e8da"]],
+        colorbar=dict(title=dict(text="Reference reach [km]",side="right"),
+                      thickness=12,len=.77),
+        hovertemplate="AZ %{x:.2f}°<br>EL %{y:.2f}°"
+                      "<br>Modeled reach %{z:.2f} km<extra></extra>",
+    ))
+    fig.update_layout(
+        template="plotly_dark",height=315,margin=dict(l=55,r=14,t=12,b=55),
+        paper_bgcolor="#0e2237",plot_bgcolor="#0e2237",
+        font=dict(color="#c9dfed",size=10),
+        xaxis=dict(title="Relative azimuth [°]",gridcolor="#29445c"),
+        yaxis=dict(title="Elevation [°]",gridcolor="#29445c"),
+    )
+    return fig
