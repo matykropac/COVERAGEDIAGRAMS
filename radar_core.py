@@ -285,6 +285,10 @@ class ParScanPattern(AntennaPattern):
             raise ValueError('PAR: neznámý režim skenování.')
         if self.channel_mode not in ('AZ', 'EL', 'BOTH'):
             raise ValueError('PAR: neznámý výběr anténního kanálu.')
+        if self.scan_mode=='FIXED_3D' and self.channel_mode in ('EL','BOTH'):
+            raise ValueError('PAR: režim FIXED_3D s EL/OBĚ vyžaduje '
+                             'nezávislý měřený 3D diagram EL; '
+                             'pro předběžný model použij TRACKING.')
         if self.detection_model not in ('RELATIVE', 'ALBERSHEIM'):
             raise ValueError('PAR: neznámý detekční model.')
         if not np.isfinite(self.steering_loss_db_per_deg) or not 0 <= self.steering_loss_db_per_deg <= 5:
@@ -1219,8 +1223,11 @@ def calculation_metadata(result):
         pattern_sha256=(pattern.source_sha256 if isinstance(pattern, ParScanPattern) else None),
         source_peak_db=(pattern.source_peak_db if isinstance(pattern, ParScanPattern) else None),
         gain_normalization='relative to global pattern maximum',
-        antenna_channels=('LOW Tx/Rx + HIGH Rx-only' if isinstance(pattern, AntennaPatternPair)
-                          else 'single beam'),
+        antenna_channels=('AZ + EL · BOTH (independent intersection)' if isinstance(pattern,ParScanPattern) and pattern.channel_mode=='BOTH'
+                          else ('AZ · HORIZONTAL' if isinstance(pattern,ParScanPattern) and pattern.channel_mode=='AZ'
+                          else ('EL · VERTICAL (provisional)' if isinstance(pattern,ParScanPattern)
+                          else ('LOW Tx/Rx + HIGH Rx-only' if isinstance(pattern,AntennaPatternPair)
+                          else 'single beam')))),
         low_peak_dbi=(pattern.low_peak_dbi if isinstance(pattern, AntennaPatternPair) else None),
         high_peak_dbi=(pattern.high_peak_dbi if isinstance(pattern, AntennaPatternPair) else None),
         ssr_model=(dict(range_limit_nm=256, range_limit_type='slant range',
