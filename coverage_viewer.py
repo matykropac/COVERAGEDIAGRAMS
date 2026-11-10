@@ -299,11 +299,16 @@ def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.), st
     good=np.isfinite(z)
     tree=cKDTree(np.c_[lon[good],lat[good]]) if np.any(good) else None
     heights=z[good]
+    # Aggregate vectors into one trace per layer; 30 layers must not create
+    # thousands of independent WebGL objects or overwhelm the browser.
     for key,features in layers.items():
         if key not in visible or tree is None:
             continue
-        color=(styles or {}).get(key,{}).get("color",PALETTE[0])
-        for feature in features[:350]:
+        cfg=(styles or {}).get(key,{})
+        color=cfg.get("color",PALETTE[0])
+        xx,yy,zz=[],[],[]
+        mx,my,mz=[],[],[]
+        for feature in features[:400]:
             geom=feature.get("geometry") or {}
             typ=geom.get("type")
             paths=[]
@@ -311,16 +316,30 @@ def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.), st
             elif typ=="Polygon":paths=geom["coordinates"]
             elif typ=="MultiPolygon":paths=[ring for poly in geom["coordinates"] for ring in poly]
             elif typ=="Point":paths=[[geom["coordinates"]]]
-            for path in paths:
+            elif typ=="MultiLineString":paths=geom["coordinates"]
+            for path in paths[:12]:
                 if not path:continue
-                xy=np.asarray([p[:2] for p in path],dtype=float)
-                _,indices=tree.query(xy,k=1)
-                elev=heights[indices]
-                zz=z0+(elev-z0)*scale + max(5.0, (float(np.nanmax(z))-z0)*scale*.012)
-                fig.add_trace(go.Scatter3d(x=xy[:,0],y=xy[:,1],z=zz,
-                    mode="markers" if typ=="Point" else "lines",line=dict(color=color,width=6),
-                    marker=dict(color=color,size=4),name=key,showlegend=False,
-                    hovertext=feature.get("properties",{}).get("name",key)))
+                raw=np.asarray([p[:2] for p in path],dtype=float)
+                # Hard cap point density; preserve spatial outline for display.
+                if len(raw)>500:
+                    raw=raw[np.linspace(0,len(raw)-1,500).astype(int)]
+                _,indices=tree.query(raw,k=1)
+                elevations=heights[indices]
+                surface=z0+(elevations-z0)*scale + max(5.,(float(np.nanmax(z))-z0)*scale*.012)
+                if typ=="Point":
+                    mx.extend(raw[:,0]);my.extend(raw[:,1]);mz.extend(surface)
+                else:
+                    xx.extend(raw[:,0]);xx.append(None)
+                    yy.extend(raw[:,1]);yy.append(None)
+                    zz.extend(surface);zz.append(None)
+        if xx:
+            fig.add_trace(go.Scatter3d(x=xx,y=yy,z=zz,mode="lines",
+                line=dict(color=color,width=max(.5,float(cfg.get("width",2.)))*2),
+                name=key,showlegend=True,hoverinfo="name"))
+        if mx:
+            fig.add_trace(go.Scatter3d(x=mx,y=my,z=mz,mode="markers",
+                marker=dict(color=color,size=4),name=key,showlegend=not bool(xx),
+                hoverinfo="name"))
     fig.update_layout(template="plotly_dark",paper_bgcolor="#091525",
         title=dict(text=title,font=dict(size=18,color="#e2edff")),
         height=760,margin=dict(l=0,r=0,t=48,b=0),
