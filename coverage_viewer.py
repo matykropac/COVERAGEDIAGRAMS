@@ -258,8 +258,9 @@ def _editor_layers(result,meta):
 
 def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.)):
     import plotly.graph_objects as go
-    st.button("☁ STÁHNOUT TERÉN · OPENTOPOGRAPHY",type="primary",
-              on_click=download_dem_dialog,args=(center,),key="viewer_download_3d")
+    if st.button("☁ STÁHNOUT TERÉN · OPENTOPOGRAPHY",type="primary",
+                 key="viewer_download_3d"):
+        download_dem_dialog(center)
     stored=st.session_state.get("viewer_dem_path")
     try:
         if stored:
