@@ -416,49 +416,140 @@ def _layer_grid(layers):
     return visible,{key:styles[key] for key in layers}
 
 
+
+def _layer_properties(layers, styles, visible):
+    """Inspector is intentionally separate from the dense layer browser."""
+    st.markdown('<div class="cd-panel-title">GRAFICKÉ VLASTNOSTI</div>',
+                unsafe_allow_html=True)
+    names=list(layers)
+    if names:
+        chosen=st.selectbox("Vybraná vrstva",names,key="viewer_inspected_layer",
+                            format_func=lambda x: x if len(x)<40 else x[:37]+"…")
+        config=styles[chosen]
+        st.caption(f"{len(layers[chosen])} objektů · {('zobrazena' if chosen in visible else 'skrytá')}")
+        color=st.color_picker("Barva vrstvy",value=config["color"],
+                              key="viewer_property_color_"+chosen)
+        opacity=st.slider("Průhlednost",0.,1.,float(config["opacity"]),.05,
+                          key="viewer_property_alpha_"+chosen)
+        weight=st.slider("Tloušťka linie [px]",.5,10.,float(config["width"]),.5,
+                         key="viewer_property_width_"+chosen)
+        new=(color,opacity,weight)
+        old=(config["color"],config["opacity"],config["width"])
+        if new!=old:
+            styles[chosen].update(color=color,opacity=opacity,width=weight)
+            # Recreate the compact table next rerun to stay synchronized.
+            st.session_state["v_grid_version"]=st.session_state.get("v_grid_version",0)+1
+        st.markdown('<div class="cd-panel-title">RYCHLÉ PALETY</div>',
+                    unsafe_allow_html=True)
+        cols=st.columns(4,gap="small")
+        for i,c in enumerate(("#5DCDF4","#46E1BE","#F7C66B","#E581DE")):
+            with cols[i]:
+                if st.button("●",key="viewer_preset_"+str(i)+"_"+chosen,
+                             help=c,use_container_width=True):
+                    styles[chosen]["color"]=c
+                    # Reset picker state before its next render.
+                    st.session_state.pop("viewer_property_color_"+chosen,None)
+                    st.session_state["v_grid_version"]=st.session_state.get("v_grid_version",0)+1
+                    st.rerun()
+    else:
+        st.caption("Vyber nebo naimportuj vrstvu.")
+    st.markdown('<div class="cd-panel-title">MAPOVÁ KOMPOZICE</div>',
+                unsafe_allow_html=True)
+    basemap=st.selectbox("Podklad",list(BASEMAPS),index=0,key="viewer_basemap")
+    title=st.text_input("Titulek mapy","RADAR COVERAGE / GEOSPATIAL VIEWER",
+                        key="viewer_map_title")
+    legend=st.toggle("Legenda",value=True,key="viewer_legend")
+    north=st.toggle("Severka",value=True,key="viewer_north")
+    return basemap,title,legend,north
+
+
+def _viewer_legend(layers,visible,styles):
+    chunks=[]
+    for key in list(layers)[:60]:
+        if key not in visible:
+            continue
+        chunks.append('<div class="v-legrow"><i style="background:'+
+                      styles[key]["color"]+'"></i><span>'+html.escape(key)+'</span></div>')
+    if not chunks:
+        return ""
+    return '<div class="v-legend"><b>LAYERS / '+str(len(visible))+'</b>'+''.join(chunks)+'</div>'
+
+
 def render_viewer():
+    from workspace_theme import COMMON_CSS,header
+    st.markdown(COMMON_CSS,unsafe_allow_html=True)
     st.markdown("""<style>
-    [data-testid="stAppViewContainer"]{background:#091525!important;color:#dceafe!important}
-    [data-testid="stHeader"]{background:#091525!important}
+    [data-testid="stAppViewContainer"]{background:#0b1626!important}
     .block-container{max-width:100%!important;padding:10px 16px!important}
-    [data-testid="stVerticalBlock"]{gap:.35rem!important}
-    [data-testid="stAppViewContainer"] h3{color:#f1f7ff!important}
-    [data-testid="stAppViewContainer"] p{color:#b6cce3}
-    [data-testid="stDataFrame"]{border:1px solid #334c68;border-radius:8px}
-    [data-testid="stButton"] button{min-height:30px!important}
+    [data-testid="stVerticalBlock"]{gap:.36rem!important}
+    [data-testid="stDataFrame"]{border:1px solid #3a5571!important;border-radius:8px}
+    [data-testid="stButton"] button{min-height:31px!important}
+    .v-title{position:absolute;z-index:9999;left:50%;top:15px;transform:translateX(-50%);
+      border:1px solid #527294;border-radius:6px;padding:9px 20px;
+      background:#07182de8;color:#f3f8ff;font:700 14px system-ui;letter-spacing:.12em;
+      white-space:nowrap}
+    .v-north{position:absolute;right:20px;top:75px;z-index:9999;color:#f3f8ff;
+      font:800 26px system-ui;text-shadow:0 2px 6px #000}
+    .v-legend{position:absolute;z-index:9999;left:12px;bottom:24px;
+      padding:12px;max-height:340px;overflow:auto;max-width:290px;background:#07182de8;
+      border:1px solid #527294;color:#e2ebf7;border-radius:7px;font:11px system-ui}
+    .v-legend b{display:block;color:#8bd9fc;margin-bottom:9px;letter-spacing:.1em}
+    .v-legrow{display:flex;gap:8px;align-items:center;margin:4px 0;white-space:nowrap}
+    .v-legrow span{overflow:hidden;text-overflow:ellipsis}
+    .v-legrow i{width:12px;height:9px;flex-shrink:0;border-radius:2px}
+    @media(max-width:900px){.v-title{max-width:75%;text-overflow:ellipsis;overflow:hidden}}
     </style>""",unsafe_allow_html=True)
-    st.markdown("### COVERAGEDIAGRAMS / VIEWER")
     editor_result,editor_meta=_snapshot()
+    ptitle=("RADAR / "+editor_result["config"].radar_mode if editor_result is not None
+            else "GEODATA / UNTITLED")
+    st.markdown(header("VIEWER",ptitle,"3D · CARTOGRAPHY · PRESENTATION"),
+                unsafe_allow_html=True)
+    top_left,top_right=st.columns([3,2],gap="small",vertical_alignment="center")
+    with top_left:
+        st.caption("LAYER STUDIO  /  GEO DATA  /  3D TERRAIN")
+    with top_right:
+        mode=st.segmented_control("Režim",["2D MAPA","3D TERÉN / HYPSOMETRIE"],
+                                  default="2D MAPA",key="viewer_mode",
+                                  label_visibility="collapsed",width="stretch")
+    editor_meta=editor_meta or {}
     if editor_result is not None:
-        st.caption("● EDITOR LINK · Přeneseny radarové hladiny a DEM")
-        st.toggle("Načíst všechny hladiny",value=False,key="viewer_import_all_fl")
-    uploads=st.file_uploader("PŘIDAT VRSTVY · KML/KMZ/GeoJSON",
-        type=["kml","kmz","geojson","json"],accept_multiple_files=True,key="viewer_uploads")
+        st.caption("● EDITOR LINK · výpočty a výškový model převzaty bez přepočtu")
+    with st.expander("IMPORT / PROJEKT / SPRÁVA DAT",expanded=False):
+        if editor_result is not None:
+            st.toggle("Načíst všechny dostupné letové hladiny",value=False,
+                      key="viewer_import_all_fl")
+        uploads=st.file_uploader("Přidat KML / KMZ / GeoJSON",
+            type=["kml","kmz","geojson","json"],accept_multiple_files=True,
+            key="viewer_uploads")
+        st.caption("KML/KMZ lze kombinovat s výpočtem z EDITORU. Původní vrstvy se nemění.")
+    # uploader persists even when expander is closed
+    uploads=st.session_state.get("viewer_uploads") or []
     layers=_editor_layers(editor_result,editor_meta) if editor_result is not None else {}
-    for file in uploads or []:
+    for file in uploads:
         try:
             for folder,features in _load_layers(file).items():
                 layers[f"{file.name} / {folder}"]=features
-        except Exception as exc:st.warning(f"{file.name}: {exc}")
+        except Exception as exc:
+            st.warning(f"{file.name}: {exc}")
     center=(editor_result["config"].lat,editor_result["config"].lon) if editor_result is not None else (50.,15.)
-    sidebar,maparea=st.columns([1.6,4.8],gap="small")
-    with sidebar:
+
+    # Stable, symmetric VIEWER studio: layer manager / map canvas / inspector.
+    left,canvas,right=st.columns([1.42,4.8,1.55],gap="small")
+    with left:
+        st.markdown('<div class="cd-panel-title">LAYER MANAGER</div>',unsafe_allow_html=True)
         visible,styles=_layer_grid(layers)
-        basemap=st.selectbox("MAPOVÝ PODKLAD",list(BASEMAPS),index=0,key="viewer_basemap")
-        title=st.text_input("TITULEK","RADAR COVERAGE / GEOSPATIAL VIEWER",key="viewer_map_title")
-        c1,c2=st.columns(2)
-        with c1:show_legend=st.toggle("Legenda",value=True,key="viewer_legend")
-        with c2:show_north=st.toggle("Severka",value=True,key="viewer_north")
         if layers:
             data={"type":"FeatureCollection","features":[f for key,fs in layers.items()
                   if key in visible for f in fs]}
-            st.download_button("⇩ VIDITELNÉ VRSTVY · GEOJSON",
+            st.download_button("⇩ VISIBLE DATA · GEOJSON",
                 json.dumps(data,ensure_ascii=False).encode(),
                 file_name="COVERAGEDIAGRAMS_viewer.geojson",mime="application/geo+json",
                 use_container_width=True)
-    with maparea:
-        mode=st.segmented_control("REŽIM",["2D MAPA","3D TERÉN / HYPSOMETRIE"],
-            default="2D MAPA",key="viewer_mode",width="stretch",label_visibility="collapsed")
+    with right:
+        basemap,title,show_legend,show_north=_layer_properties(layers,styles,visible)
+        st.markdown('<div class="cd-panel-title">EXPORT STUDIO</div>',unsafe_allow_html=True)
+        st.caption("Pracovní kompozice pro předání a prezentaci.")
+    with canvas:
         if mode=="3D TERÉN / HYPSOMETRIE":
             _three_dimensional(layers,visible,editor_result,center,styles,title)
         else:
@@ -471,7 +562,8 @@ def render_viewer():
             url,attr=BASEMAPS[basemap]
             folium.TileLayer(url,attr=attr,name=basemap,max_zoom=19).add_to(m)
             for key,features in layers.items():
-                if key not in visible or not features:continue
+                if key not in visible or not features:
+                    continue
                 cfg=styles[key]
                 def style(_feature,cfg=cfg):
                     return {"color":cfg["color"],"weight":cfg["width"],
@@ -483,34 +575,31 @@ def render_viewer():
             if coords:
                 lats=[p[1] for p in coords];lons=[p[0] for p in coords]
                 m.fit_bounds([[min(lats),min(lons)],[max(lats),max(lons)]])
-            legend=""
-            if show_legend:
-                legend='<div class="v-legend"><b>LAYERS / '+str(len(visible))+'</b>'
-                for key in list(layers)[:60]:
-                    if key in visible:
-                        legend+='<div class="v-legrow"><i style="background:'+styles[key]["color"]+'"></i>'+html.escape(key)+'</div>'
-                legend+='</div>'
+            legend=_viewer_legend(layers,visible,styles) if show_legend else ""
             overlay='<div class="v-title">'+html.escape(title)+'</div>'
-            if show_north:overlay+='<div class="v-north">↑ N</div>'
+            if show_north:
+                overlay+='<div class="v-north">↑ N</div>'
             from branca.element import Element
             m.get_root().html.add_child(Element("""<style>
             .v-title{position:absolute;z-index:9999;left:50%;top:15px;transform:translateX(-50%);
-                border:1px solid #527294;border-radius:6px;padding:10px 22px;
-                background:#07182de8;color:#f3f8ff;font:700 14px system-ui;letter-spacing:.12em}
+              border:1px solid #527294;border-radius:6px;padding:10px 22px;
+              background:#07182de8;color:#f3f8ff;font:700 14px system-ui;letter-spacing:.12em}
             .v-north{position:absolute;right:22px;top:80px;z-index:9999;color:#f3f8ff;
-                font:800 26px system-ui;text-shadow:0 2px 6px #000}
+              font:800 26px system-ui;text-shadow:0 2px 6px #000}
             .v-legend{position:absolute;z-index:9999;left:12px;bottom:24px;
-                padding:12px;max-height:330px;overflow:auto;max-width:290px;background:#07182de8;
-                border:1px solid #527294;color:#e2ebf7;border-radius:7px;font:11px system-ui}
+              padding:12px;max-height:340px;overflow:auto;max-width:290px;background:#07182de8;
+              border:1px solid #527294;color:#e2ebf7;border-radius:7px;font:11px system-ui}
             .v-legend b{display:block;color:#8bd9fc;margin-bottom:9px;letter-spacing:.1em}
             .v-legrow{display:flex;gap:8px;align-items:center;margin:4px 0;white-space:nowrap}
+            .v-legrow span{overflow:hidden;text-overflow:ellipsis}
             .v-legrow i{width:12px;height:9px;flex-shrink:0;border-radius:2px}
             </style>"""+overlay+legend))
             folium.LayerControl(collapsed=True).add_to(m)
             Fullscreen().add_to(m)
             MeasureControl(primary_length_unit="kilometers").add_to(m)
-            st_folium(m,height=780,use_container_width=True,key="viewer_2d_map",returned_objects=[])
-            st.download_button("⇩ MAPOVÁ KOMPOZICE · HTML",
+            st_folium(m,height=780,use_container_width=True,key="viewer_2d_map",
+                      returned_objects=[])
+            st.download_button("⇩ MAPA · INTERAKTIVNÍ HTML",
                 m.get_root().render().encode("utf-8"),
                 file_name="COVERAGEDIAGRAMS_map_viewer.html",mime="text/html",
                 use_container_width=True,key="viewer_map_html")
