@@ -574,6 +574,10 @@ def _restore_par_model_metadata(meta):
     if set(values)-set(allowed):
         raise ValueError("Neznámé parametry PAR v projektu.")
     import dataclasses
+    # Old CDPROJ archives were calculated with one supplied antenna grid.
+    # Preserve that historical behavior as AZ (provisional), not BOTH.
+    if "channel_mode" not in values:
+        values["channel_mode"]="AZ"
     pattern=dataclasses.replace(core.builtin_par_pattern(),**values)
     pattern.validate_model()
     # Legacy projects without PAR settings must restore safe defaults, not
