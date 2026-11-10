@@ -15,6 +15,7 @@ import streamlit as st
 import radar_core as core
 import html
 import re
+import hashlib
 from folium.plugins import Fullscreen, MeasureControl
 from streamlit_folium import st_folium
 
@@ -252,12 +253,19 @@ def _editor_layers(result,meta):
         selected=list(core.flight_levels_for(result["config"].radar_mode))[:3]
     if st.session_state.get("viewer_import_all_fl"):
         selected=list(core.flight_levels_for(result["config"].radar_mode))
+    # Cache expensive polygon generation in the user session. The snapshot
+    # token is immutable; the selected flight levels are the only variable.
+    signature=(str(st.query_params.get("snapshot","")),tuple(selected))
+    previous=st.session_state.get("_viewer_editor_layer_cache")
+    if previous and previous[0]==signature:
+        return previous[1]
     collections={}
     for ft in selected:
         try:
             collections["RADAR / "+core.level_label(ft)]=coverage_geojson(result,ft).get("features",[])
         except Exception as exc:
             st.warning(f"Vrstva {ft} ft není dostupná: {exc}")
+    st.session_state["_viewer_editor_layer_cache"]=(signature,collections)
     return collections
 
 
@@ -369,6 +377,84 @@ def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.), st
                "Z-exaggerace mění pouze vzhled. Importované vektory se přikládají k nejbližší "
                "vzorkované výšce terénu, nikoli k certifikovanému 3D povrchu.")
 
+
+
+def _load_uploaded_layers(upload):
+    """Parsing uploaded KML/KMZ is a cache miss only on new file content."""
+    blob=upload.getvalue()
+    key=(upload.name,hashlib.blake2b(blob,digest_size=16).hexdigest())
+    cache=st.session_state.setdefault("_viewer_upload_cache",{})
+    if key not in cache:
+        cache[key]=_load_layers(upload)
+        # Bound memory when the user replaces files repeatedly.
+        while len(cache)>12:
+            cache.pop(next(iter(cache)))
+    return cache[key]
+
+
+def _get_2d_map(layers, styles, visible, basemap, title, show_legend, show_north, center):
+    """Reuse Folium objects on Streamlit reruns that do not affect map content.
+
+    30+ layer polygon serialization is done once per visual change, not on
+    every UI interaction. Layers must be stable objects from the caches above.
+    """
+    signature=(
+        tuple((key,id(layers[key]),len(layers[key]),
+               styles[key].get("color"),styles[key].get("width"),
+               styles[key].get("opacity")) for key in layers if key in visible),
+        basemap,title,show_legend,show_north,tuple(center),
+    )
+    cached=st.session_state.get("_viewer_folium_cache")
+    if cached is not None and cached[0]==signature:
+        return cached[1]
+    coords=[p for key,features in layers.items() if key in visible
+            for f in features for p in _iter_coords(f.get("geometry"))]
+    mapcenter=([float(np.mean([p[1] for p in coords[:2000]])),
+                float(np.mean([p[0] for p in coords[:2000]]))]
+               if coords else list(center))
+    m=folium.Map(location=mapcenter,zoom_start=7,tiles=None,control_scale=True,
+                 prefer_canvas=True,zoom_animation=False,fade_animation=False)
+    url,attr=BASEMAPS[basemap]
+    folium.TileLayer(url,attr=attr,name=basemap,max_zoom=19).add_to(m)
+    for key,features in layers.items():
+        if key not in visible or not features:
+            continue
+        cfg=styles[key]
+        def style(_feature,cfg=cfg):
+            return {"color":cfg["color"],"weight":cfg["width"],
+                    "fillColor":cfg["color"],"fillOpacity":cfg["opacity"]}
+        folium.GeoJson({"type":"FeatureCollection","features":features},
+            name=key,style_function=style,
+            tooltip=folium.GeoJsonTooltip(fields=["name"],labels=False)
+            if all("name" in f.get("properties",{}) for f in features) else None).add_to(m)
+    if coords:
+        lats=[p[1] for p in coords];lons=[p[0] for p in coords]
+        m.fit_bounds([[min(lats),min(lons)],[max(lats),max(lons)]])
+    legend=_viewer_legend(layers,visible,styles) if show_legend else ""
+    overlay='<div class="v-title">'+html.escape(title)+'</div>'
+    if show_north:
+        overlay+='<div class="v-north">↑ N</div>'
+    from branca.element import Element
+    m.get_root().html.add_child(Element("""<style>
+        .v-title{position:absolute;z-index:9999;left:50%;top:15px;transform:translateX(-50%);
+          border:1px solid #527294;border-radius:6px;padding:10px 22px;
+          background:#07182de8;color:#f3f8ff;font:700 14px system-ui;letter-spacing:.12em}
+        .v-north{position:absolute;right:22px;top:80px;z-index:9999;color:#f3f8ff;
+          font:800 26px system-ui;text-shadow:0 2px 6px #000}
+        .v-legend{position:absolute;z-index:9999;left:12px;bottom:24px;
+          padding:12px;max-height:340px;overflow:auto;max-width:290px;background:#07182de8;
+          border:1px solid #527294;color:#e2ebf7;border-radius:7px;font:11px system-ui}
+        .v-legend b{display:block;color:#8bd9fc;margin-bottom:9px;letter-spacing:.1em}
+        .v-legrow{display:flex;gap:8px;align-items:center;margin:4px 0;white-space:nowrap}
+        .v-legrow span{overflow:hidden;text-overflow:ellipsis}
+        .v-legrow i{width:12px;height:9px;flex-shrink:0;border-radius:2px}
+        </style>"""+overlay+legend))
+    # The fixed layer grid already controls visibility. A second Leaflet
+    # LayerControl would duplicate state and can cause inconsistent toggles.
+    Fullscreen().add_to(m)
+    MeasureControl(primary_length_unit="kilometers").add_to(m)
+    st.session_state["_viewer_folium_cache"]=(signature,m)
+    return m
 
 
 def _layer_grid(layers):
@@ -608,7 +694,7 @@ def render_viewer():
     layers.update(st.session_state.get("viewer_imported_workspace_layers") or {})
     for file in uploads:
         try:
-            for folder,features in _load_layers(file).items():
+            for folder,features in _load_uploaded_layers(file).items():
                 layers[f"{file.name} / {folder}"]=features
         except Exception as exc:
             st.warning(f"{file.name}: {exc}")
@@ -680,50 +766,10 @@ def render_viewer():
         if mode=="3D TERÉN / HYPSOMETRIE":
             _three_dimensional(layers,visible,editor_result,center,styles,title)
         else:
-            coords=[p for key,features in layers.items() if key in visible
-                    for f in features for p in _iter_coords(f.get("geometry"))]
-            mapcenter=[float(np.mean([p[1] for p in coords[:2000]])),
-                       float(np.mean([p[0] for p in coords[:2000]]))] if coords else list(center)
-            m=folium.Map(location=mapcenter,zoom_start=7,tiles=None,control_scale=True,
-                         prefer_canvas=True,zoom_animation=False,fade_animation=False)
-            url,attr=BASEMAPS[basemap]
-            folium.TileLayer(url,attr=attr,name=basemap,max_zoom=19).add_to(m)
-            for key,features in layers.items():
-                if key not in visible or not features:
-                    continue
-                cfg=styles[key]
-                def style(_feature,cfg=cfg):
-                    return {"color":cfg["color"],"weight":cfg["width"],
-                            "fillColor":cfg["color"],"fillOpacity":cfg["opacity"]}
-                folium.GeoJson({"type":"FeatureCollection","features":features},
-                    name=key,style_function=style,
-                    tooltip=folium.GeoJsonTooltip(fields=["name"],labels=False)
-                    if all("name" in f.get("properties",{}) for f in features) else None).add_to(m)
-            if coords:
-                lats=[p[1] for p in coords];lons=[p[0] for p in coords]
-                m.fit_bounds([[min(lats),min(lons)],[max(lats),max(lons)]])
-            legend=_viewer_legend(layers,visible,styles) if show_legend else ""
-            overlay='<div class="v-title">'+html.escape(title)+'</div>'
-            if show_north:
-                overlay+='<div class="v-north">↑ N</div>'
-            from branca.element import Element
-            m.get_root().html.add_child(Element("""<style>
-            .v-title{position:absolute;z-index:9999;left:50%;top:15px;transform:translateX(-50%);
-              border:1px solid #527294;border-radius:6px;padding:10px 22px;
-              background:#07182de8;color:#f3f8ff;font:700 14px system-ui;letter-spacing:.12em}
-            .v-north{position:absolute;right:22px;top:80px;z-index:9999;color:#f3f8ff;
-              font:800 26px system-ui;text-shadow:0 2px 6px #000}
-            .v-legend{position:absolute;z-index:9999;left:12px;bottom:24px;
-              padding:12px;max-height:340px;overflow:auto;max-width:290px;background:#07182de8;
-              border:1px solid #527294;color:#e2ebf7;border-radius:7px;font:11px system-ui}
-            .v-legend b{display:block;color:#8bd9fc;margin-bottom:9px;letter-spacing:.1em}
-            .v-legrow{display:flex;gap:8px;align-items:center;margin:4px 0;white-space:nowrap}
-            .v-legrow span{overflow:hidden;text-overflow:ellipsis}
-            .v-legrow i{width:12px;height:9px;flex-shrink:0;border-radius:2px}
-            </style>"""+overlay+legend))
-            folium.LayerControl(collapsed=True).add_to(m)
-            Fullscreen().add_to(m)
-            MeasureControl(primary_length_unit="kilometers").add_to(m)
+            m=_get_2d_map(layers,styles,visible,basemap,title,
+                          show_legend,show_north,center)
+            # Stable component key and unchanged Folium object on unrelated
+            # widget events. No browser-to-Streamlit map event feedback loop.
             st_folium(m,height=780,use_container_width=True,key="viewer_2d_map",
                       returned_objects=[])
             st.download_button("⇩ MAPA · INTERAKTIVNÍ HTML",
