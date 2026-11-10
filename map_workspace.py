@@ -1954,8 +1954,6 @@ def _step_flight_level(direction):
         return
     allowed=_available_levels(result["config"].radar_mode)
     levels=_chosen_levels(result["config"].radar_mode)
-    if not levels:
-        levels=list(allowed)
     levels=sorted(set(levels))
     if not levels:
         return
@@ -1973,8 +1971,6 @@ def _select_comparison_levels(select_all):
         return
     allowed=tuple(core.flight_levels_for(result["config"].radar_mode))
     levels=_chosen_levels(result["config"].radar_mode)
-    if not levels:
-        levels=list(allowed)
     st.session_state["ws_comparison"]=levels if select_all else []
 
 
@@ -2112,25 +2108,28 @@ def render_workspace():
                         label_visibility="collapsed")
                     mode=st.session_state.get("ws_display_mode","Jedna hladina")
                     if mode=="Jedna hladina":
-                        previous_level=st.session_state.get("ws_map_level")
-                        if previous_level not in selected:
-                            st.session_state["ws_map_level"]=selected[0]
-                        previous_button, level_choice, next_button=st.columns(
-                            [0.65,2.7,0.65],gap="small",vertical_alignment="bottom")
-                        with previous_button:
-                            st.button("◀",key="ws_level_prev",help="Nižší letová hladina",
-                                      use_container_width=True,on_click=_step_flight_level,
-                                      args=(-1,))
-                        with level_choice:
-                            st.selectbox("Aktivní výška [ft]",selected,
-                                         key="ws_map_level",format_func=lambda ft:
-                                         f"{ft:,} ft {st.session_state.get('ws_par_level_reference','AGL') if result['config'].radar_mode=='PAR-NG' else 'AMSL'}")
-                        with next_button:
-                            st.button("▶",key="ws_level_next",help="Vyšší letová hladina",
-                                      use_container_width=True,on_click=_step_flight_level,
-                                      args=(1,))
-                        st.caption(f"Zvolená hladina · {selected.index(st.session_state['ws_map_level'])+1}"
-                                   f" z {len(selected)}")
+                        if not selected:
+                            st.info("Nejsou vybrány žádné hladiny. Přidej je v RADAR → Nastavení.")
+                        else:
+                            previous_level=st.session_state.get("ws_map_level")
+                            if previous_level not in selected:
+                                st.session_state["ws_map_level"]=selected[0]
+                            previous_button, level_choice, next_button=st.columns(
+                                [0.65,2.7,0.65],gap="small",vertical_alignment="bottom")
+                            with previous_button:
+                                st.button("◀",key="ws_level_prev",help="Nižší letová hladina",
+                                          use_container_width=True,on_click=_step_flight_level,
+                                          args=(-1,))
+                            with level_choice:
+                                st.selectbox("Aktivní výška [ft]",selected,
+                                             key="ws_map_level",format_func=lambda ft:
+                                             f"{ft:,} ft {st.session_state.get('ws_par_level_reference','AGL') if result['config'].radar_mode=='PAR-NG' else 'AMSL'}")
+                            with next_button:
+                                st.button("▶",key="ws_level_next",help="Vyšší letová hladina",
+                                          use_container_width=True,on_click=_step_flight_level,
+                                          args=(1,))
+                            st.caption(f"Zvolená hladina · {selected.index(st.session_state['ws_map_level'])+1}"
+                                       f" z {len(selected)}")
                     elif mode=="Porovnání":
                         current=st.session_state.get("ws_comparison")
                         if current is not None:
