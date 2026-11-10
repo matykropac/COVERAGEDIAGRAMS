@@ -23,6 +23,21 @@ class WorkstationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             render_print({},{},"Empty",fmt="svg",dpi=300)
 
+    def test_editor_workstation_navigation_and_radar_fields(self):
+        from pathlib import Path
+        text=Path(__file__).resolve().parents[1].joinpath("map_workspace.py").read_text(
+            encoding="utf-8")
+        for key in ("ws_radar","ws_lat","ws_lon","ws_agl","ws_psr_nm",
+                    "ws_bearing","ws_ssr_diagram","ws_source","ws_dem",
+                    "ws_dataset","ws_step","ws_azstep","ws_k","ws_min",
+                    "ws_max","ws_tilt","ws_par_scan_mode","ws_par_scan_loss",
+                    "ws_par_detection","ws_par_snr","ws_par_pd","ws_par_pfa",
+                    "ws_par_pulses","ws_beam","ws_target","ws_reference","ws_levels"):
+            self.assertIn('key="'+key+'"',text,key)
+        self.assertIn("cd-viewer-rail-link",text)
+        self.assertIn("ws_export_project_load",text)
+        self.assertNotIn('st.segmented_control("Režim",["DAY","NIGHT"]',text)
+
     def test_viewer_layout_roundtrip(self):
         layers={"FL 030":[{"type":"Feature","properties":{"name":"FL"},
                 "geometry":{"type":"Point","coordinates":[15.0,50.0]}}]}
