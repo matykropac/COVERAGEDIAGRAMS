@@ -853,8 +853,9 @@ def radar_dialog():
                     st.plotly_chart(scanned,use_container_width=True,
                         key="ws_radar_par_scan_envelope",
                         config={"displaylogo":False,"responsive":True})
-                    st.caption("Základ je 40 km; nejisté parametry EL a skutečného "
-                               "RF rozpočtu nelze zaměňovat za ověřenou Pd.")
+                    st.caption("Základ je 40 km; tento úhlový náhled nezahrnuje "
+                               "skutečný terén ani scénářový útlum závislý na vzdálenosti. "
+                               "Nejde o ověřenou Pd.")
 
                 a,b,c=st.columns(3,gap="small")
                 a.metric("ELEVACE × AZIMUT",
@@ -959,8 +960,8 @@ def radar_dialog():
         if st.session_state.get("ws_radar")=="PAR-NG":
             st.markdown("**PAR-NG · ANTÉNA / DETEKCE**")
             st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
-                         format_func=lambda mode:"Ideální azimutální sken + ztráta vychýlení"
-                         if mode=="TRACKING" else "Pevný 3D diagram bez elektronického skenu",
+                         format_func=lambda mode:"AESA beam steering AZ / EL + úhlová ztráta"
+                         if mode=="TRACKING" else "Pouze AZ: statický 3D diagram bez skenování",
                          key="ws_par_scan_mode")
             st.number_input("Ztráta skenu [dB/°] · orientační",min_value=0.,max_value=5.,
                             value=0.,step=.05,key="ws_par_scan_loss")
