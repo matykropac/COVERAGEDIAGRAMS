@@ -71,6 +71,20 @@ class WorkstationTests(unittest.TestCase):
         self.assertNotIn('key="viewer_preset_"',text)
         self.assertIn('[data-baseweb="popover"] [role="option"]',text)
 
+    def test_viewer_map_is_cached_and_inspector_compact(self):
+        from pathlib import Path
+        source=Path(__file__).resolve().parents[1].joinpath(
+            "coverage_viewer.py").read_text(encoding="utf-8")
+        self.assertIn('def _get_2d_map(',source)
+        self.assertIn('_viewer_folium_cache',source)
+        self.assertIn('_viewer_upload_cache',source)
+        self.assertIn('_viewer_editor_layer_cache',source)
+        self.assertIn('returned_objects=[]',source)
+        self.assertIn('st.container(key="viewer_inspector")',source)
+        self.assertIn('opacity_percent=st.number_input',source)
+        self.assertIn('with st.expander("EXPORT STUDIO',source)
+        self.assertNotIn('folium.LayerControl(',source)
+
     def test_viewer_layout_roundtrip(self):
         layers={"FL 030":[{"type":"Feature","properties":{"name":"FL"},
                 "geometry":{"type":"Point","coordinates":[15.0,50.0]}}]}
