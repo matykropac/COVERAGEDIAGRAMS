@@ -45,8 +45,12 @@ class ParCustomFlightLevelsTests(unittest.TestCase):
         import pathlib
         source=(pathlib.Path(__file__).resolve().parents[1]/
                 "map_workspace.py").read_text(encoding="utf-8")
-        self.assertIn('key="ws_par_custom_input"',source)
-        self.assertIn('key="ws_par_add_levels"',source)
+        self.assertIn('def _par_free_levels_editor(',source)
+        self.assertIn('def _apply_par_free_levels(',source)
+        self.assertIn('_par_free_levels_editor("radar")',source)
+        self.assertIn('_par_free_levels_editor("map")',source)
+        self.assertIn('st.form_submit_button("POUŽÍT ZADANÉ HLADINY"',source)
+        self.assertNotIn('key="ws_par_custom_input"',source)
         self.assertIn("def _chosen_levels(",source)
         self.assertIn("levels=_chosen_levels(c.radar_mode)",source)
         self.assertIn("possible=_available_levels(",source)
