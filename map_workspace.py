@@ -1964,15 +1964,11 @@ def render_workspace():
     if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE","TERÉN","EXPORT"):
         st.session_state["ws_section"]=next_section
 
-    from workspace_theme import COMMON_CSS, header
+    from workspace_theme import COMMON_CSS
     # Palette and logo are shared with the VIEWER; engineering controls stay intact.
     st.markdown(STYLES,unsafe_allow_html=True)
     st.markdown(COMMON_CSS,unsafe_allow_html=True)
     result=st.session_state.get("result")
-    cfg_for_header=result["config"] if result is not None else _cfg()
-    project_name=st.session_state.get("ws_airport_code") or cfg_for_header.radar_mode
-    subtitle=("COVERAGE READY" if result is not None else "NO CALCULATION")
-    st.markdown(header("EDITOR",str(project_name),subtitle),unsafe_allow_html=True)
     st.markdown("""<style>
     [data-testid="stSidebar"]{width:476px!important;min-width:476px!important;
       background:#10243b!important;border-right:1px solid #35506c!important}
