@@ -34,6 +34,33 @@ def coverage_geojson(result, ft, reference='AMSL'):
         for poly in core.coverage_polygons(result, status)]}
 
 
+def par_diagnostic_geojson(result, ft, channel, reference='AMSL'):
+    """Trace an independent AZ/EL/BOTH coverage mask over the existing DEM.
+
+    Unlike a map redraw, this never reruns the AESA/DEM solver or changes the
+    result's configured channel. Export uses precisely these same contours.
+    """
+    if channel not in ('AZ','EL','BOTH'):
+        raise ValueError("Neznámá diagnostická vrstva PAR.")
+    if reference not in ('AMSL','AGL'):
+        raise ValueError("Neplatná výšková reference.")
+    if ft is None:
+        height = result['config'].target_m
+        reference = result['config'].reference
+    else:
+        height = ft*core.FT_TO_M
+    data=core.par_channel_status_at_height(result,height,reference)
+    mask=data[{'AZ':'az','EL':'el','BOTH':'both'}[channel]]
+    project=Transformer.from_crs(core.local_crs(result['config']),
+                                  'EPSG:4326',always_xy=True)
+    label = f"PAR {channel} · vlastní cíl" if ft is None else f"PAR {channel} · {ft} ft {reference}"
+    return {'type':'FeatureCollection','features':[
+        {'type':'Feature','geometry':mapping(transform(project.transform,poly)),
+         'properties':{'hladina':label,'channel':channel,
+             'model':'Y8600 preliminary AESA scan; not verified Pd'}}
+        for poly in core.coverage_polygons(result,mask)]}
+
+
 def clicked_point(result, lat, lon, levels):
     c = result['config']
     bearing, _, distance = Geod(ellps='WGS84').inv(c.lon, c.lat, lon, lat)
