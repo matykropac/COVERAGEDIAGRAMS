@@ -278,10 +278,13 @@ class ParScanPattern(AntennaPattern):
     pd: float = 0.8
     pfa: float = 1e-6
     pulses: int = 1
+    channel_mode: str = 'BOTH'  # AZ / EL / BOTH, independent RF checks
 
     def validate_model(self):
         if self.scan_mode not in ('TRACKING', 'FIXED_3D'):
             raise ValueError('PAR: neznámý režim skenování.')
+        if self.channel_mode not in ('AZ', 'EL', 'BOTH'):
+            raise ValueError('PAR: neznámý výběr anténního kanálu.')
         if self.detection_model not in ('RELATIVE', 'ALBERSHEIM'):
             raise ValueError('PAR: neznámý detekční model.')
         if not np.isfinite(self.steering_loss_db_per_deg) or not 0 <= self.steering_loss_db_per_deg <= 5:
@@ -332,10 +335,50 @@ class ParScanPattern(AntennaPattern):
                  (relative>=self.azimuths_deg[0])&(relative<=self.azimuths_deg[-1]))
         return np.where(valid,g,-200.)
 
+    def channel_range_factors(self, elevation_rad, relative_azimuth_deg, tilt_deg=0.0):
+        """Separate normalized channel envelopes, explicitly provisional.
+
+        AZ: supplied 9 GHz 3D gain array (antenna assignment not calibrated).
+        EL: schematic electronically steered elevation channel constrained by
+        Y8600's -1..14 degree scan envelope; no measured EL pattern supplied.
+
+        Both channel margins start from the SAME assumed 40 km reference,
+        which is NOT a validated two-receiver RF budget. Never sum their SNR.
+        """
+        self.validate_model()
+        elevation=np.rad2deg(np.asarray(elevation_rad,dtype=float))
+        azimuth=np.asarray(relative_azimuth_deg,dtype=float)
+        elevation,azimuth=np.broadcast_arrays(elevation,azimuth)
+        margin=((self.reference_snr_db-self.required_snr_db())/40
+                if self.detection_model=='ALBERSHEIM' else 0.)
+        # Existing source diagram is retained unchanged for the AZ candidate.
+        az_gain=self.gain_at(np.deg2rad(elevation),azimuth,tilt_deg)
+        az_factor=np.power(10.,np.clip(az_gain/20+margin,-12,3))
+        # Ideal EL beam steering (steering places its 0.65° HPBW maximum at the
+        # selected target elevation). Beamwidth is angular resolution, not an
+        # automatic attenuation for a continuously tracked target.
+        # FIXED_3D is prohibited for the EL surrogate: we do not have its grid.
+        if self.scan_mode=='FIXED_3D' and self.channel_mode in ('EL','BOTH'):
+            raise ValueError('PAR: FIXED_3D pro EL vyžaduje druhý měřený 3D diagram; '
+                             'použij TRACKING nebo pouze AZ.')
+        in_el=(elevation>=-1.)&(elevation<=14.)
+        in_az=np.abs(azimuth)<=15.
+        # The EL channel is provisionally ideal within the documented scanning
+        # window. This is NOT calibrated EL gain; leave range conservative at
+        # reference rather than invent a physical gain from HPBW.
+        el_gain=np.where(in_el&in_az,0.,-200.)
+        el_factor=np.power(10.,np.clip(el_gain/20+margin,-12,3))
+        return az_factor,el_factor
+
     def effective_range_factor(self, elevation_rad, relative_azimuth_deg, tilt_deg=0.0):
-        gain = self.gain_at(elevation_rad,relative_azimuth_deg,tilt_deg)
-        margin = (self.reference_snr_db-self.required_snr_db())/40 if self.detection_model=='ALBERSHEIM' else 0.
-        return np.power(10.,np.clip(gain/20 + margin,-12,3))
+        az,el=self.channel_range_factors(elevation_rad,relative_azimuth_deg,tilt_deg)
+        if self.channel_mode=='AZ':
+            return az
+        if self.channel_mode=='EL':
+            return el
+        # Both channels must independently satisfy the range/geometry test.
+        # The minimum factor is equivalent to a logical AND of the two.
+        return np.minimum(az,el)
 
 
 def builtin_par_pattern():
@@ -1166,6 +1209,8 @@ def calculation_metadata(result):
         par_detection=(dict(model=pattern.detection_model,reference_snr_db=pattern.reference_snr_db,
              pd=pattern.pd,pfa=pattern.pfa,pulses=pattern.pulses,
              steering_loss_db_per_deg=pattern.steering_loss_db_per_deg,
+             channel_mode=pattern.channel_mode,
+             dual_channel_assumption='AZ uses provided unlabeled 3D gain grid as provisional AZ input; EL is ideal within -1..14 deg tracked sector, no measured EL gain; BOTH intersects channels; absolute channel RF margins unavailable',
              assumptions='40 km reference calibration, Albersheim is approximate, no measured steering/dwell or target RCS')
             if isinstance(pattern, ParScanPattern) else None),
         azimuth_axis='continuous degrees; modulo 360 gives compass bearing',
