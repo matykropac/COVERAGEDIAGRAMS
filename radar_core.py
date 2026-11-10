@@ -281,12 +281,22 @@ class ParScanPattern(AntennaPattern):
     channel_mode: str = 'BOTH'  # AZ / EL / BOTH, independent RF checks
     az_beam_step_deg: float = 0.3  # scenario sampling; NOT Y8600 scan schedule
     el_beam_step_deg: float = 0.2  # scenario sampling; NOT Y8600 scan schedule
+    coverage_mode: str = 'FAST'  # FAST cached LUT / ENGINEERING direct scan
+    gas_loss_db_per_km: float = 0.0  # 1-way assumed gas attenuation
+    rain_loss_db_per_km: float = 0.0  # 1-way assumed rain attenuation
+    additional_loss_db: float = 0.0  # 2-way system margin scenario
 
     def validate_model(self):
         if self.scan_mode not in ('TRACKING', 'FIXED_3D'):
             raise ValueError('PAR: neznámý režim skenování.')
         if self.channel_mode not in ('AZ', 'EL', 'BOTH'):
             raise ValueError('PAR: neznámý výběr anténního kanálu.')
+        if self.coverage_mode not in ('FAST', 'ENGINEERING'):
+            raise ValueError('PAR: neplatný výpočetní režim.')
+        for value in (self.gas_loss_db_per_km,self.rain_loss_db_per_km,
+                      self.additional_loss_db):
+            if not np.isfinite(value) or value < 0 or value > 60:
+                raise ValueError('PAR: útlumy musí být konečné hodnoty 0–60 dB.')
         if not (np.isfinite(self.az_beam_step_deg) and 0.05<=self.az_beam_step_deg<=0.9):
             raise ValueError('PAR: neplatný krok směrování AZ (0,05–0,90°).')
         if not (np.isfinite(self.el_beam_step_deg) and 0.05<=self.el_beam_step_deg<=0.65):
@@ -733,10 +743,15 @@ def pattern_range_factor(pattern, elevation, c, beam_mode=None):
 def pattern_allows(distance, height, antenna_amsl, c, pattern, beam_mode=None, azimuths=None):
     elevation = apparent_angle(distance, height, antenna_amsl, c.k)
     if isinstance(pattern, ParScanPattern):
+        from par_scan_engine import evaluate
         relative = 0.0 if azimuths is None else ((np.asarray(azimuths)-c.bearing_deg+180)%360-180)
-        factor = pattern.effective_range_factor(elevation,relative,c.antenna_tilt_deg)
-    else:
-        factor = pattern_range_factor(pattern, elevation, c, beam_mode)
+        ranges=slant_distance(distance, height, antenna_amsl, c.k)
+        selected=evaluate(pattern,elevation,relative,ranges,
+                          tilt_deg=c.antenna_tilt_deg,
+                          reference_range_km=c.csc_range_km)["selected"]
+        return ((elevation >= np.deg2rad(c.min_elev))&
+                (elevation <= np.deg2rad(c.max_elev))&selected)
+    factor = pattern_range_factor(pattern,elevation,c,beam_mode)
     limit = c.csc_range_km * 1000 * factor
     return (elevation >= np.deg2rad(c.min_elev)) & (elevation <= np.deg2rad(c.max_elev)) & \
            (slant_distance(distance, height, antenna_amsl, c.k) <= limit + 1e-6)
@@ -757,6 +772,43 @@ def csc_upper(distance, antenna, c):
     sphere = r0 * np.cos(theta) + np.sqrt(np.maximum(discriminant, 0)) - radius
     ceiling = (r0 + limit * np.sin(np.deg2rad(c.csc_ref_deg))) / np.cos(theta) - radius
     return np.where(discriminant >= 0, np.minimum(sphere, ceiling), -np.inf)
+
+
+def par_channel_status_at_height(result, height_m, reference='AMSL'):
+    """Independent channel results on the exact shared DEM/geometric grid.
+
+    Returns AZ, EL, BOTH, SNR margin and limiting-channel rasters. Geometry
+    is already sampled; changing only channel mode never resamples terrain.
+    Values for unknown DEM profiles stay NaN.
+    """
+    c=result['config']
+    pattern=result.get('antenna_pattern')
+    if c.radar_mode!='PAR-NG' or not isinstance(pattern,ParScanPattern):
+        raise ValueError('Diagnostika kanálů je dostupná pouze pro PAR-NG.')
+    from par_scan_engine import evaluate
+    height=(height_m if reference=='AMSL'
+            else result['terrain']+height_m)
+    geometry=(result['known']&
+              (height>=result['lower']-1e-6)&
+              (height<=result['upper']+1e-6))
+    angle=apparent_angle(result['distance'][None,:],height,
+                         result['antenna'],c.k)
+    range_m=slant_distance(result['distance'][None,:],height,
+                           result['antenna'],c.k)
+    relative=((np.asarray(result['az'])[:,None]-c.bearing_deg+180)%360)-180
+    values=evaluate(pattern,angle,relative,range_m,
+                    tilt_deg=c.antenna_tilt_deg,
+                    reference_range_km=c.csc_range_km)
+    gate=(angle>=np.deg2rad(c.min_elev))&(angle<=np.deg2rad(c.max_elev))
+    output={}
+    for name in ('az','el','both'):
+        output[name]=np.where(result['known'],
+                              (geometry&gate&values[name]).astype(float),
+                              np.nan)
+    for name in ('az_margin_db','el_margin_db','limiting_margin_db','limiting_channel'):
+        output[name]=np.where(result['known']&geometry&gate,
+                              values[name],np.nan)
+    return output
 
 
 def status_at_height(result, height_m, reference='AMSL'):
@@ -1272,6 +1324,10 @@ def calculation_metadata(result):
              channel_mode=pattern.channel_mode,
              az_beam_step_deg=pattern.az_beam_step_deg,
              el_beam_step_deg=pattern.el_beam_step_deg,
+             coverage_mode=pattern.coverage_mode,
+             gas_loss_db_per_km=pattern.gas_loss_db_per_km,
+             rain_loss_db_per_km=pattern.rain_loss_db_per_km,
+             additional_loss_db=pattern.additional_loss_db,
              dual_channel_assumption='AZ electronically scans a supplied but unverified 3D pattern, EL electronically scans a provisional Gaussian 0.65 deg HPBW pattern; BOTH intersects independent envelopes; scan commands and RF budgets not validated',
              assumptions='40 km reference calibration, Albersheim is approximate, no measured steering/dwell or target RCS')
             if isinstance(pattern, ParScanPattern) else None),
