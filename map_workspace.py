@@ -301,7 +301,29 @@ def position_layers_export_dialog():
                    for key,_ in names)
     result=st.session_state.get("result")
     if result is not None:
-        st.caption("Samostatný export radarového krytí je zachován v původním ZIP exportu.")
+        st.divider()
+        st.markdown("**RADAROVÉ KRYTÍ · VŠECHNY LETOVÉ HLADINY**")
+        st.caption("Tento export je jiný než mapová geodata výše: obsahuje jednotlivé "
+                   "vypočtené hladiny, cílové krytí, překážky a kružnice 20–260 NM.")
+        possible=tuple(core.flight_levels_for(result["config"].radar_mode))
+        levels=st.multiselect("Hladiny krytí pro KML [ft]",
+            options=possible,
+            default=[x for x in st.session_state.get("ws_levels",[]) if x in possible],
+            format_func=core.level_label,key="ws_coverage_kml_levels")
+        if st.button("PŘIPRAVIT KML · RADAR + FL",key="ws_coverage_kml_make",
+                     use_container_width=True,disabled=not levels):
+            try:
+                from web_support import export_kml
+                st.session_state["ws_coverage_kml_ready"]=(
+                    tuple(levels),export_kml(result,levels))
+            except Exception as exc:
+                st.error(f"Radarový KML export selhal: {exc}")
+        prepared=st.session_state.get("ws_coverage_kml_ready")
+        if prepared and prepared[0]==tuple(levels):
+            st.download_button("STÁHNOUT KML · RADAR + LETOVÉ HLADINY",
+                data=prepared[1],file_name="COVERAGEDIAGRAMS_coverage_FL.kml",
+                mime="application/vnd.google-earth.kml+xml",
+                use_container_width=True,key="ws_coverage_kml_download")
     if st.button("PŘIPRAVIT EXPORT VRSTEV",type="primary",
                  use_container_width=True,key="ws_pos_export_prepare"):
         try:
@@ -1833,6 +1855,12 @@ def render_workspace():
             '<div class="cd-sidebar-brand"><small>RADAR COVERAGE WORKSPACE</small>'
             'COVERAGEDIAGRAMS</div>',unsafe_allow_html=True)
 
+        st.markdown(
+            '<a href="?viewer=1" target="_blank" rel="noopener" '
+            'style="display:block;text-align:center;background:#173d65;color:#fff;'
+            'padding:12px;border-radius:7px;font-weight:750;text-decoration:none;'
+            'margin-bottom:12px">↗ OTEVŘÍT VIEWER · KML/KMZ · 3D</a>',
+            unsafe_allow_html=True)
         section=st.segmented_control(
             "Pracovní sekce",
             options=["MAPA","PŘEKÁŽKY","RADAR","POZICE"],
