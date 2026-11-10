@@ -607,51 +607,169 @@ def project_load_dialog():
             st.error(f"Projekt nelze načíst: {exc}")
 
 
-@st.dialog("RADAR / Nastavení a výpočet", width="large")
+@st.dialog("RADAR / ENGINEERING CONFIGURATION",width="large")
 def radar_dialog():
-    st.caption("Nastav stanoviště, parametry a letové hladiny. Výsledek se objeví přímo v mapě.")
-    site, settings = st.columns(2, gap="medium")
-    with site:
+    """Guided engineering setup with original keys and numeric boundaries intact."""
+    st.markdown("""
+    <style>
+    [data-testid="stDialog"] [data-testid="stDialogContent"]{
+        background:#101f33!important;color:#dcefff!important}
+    [data-testid="stDialog"] [data-testid="stTabs"] [role="tab"]{
+        font-size:11px!important;min-width:0!important;white-space:nowrap}
+    .cd-radar-summary{background:#173149;border:1px solid #355875;
+        border-radius:8px;padding:12px 16px;margin-bottom:11px}
+    .cd-radar-caption{font:750 10px system-ui;letter-spacing:.12em;color:#79cbed}
+    .cd-radar-value{font:750 23px system-ui;color:#f3f8ff;margin-top:4px}
+    .cd-radar-unit{font:500 11px system-ui;color:#a5c8df}
+    .cd-radar-guide{border-left:3px solid #63c9ef;padding:6px 11px;
+        font:12px/1.5 system-ui;color:#b9d2e3;background:#172a40;
+        border-radius:0 6px 6px 0;margin:6px 0 12px}
+    </style>
+    """,unsafe_allow_html=True)
+    st.caption("Čtyři přehledné kroky · všechny původní radarové parametry, "
+               "omezení a ukládání do CDPROJ zůstávají zachované.")
+    radar=st.session_state.get("ws_radar","RL-2000")
+    lat=st.session_state.get("ws_lat",50.034)
+    lon=st.session_state.get("ws_lon",15.781)
+    agl=st.session_state.get("ws_agl",20.)
+    header=st.columns([1.2,1,1],gap="small")
+    with header[0]:
+        st.markdown('<div class="cd-radar-summary"><div class="cd-radar-caption">RADAR SYSTEM</div>'
+                    '<div class="cd-radar-value">'+str(radar)+'</div>'
+                    '<div class="cd-radar-unit">Configuration & simulation</div></div>',
+                    unsafe_allow_html=True)
+    with header[1]:
+        st.markdown('<div class="cd-radar-summary"><div class="cd-radar-caption">ANTENNA HEIGHT</div>'
+                    '<div class="cd-radar-value">'+f"{float(agl):.1f}"+'</div>'
+                    '<div class="cd-radar-unit">metres AGL</div></div>',unsafe_allow_html=True)
+    with header[2]:
+        st.markdown('<div class="cd-radar-summary"><div class="cd-radar-caption">RADAR SITE</div>'
+                    '<div class="cd-radar-value" style="font-size:14px;padding:9px 0">'
+                    +f"{float(lat):.4f}° N/S"+'</div><div class="cd-radar-unit">'
+                    +f"{float(lon):.4f}° E/W"+'</div></div>',unsafe_allow_html=True)
+
+    location_tab,antenna_tab,terrain_tab,flight_tab=st.tabs([
+        "01 · STANOVIŠTĚ","02 · ANTÉNA","03 · TERÉN / MODEL","04 · CÍL / FL"
+    ])
+    with location_tab:
+        st.markdown('<div class="cd-radar-guide">Poloha a montážní výška radarové antény. '
+                    'Výšky antény jsou vztažené k terénu v místě instalace (AGL).</div>',
+                    unsafe_allow_html=True)
         st.selectbox("Radar",["RL-2000","PAR-NG","SSR"],key="ws_radar")
-        st.number_input("Latitude · WGS84",min_value=-80.0,max_value=80.0,value=50.034,
-                        format="%.6f",key="ws_lat")
-        st.number_input("Longitude · WGS84",min_value=-180.0,max_value=180.0,value=15.781,
-                        format="%.6f",key="ws_lon")
-        st.number_input("Výška antény [m AGL]",min_value=.1,max_value=5000.0,
-                        value=20.0,key="ws_agl")
-        radar=st.session_state["ws_radar"]
-        if radar=="RL-2000":
-            st.selectbox("Dosah PSR [NM]",list(core.PSR_RANGES_NM),
-                         index=2,key="ws_psr_nm")
-        if radar=="PAR-NG":
-            st.number_input("Azimut osy [°]",0.,359.99,0.,key="ws_bearing")
-        if radar=="SSR":
-            st.selectbox("SSR anténa",["Generic Gaussian","Measured SSR.txt"],key="ws_ssr_diagram")
+        a,b=st.columns(2,gap="small")
+        with a:
+            st.number_input("Latitude · WGS84",min_value=-80.0,max_value=80.0,
+                            value=50.034,format="%.6f",key="ws_lat")
+        with b:
+            st.number_input("Longitude · WGS84",min_value=-180.0,max_value=180.0,
+                            value=15.781,format="%.6f",key="ws_lon")
+        st.number_input("Výška antény [m AGL]",min_value=.1,max_value=5000.,
+                        value=20.,key="ws_agl")
+        st.caption("Změna souřadnic nebo výšky vyžaduje nové vyhodnocení krytí.")
+
+    with antenna_tab:
+        st.markdown('<div class="cd-radar-guide">Vyzařovací geometrie a provozní '
+                    'omezení antény. Ilustrace níže je schéma, nikoli '
+                    'kalibrovaný anténní diagram.</div>',unsafe_allow_html=True)
+        mode=st.session_state.get("ws_radar","RL-2000")
+        left,right=st.columns([1,1],gap="medium")
+        with left:
+            if mode=="RL-2000":
+                st.selectbox("Dosah PSR [NM]",list(core.PSR_RANGES_NM),index=2,key="ws_psr_nm")
+                st.selectbox("Svazek",["COMBINED","LOW","HIGH"],key="ws_beam")
+            if mode=="PAR-NG":
+                st.number_input("Azimut osy [°]",0.,359.99,0.,key="ws_bearing")
+            if mode=="SSR":
+                st.selectbox("SSR anténa",["Generic Gaussian","Measured SSR.txt"],
+                             key="ws_ssr_diagram")
+            st.number_input("Min. elevace [°]",-5.,88.,-1.,key="ws_min")
+            st.number_input("Max. elevace [°]",-4.,89.,45.,key="ws_max")
+            st.number_input("Tilt antény [°]",-15.,15.,-1.,key="ws_tilt")
+        with right:
+            st.markdown("""<div style="border:1px solid #365673;border-radius:9px;
+                background:#0d2236;padding:9px;max-width:100%">
+            <svg viewBox="0 0 360 225" role="img" aria-label="Schematic antenna tilt and elevation"
+                style="width:100%;height:auto;display:block">
+              <defs><linearGradient id="cdbeam" x1="0" x2="1" y1="1" y2="0">
+                <stop offset="0" stop-color="#4cb5e6" stop-opacity=".35"/>
+                <stop offset="1" stop-color="#84e4fb" stop-opacity=".04"/></linearGradient></defs>
+              <path d="M16 174H344" stroke="#41607d" stroke-width="2"/>
+              <path d="M70 176L326 39A290 290 0 0 0 329 139Z"
+                    fill="url(#cdbeam)" stroke="#63c9ef" stroke-width="1.5"
+                    stroke-dasharray="5 5"/>
+              <path d="M70 176L329 116" stroke="#8be9fc" stroke-width="3"/>
+              <path d="M70 176V111" stroke="#b5cfe3" stroke-width="7"/>
+              <rect x="51" y="100" width="38" height="11" rx="5"
+                    fill="#63c9ef"/>
+              <circle cx="70" cy="176" r="4" fill="#f8d17c"/>
+              <text x="16" y="23" fill="#96bad6" font-size="11"
+                    font-family="system-ui">SCHEMATIC ELEVATION / TILT</text>
+              <text x="270" y="30" fill="#a5dff6" font-size="10"
+                    font-family="system-ui">MAX EL</text>
+              <text x="284" y="159" fill="#a5dff6" font-size="10"
+                    font-family="system-ui">MIN EL</text>
+              <text x="20" y="208" fill="#8daac1" font-size="10"
+                    font-family="system-ui">RADAR SITE · AGL</text>
+            </svg></div>""",unsafe_allow_html=True)
+            minel=float(st.session_state.get("ws_min",-1.))
+            maxel=float(st.session_state.get("ws_max",45.))
+            tilt=float(st.session_state.get("ws_tilt",-1.))
+            st.caption(f"Min {minel:.2f}° · Max {maxel:.2f}° · Tilt {tilt:+.2f}°")
+            st.caption("Schéma není zdrojem výpočtu; používá se stávající anténní model.")
+
+    with terrain_tab:
+        st.markdown('<div class="cd-radar-guide">Terénní zdroj a numerická mřížka '
+                    'přímo určují rozlišení výsledného výpočtu.</div>',
+                    unsafe_allow_html=True)
         st.selectbox("Zdroj terénu",["OpenTopography","DEM soubor"],key="ws_source")
         if st.session_state["ws_source"]=="DEM soubor":
             st.file_uploader("GeoTIFF / DTED / HGT",
                              type=["tif","tiff","dt0","dt1","dt2","hgt"],key="ws_dem")
         else:
             st.selectbox("DEM dataset",list(core.DATASETS),key="ws_dataset")
-    with settings:
-        st.select_slider("Radiální krok [m]",options=[25,50,100,250,500,1000,2000],
-                         value=500,key="ws_step")
-        st.select_slider("Azimutální krok [°]",options=[.25,.5,1.,2.,2.5,5.],
-                         value=1.,key="ws_azstep")
+        a,b=st.columns(2,gap="small")
+        with a:
+            st.select_slider("Radiální krok [m]",options=[25,50,100,250,500,1000,2000],
+                             value=500,key="ws_step")
+        with b:
+            st.select_slider("Azimutální krok [°]",options=[.25,.5,1.,2.,2.5,5.],
+                             value=1.,key="ws_azstep")
         st.number_input("k-factor",.5,3.,4/3,format="%.4f",key="ws_k")
-        st.number_input("Min. elevace [°]",-5.,88.,-1.,key="ws_min")
-        st.number_input("Max. elevace [°]",-4.,89.,45.,key="ws_max")
-        st.number_input("Tilt antény [°]",-15.,15.,-1.,key="ws_tilt")
-        if st.session_state["ws_radar"]=="PAR-NG":
+        try:
+            current=_cfg()
+            az,d=core.axes(current)
+            samples=len(az)*len(d)
+            st.metric("VÝPOČETNÍ SÍŤ",f"{samples:,} vzorků")
+            if samples>750000:
+                st.warning("Překročen limit 750 000 vzorků. Zvětši krok.")
+            else:
+                st.progress(min(1.,samples/750000.))
+        except Exception:
+            st.caption("Výpočetní síť bude zkontrolována při spuštění výpočtu.")
+
+    with flight_tab:
+        st.markdown('<div class="cd-radar-guide">Referenční výška cíle a letové '
+                    'hladiny pro výsledné mapy. AMSL = nad mořem, AGL = nad terénem.</div>',
+                    unsafe_allow_html=True)
+        a,b=st.columns(2,gap="small")
+        with a:
+            st.number_input("Výška cíle [m]",-500.,30000.,1000.,key="ws_target")
+        with b:
+            st.selectbox("Reference cíle",["AMSL","AGL"],key="ws_reference")
+        choices=core.flight_levels_for(st.session_state.get("ws_radar","RL-2000"))
+        default=[x for x in (3000,10000) if x in choices]
+        st.multiselect("Letové hladiny [ft AMSL]",choices,default=default,
+                       format_func=core.level_label,key="ws_levels")
+        if st.session_state.get("ws_radar")=="PAR-NG":
             st.markdown("**PAR-NG · ANTÉNA / DETEKCE**")
             st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
-                         format_func=lambda mode: "Ideální azimutální sken + ztráta vychýlení"
+                         format_func=lambda mode:"Ideální azimutální sken + ztráta vychýlení"
                          if mode=="TRACKING" else "Pevný 3D diagram bez elektronického skenu",
                          key="ws_par_scan_mode")
             st.number_input("Ztráta skenu [dB/°] · orientační",min_value=0.,max_value=5.,
                             value=0.,step=.05,key="ws_par_scan_loss")
             st.selectbox("Detekční rozpočet",["RELATIVE","ALBERSHEIM"],
-                         format_func=lambda mode: "Relativní obálka 40 km"
+                         format_func=lambda mode:"Relativní obálka 40 km"
                          if mode=="RELATIVE" else "Ilustrační SNR / Pd / Pfa",
                          key="ws_par_detection")
             if st.session_state.get("ws_par_detection")=="ALBERSHEIM":
@@ -660,20 +778,15 @@ def radar_dialog():
                                 key="ws_par_snr")
                 st.number_input("Požadované Pd",min_value=.01,max_value=.99,
                                 value=.8,step=.01,key="ws_par_pd")
-                st.selectbox("Požadované Pfa",options=[1e-3,1e-4,1e-5,1e-6,1e-7,1e-8],
+                st.selectbox("Požadované Pfa",
+                             options=[1e-3,1e-4,1e-5,1e-6,1e-7,1e-8],
                              index=3,key="ws_par_pfa",format_func=lambda n:f"{n:.0e}")
-                st.number_input("Počet ne-koherentních pulzů",min_value=1,max_value=1000,
-                                value=1,step=1,key="ws_par_pulses")
-            st.caption("Parametry skenu a SNR jsou modelové, nikoliv změřená specifikace PAR-NG.")
-        if st.session_state["ws_radar"]=="RL-2000":
-            st.selectbox("Svazek",["COMBINED","LOW","HIGH"],key="ws_beam")
-        st.number_input("Výška cíle [m]",-500.,30000.,1000.,key="ws_target")
-        st.selectbox("Reference cíle",["AMSL","AGL"],key="ws_reference")
-        choices=core.flight_levels_for(st.session_state["ws_radar"])
-        default=[x for x in (3000,10000) if x in choices]
-        st.multiselect("Letové hladiny [ft AMSL]",choices,default=default,
-                       format_func=core.level_label,key="ws_levels")
-    if st.button("VYPOČÍTAT KRYTÍ",type="primary",use_container_width=True,key="ws_calculate"):
+                st.number_input("Počet ne-koherentních pulzů",min_value=1,
+                                max_value=1000,value=1,step=1,key="ws_par_pulses")
+            st.caption("Parametry PAR skenu a SNR jsou modelové, nikoliv změřená specifikace.")
+    st.divider()
+    if st.button("▶ VYPOČÍTAT RADAROVÉ KRYTÍ",type="primary",
+                 use_container_width=True,key="ws_calculate"):
         _calculate_coverage()
 
 
