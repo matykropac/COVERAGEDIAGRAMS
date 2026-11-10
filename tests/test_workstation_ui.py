@@ -38,8 +38,28 @@ class WorkstationTests(unittest.TestCase):
         self.assertIn('st.container(key="cd_nav_rail")',text)
         self.assertIn('f"{symbol}  {label}"',text)
         self.assertNotIn('cd-rail-label',text)
+        self.assertNotIn('cd-rail-marker\">TOOLS',text)
+        self.assertIn('rail, gutter, panel',text)
+        self.assertIn('antenna_figure',text)
+        self.assertNotIn('st.markdown(header("EDITOR"',text)
         self.assertIn("ws_export_project_load",text)
         self.assertNotIn('st.segmented_control("Režim",["DAY","NIGHT"]',text)
+
+    def test_antenna_plot_uses_engine_channels(self):
+        import radar_core as core
+        import numpy as np
+        from antenna_workspace_preview import antenna_figure
+        config=core.Config(lat=50.0,lon=15.0,antenna_agl=20.0,
+                           radar_mode="RL-2000",range_km=100.0,
+                           min_elev=-1.0,max_elev=45.0)
+        pattern=core.rl2000_dual_beam_pattern()
+        fig,provenance,note=antenna_figure(config,pattern)
+        self.assertEqual(len(fig.data),2)
+        self.assertIn("LOW",fig.data[0].name)
+        self.assertIn("HIGH",fig.data[1].name)
+        self.assertIn("typical",provenance.lower())
+        self.assertIn("not site-calibrated",note)
+        self.assertTrue(np.isfinite(fig.data[0].y).any())
 
     def test_viewer_layout_roundtrip(self):
         layers={"FL 030":[{"type":"Feature","properties":{"name":"FL"},
