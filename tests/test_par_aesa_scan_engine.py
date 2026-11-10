@@ -90,6 +90,17 @@ class AesaScanEngineTests(unittest.TestCase):
         self.assertTrue(np.all(channels["both"]<=channels["az"]))
         self.assertTrue(np.all(channels["both"]<=channels["el"]))
 
+    def test_leaflet_layer_switch_changes_signature(self):
+        from pathlib import Path
+        src=Path(__file__).resolve().parents[1].joinpath(
+            "map_workspace.py").read_text(encoding="utf-8")
+        self.assertIn('signature([active,reference,channel_view,alpha,',src)
+        self.assertIn('"LIMIT":"LIMITING · omezující kanál"',src)
+        self.assertIn('par_limiting_geojson(',src)
+        self.assertIn('par_diagnostic_geojson(',src)
+        self.assertIn('key="ws_par_quality"',src)
+        self.assertIn('"coverage_mode":"ws_par_quality"',src)
+
     def test_export_contains_independent_masks_and_margins(self):
         c=core.Config(radar_mode="PAR-NG",range_km=40.,csc_range_km=40.,
                       step_m=2000.,az_step=5.,min_elev=-1.,max_elev=14.,
