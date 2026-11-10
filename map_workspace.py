@@ -477,9 +477,13 @@ def _par_free_levels_editor(context):
             key=key,placeholder="300, 400, 900, 1500",
             help="Celé výšky v ft, oddělené čárkou, mezerou, "
                  "středníkem nebo novým řádkem. Přepiš celý seznam.")
-        st.form_submit_button("POUŽÍT ZADANÉ HLADINY",
+        submitted=st.form_submit_button("POUŽÍT ZADANÉ HLADINY",
             type="primary",use_container_width=True,
             on_click=_apply_par_free_levels,args=(key,))
+    if submitted and not st.session_state.get("_par_levels_error"):
+        # RADAR lives inside a dialog fragment: force a full app refresh so
+        # MAPA and the existing persistent Leaflet layers see the new levels.
+        st.rerun(scope="app")
     if st.session_state.get("_par_levels_error"):
         st.error(st.session_state["_par_levels_error"])
     elif st.session_state.get("_par_levels_message"):
