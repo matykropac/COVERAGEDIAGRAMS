@@ -61,6 +61,30 @@ def par_diagnostic_geojson(result, ft, channel, reference='AMSL'):
         for poly in core.coverage_polygons(result,mask)]}
 
 
+def par_limiting_geojson(result, ft, channel, reference='AMSL'):
+    """Region within joint coverage whose limiting RF channel is AZ or EL."""
+    if channel not in ('AZ','EL'):
+        raise ValueError("Omezující kanál musí být AZ nebo EL.")
+    if ft is None:
+        height=result['config'].target_m
+        reference=result['config'].reference
+    else:
+        height=ft*core.FT_TO_M
+    values=core.par_channel_status_at_height(result,height,reference)
+    joint=values['both']
+    limiter=values['limiting_channel']
+    number=0 if channel=='AZ' else 1
+    mask=np.where(np.isnan(joint),np.nan,
+                  ((joint==1.)&(limiter==number)).astype(float))
+    project=Transformer.from_crs(core.local_crs(result['config']),
+                                  'EPSG:4326',always_xy=True)
+    return {'type':'FeatureCollection','features':[
+        {'type':'Feature','geometry':mapping(transform(project.transform,polygon)),
+         'properties':{'channel':channel,'role':'limiting channel',
+                       'model':'preliminary AESA scan'}}
+        for polygon in core.coverage_polygons(result,mask)]}
+
+
 def clicked_point(result, lat, lon, levels):
     c = result['config']
     bearing, _, distance = Geod(ellps='WGS84').inv(c.lon, c.lat, lon, lat)
