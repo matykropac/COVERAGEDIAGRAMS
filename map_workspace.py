@@ -1916,21 +1916,33 @@ def _draw_map():
     channel_view=(st.session_state.get("ws_par_diagnostic_layer","VÝSLEDEK")
                   if c.radar_mode=="PAR-NG" else "VÝSLEDEK")
     for level in active:
-        cache_key=(level,reference,channel_view)
-        if cache_key not in st.session_state.setdefault("geometry",{}):
-            if channel_view=="VÝSLEDEK":
-                geo=coverage_geojson(result,level,reference=reference)
-            else:
-                from web_support import par_diagnostic_geojson
-                geo=par_diagnostic_geojson(result,level,channel_view,
-                                           reference=reference)
-            st.session_state.geometry[cache_key]=geo
-        colors={"AZ":"#5dcdf4","EL":"#f7c66b","BOTH":"#46e1be"}
-        coverage.append({
-            "geojson":st.session_state.geometry[cache_key],
-            "color":colors[channel_view] if channel_view in colors else (
-                "#247ad3" if level is None else to_hex(core.level_color(level))),
-        })
+        if channel_view=="LIMIT":
+            from web_support import par_limiting_geojson
+            for limiting,color in (("AZ","#5dcdf4"),("EL","#f7c66b")):
+                cache_key=(level,reference,"LIMIT",limiting)
+                if cache_key not in st.session_state.setdefault("geometry",{}):
+                    st.session_state.geometry[cache_key]=par_limiting_geojson(
+                        result,level,limiting,reference=reference)
+                coverage.append({
+                    "geojson":st.session_state.geometry[cache_key],
+                    "color":color,
+                })
+        else:
+            cache_key=(level,reference,channel_view)
+            if cache_key not in st.session_state.setdefault("geometry",{}):
+                if channel_view=="VÝSLEDEK":
+                    geo=coverage_geojson(result,level,reference=reference)
+                else:
+                    from web_support import par_diagnostic_geojson
+                    geo=par_diagnostic_geojson(result,level,channel_view,
+                                               reference=reference)
+                st.session_state.geometry[cache_key]=geo
+            colors={"AZ":"#5dcdf4","EL":"#f7c66b","BOTH":"#46e1be"}
+            coverage.append({
+                "geojson":st.session_state.geometry[cache_key],
+                "color":colors[channel_view] if channel_view in colors else (
+                    "#247ad3" if level is None else to_hex(core.level_color(level))),
+            })
         previous=st.session_state.get("ws_previous_result")
         if (channel_view=="VÝSLEDEK" and previous is not None
                 and st.session_state.get("ws_compare_previous",True)):
@@ -2309,12 +2321,13 @@ def render_workspace():
                                  horizontal=True,key="ws_par_level_reference",
                                  help="AGL = nad místním terénem. AMSL = nad hladinou moře.")
                         st.selectbox("PAR · VRSTVA KRYTÍ",
-                            ["VÝSLEDEK","AZ","EL","BOTH"],
+                            ["VÝSLEDEK","AZ","EL","BOTH","LIMIT"],
                             format_func=lambda value:{
                                 "VÝSLEDEK":"Nastavená anténa",
                                 "AZ":"AZ · horizontální sken",
                                 "EL":"EL · vertikální sken",
                                 "BOTH":"AZ + EL · společná oblast",
+                                "LIMIT":"LIMITING · omezující kanál",
                             }[value],key="ws_par_diagnostic_layer",
                             help="Přepnutí nevyžaduje nové stažení DEM. "
                                  "Vrstvy používají stejnou fyziku, ale "
