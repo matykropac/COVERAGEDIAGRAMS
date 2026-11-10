@@ -550,7 +550,6 @@ def _visual_project_state():
     """Visual settings saved alongside radar matrices in the CDPROJ metadata."""
     return {"mode":st.session_state.get("ws_display_mode","Jedna hladina"),
             "opacity":st.session_state.get("ws_map_opacity",.42),
-            "daynight":st.session_state.get("ws_daynight","NIGHT"),
             "active_level":st.session_state.get("ws_map_level"),
             "viewport":st.session_state.get("ws_viewport"),
             "section":st.session_state.get("ws_section","MAPA")}
@@ -610,9 +609,6 @@ def project_load_dialog():
 
 @st.dialog("RADAR / Nastavení a výpočet", width="large")
 def radar_dialog():
-    if st.button("NAČÍST EXISTUJÍCÍ PROJEKT · CDPROJ",
-                 key="ws_radar_open_project",use_container_width=True):
-        project_load_dialog()
     st.caption("Nastav stanoviště, parametry a letové hladiny. Výsledek se objeví přímo v mapě.")
     site, settings = st.columns(2, gap="medium")
     with site:
@@ -1680,7 +1676,7 @@ def _draw_map():
                  "label":configured.radar_mode+" · RADAR"},
         "basemaps":basemaps,
         "openaip":openaip,
-        "theme":st.session_state.get("ws_daynight","DAY"),
+        "theme":st.session_state.get("ws_daynight","NIGHT"),
         "tool":_map_tool(),
         "live":bool(st.session_state.get("ws_live_adsb",False)),
         "coverage":coverage,
@@ -1793,7 +1789,7 @@ def _restore_sidebar_preferences():
     """
     keys=("ws_show_coverage","ws_display_mode","ws_map_level",
           "ws_comparison","ws_map_opacity","ws_openaip",
-          "ws_live_adsb","ws_show_wind","ws_daynight")
+          "ws_live_adsb","ws_show_wind")
     for key in keys:
         saved="_persist_"+key
         if key in st.session_state:
@@ -1839,8 +1835,7 @@ def render_workspace():
     """Persistent ATM workstation map with contextual engineering tools."""
     pending=st.session_state.pop("_pending_cdproj_display",None)
     if isinstance(pending,dict):
-        for field,widget in (("daynight","ws_daynight"),
-                             ("opacity","ws_map_opacity"),
+        for field,widget in (("opacity","ws_map_opacity"),
                              ("mode","ws_display_mode"),
                              ("active_level","ws_map_level")):
             value=pending.get(field)
@@ -1853,6 +1848,7 @@ def render_workspace():
         st.session_state["ws_levels"]=list(st.session_state.get("levels",[3000,10000]))
 
     _restore_sidebar_preferences()
+    st.session_state["ws_daynight"]="NIGHT"  # Fixed workstation palette.
 
     next_section=st.session_state.pop("ws_next_section",None)
     if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE","TERÉN","EXPORT"):
@@ -1885,6 +1881,18 @@ def render_workspace():
     [data-testid="stSidebar"] label{color:#c2d8ea!important}
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]{gap:.35rem!important}
     [data-testid="stSidebar"] [data-testid="stExpander"]{background:#142c45!important}
+    [data-testid="stSidebar"] .cd-rail-label{font:650 8px/1.25 system-ui!important;
+        color:#a2bdd0!important;white-space:normal;overflow-wrap:anywhere;
+        text-align:center;letter-spacing:0!important;margin:1px 0 9px!important}
+    [data-testid="stSidebar"] [data-testid="stButton"] button[kind]{
+        padding:4px 5px!important;white-space:normal!important;line-height:1.1!important}
+    .cd-viewer-rail-link{display:flex;flex-direction:column;align-items:center;
+        justify-content:center;text-align:center;text-decoration:none!important;
+        color:#fff!important;border:1px solid #ef7179;border-radius:8px;
+        background:#ad3041;padding:7px 2px;margin-top:9px;gap:2px;min-width:0}
+    .cd-viewer-rail-link:hover{background:#d03c51;color:white!important}
+    .cd-viewer-rail-glyph{font:800 20px/1.1 system-ui}
+    .cd-viewer-rail-label{font:750 8px/1.25 system-ui;white-space:nowrap}
     .cd-rail-marker{font:750 9px system-ui;letter-spacing:.15em;color:#70b8d9;
        text-align:center;margin:5px 0 10px}
     @media(max-width:700px){[data-testid="stSidebar"]{width:100vw!important;min-width:0!important}
@@ -1894,17 +1902,17 @@ def render_workspace():
     result=st.session_state.get("result")
     config=_cfg()
     with st.sidebar:
-        rail, panel = st.columns([1,5],gap="small")
+        rail, panel = st.columns([1.65,5],gap="small")
         with rail:
             st.markdown('<div class="cd-rail-marker">TOOLS</div>',unsafe_allow_html=True)
-            for name,icon_name,tip in (
-                ("MAPA",":material/map:","Mapa a krytí"),
-                ("RADAR",":material/radar:","Radar / výpočet"),
-                ("TERÉN",":material/terrain:","Terén / DEM"),
-                ("PŘEKÁŽKY",":material/layers:","Vrstvy a překážky"),
-                ("POZICE",":material/flight:","Aviation / ICAO"),
-                ("EXPORT",":material/file_download:","Export Studio")):
-                if st.button("",icon=icon_name,help=tip,key="cd_rail_"+name,
+            for name,symbol,tip in (
+                ("MAPA","▧","Mapa a krytí"),
+                ("RADAR","◉","Radar / výpočet"),
+                ("TERÉN","△","Terén / DEM"),
+                ("PŘEKÁŽKY","▤","Vrstvy a překážky"),
+                ("POZICE","✈","Aviation / ICAO"),
+                ("EXPORT","⇩","Export Studio")):
+                if st.button(symbol,key="cd_rail_"+name,help=tip,
                              use_container_width=True,type="primary" if
                              st.session_state.get("ws_section","MAPA")==name else "secondary"):
                     st.session_state["ws_section"]=name
@@ -1913,6 +1921,12 @@ def render_workspace():
                             {"MAPA":"MAPA","RADAR":"RADAR","TERÉN":"DEM",
                              "PŘEKÁŽKY":"VRSTVY","POZICE":"AIP","EXPORT":"EXPORT"}[name]+
                             '</div>',unsafe_allow_html=True)
+            st.markdown(
+                '<a class="cd-viewer-rail-link" href="?viewer=1" target="_blank" '
+                'rel="noopener noreferrer" title="Otevřít samostatný VIEWER">'
+                '<span class="cd-viewer-rail-glyph">◈</span>'
+                '<span class="cd-viewer-rail-label">VIEWER</span></a>',
+                unsafe_allow_html=True)
         with panel:
             st.markdown('<div class="cd-panel-title">'+
                 {"MAPA":"MAPA / ANALÝZA","RADAR":"RADAR / ENGINE",
@@ -1920,63 +1934,10 @@ def render_workspace():
                  "POZICE":"AVIATION / GEODATA","EXPORT":"EXPORT STUDIO"}.get(
                     st.session_state.get("ws_section","MAPA"),"MAPA")+
                 '</div>',unsafe_allow_html=True)
-            st.markdown(
-                '<a href="?viewer=1" target="_blank" rel="noopener" '
-                'style="display:block;text-align:center;background:#245879;color:#e9f8ff;'
-                'padding:9px;border:1px solid #63b9e0;border-radius:7px;font-weight:750;'
-                'text-decoration:none;margin-bottom:5px">↗ VIEWER · 2D / 3D</a>',
-                unsafe_allow_html=True)
-            if result is not None:
-                if st.button("↗ VIEWER S VÝSLEDKEM",
-                             key="ws_open_viewer_snapshot",use_container_width=True,
-                             help="Přenese vypočtené hladiny a DEM do nového okna."):
-                    try:
-                        from viewer_bridge import publish
-                        chosen=st.session_state.get("ws_levels",[])
-                        allowed=set(core.flight_levels_for(result["config"].radar_mode))
-                        chosen=[int(x) for x in chosen if int(x) in allowed]
-                        token=publish(result,chosen,st.session_state.get("obstacles",[]),
-                                      source_ui=_airport_project_metadata())
-                        st.session_state["ws_viewer_handoff"]=token
-                    except Exception as exc:
-                        st.error(f"VIEWER nelze připravit: {exc}")
-                token=st.session_state.get("ws_viewer_handoff")
-                if token:
-                    st.markdown(
-                        '<a href="?viewer=1&amp;snapshot='+token+'" target="_blank" '
-                        'rel="noopener" style="display:block;text-align:center;'
-                        'border:1px solid #478eae;background:#193d57;color:#c9f3ff;'
-                        'padding:8px;border-radius:7px;text-decoration:none;font-weight:700">'
-                        '↗ OTEVŘÍT VÝSLEDEK</a>',unsafe_allow_html=True)
-            first_btn,second_btn=st.columns(2,gap="small")
-            with first_btn:
-                if st.button("OPEN · CDPROJ",key="ws_sidebar_project_load",
-                             use_container_width=True):
-                    project_load_dialog()
-            with second_btn:
-                if result is not None and st.button("SAVE · CDPROJ",
-                                                     key="ws_top_prepare_project",
-                                                     use_container_width=True):
-                    try:
-                        st.session_state["ws_top_project_bytes"]=save_project(
-                            result,levels=st.session_state.get("ws_levels",[]),
-                            obstacles=st.session_state.get("obstacles",[]),
-                            source_ui=_airport_project_metadata(),
-                            display=_visual_project_state())
-                    except Exception as exc:
-                        st.error(f"Projekt nelze připravit: {exc}")
-            if st.session_state.get("ws_top_project_bytes"):
-                st.download_button("⇩ STÁHNOUT CDPROJ",
-                    data=st.session_state["ws_top_project_bytes"],
-                    file_name="COVERAGEDIAGRAMS_project.cdproj",
-                    mime="application/octet-stream",use_container_width=True,
-                    key="ws_top_cdproj_download")
             section=st.session_state.get("ws_section","MAPA")
             if section=="MAPA":
-                st.markdown('<div class="cd-nav-title">VZHLED MAPY</div>',unsafe_allow_html=True)
-                st.segmented_control("Režim",["DAY","NIGHT"],default="NIGHT",
-                                     key="ws_daynight",width="stretch",
-                                     label_visibility="collapsed")
+                st.markdown('<div class="cd-nav-title">MAPOVÉ PODKLADY A VRSTVY</div>',
+                            unsafe_allow_html=True)
                 st.markdown('<div class="cd-nav-title">VRSTVY KRYTÍ</div>',unsafe_allow_html=True)
                 if result is None:
                     st.caption("Po výpočtu zde budeš přepínat jednotlivé letové hladiny.")
@@ -2099,6 +2060,57 @@ def render_workspace():
                              use_container_width=True):
                     position_layers_export_dialog()
                 st.caption("Mapové vrstvy lze exportovat i bez radarového výpočtu.")
+                st.markdown('<div class="cd-nav-title">SPRÁVA PROJEKTU / CDPROJ</div>',
+                            unsafe_allow_html=True)
+            first_btn,second_btn=st.columns(2,gap="small")
+            with first_btn:
+                if st.button("OPEN · CDPROJ",key="ws_export_project_load",
+                             use_container_width=True):
+                    project_load_dialog()
+            with second_btn:
+                if result is not None and st.button("SAVE · CDPROJ",
+                                                     key="ws_export_save_project",
+                                                     use_container_width=True):
+                    try:
+                        st.session_state["ws_top_project_bytes"]=save_project(
+                            result,levels=st.session_state.get("ws_levels",[]),
+                            obstacles=st.session_state.get("obstacles",[]),
+                            source_ui=_airport_project_metadata(),
+                            display=_visual_project_state())
+                    except Exception as exc:
+                        st.error(f"Projekt nelze připravit: {exc}")
+            if st.session_state.get("ws_top_project_bytes"):
+                st.download_button("⇩ STÁHNOUT CDPROJ",
+                    data=st.session_state["ws_top_project_bytes"],
+                    file_name="COVERAGEDIAGRAMS_project.cdproj",
+                    mime="application/octet-stream",use_container_width=True,
+                    key="ws_export_cdproj_download")
+
+                st.markdown('<div class="cd-nav-title">VIEWER / PŘENOS VÝSLEDKU</div>',
+                            unsafe_allow_html=True)
+            if result is not None:
+                if st.button("↗ VIEWER S VÝSLEDKEM",
+                             key="ws_export_viewer_snapshot",use_container_width=True,
+                             help="Přenese vypočtené hladiny a DEM do nového okna."):
+                    try:
+                        from viewer_bridge import publish
+                        chosen=st.session_state.get("ws_levels",[])
+                        allowed=set(core.flight_levels_for(result["config"].radar_mode))
+                        chosen=[int(x) for x in chosen if int(x) in allowed]
+                        token=publish(result,chosen,st.session_state.get("obstacles",[]),
+                                      source_ui=_airport_project_metadata())
+                        st.session_state["ws_viewer_handoff"]=token
+                    except Exception as exc:
+                        st.error(f"VIEWER nelze připravit: {exc}")
+                token=st.session_state.get("ws_viewer_handoff")
+                if token:
+                    st.markdown(
+                        '<a href="?viewer=1&amp;snapshot='+token+'" target="_blank" '
+                        'rel="noopener" style="display:block;text-align:center;'
+                        'border:1px solid #478eae;background:#193d57;color:#c9f3ff;'
+                        'padding:8px;border-radius:7px;text-decoration:none;font-weight:700">'
+                        '↗ OTEVŘÍT VÝSLEDEK</a>',unsafe_allow_html=True)
+
             elif section=="RADAR":
                 st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
                 st.caption("Kliknutím do mapy umístíš radar. Po výběru se vrátíš do sekce MAPA.")
@@ -2199,7 +2211,7 @@ def render_workspace():
                     st.query_params["classic"]="1"
                     st.rerun()
 
-    if st.session_state.get("ws_daynight","NIGHT")=="NIGHT":
+    if True:  # Fixed ATM navy palette, no DAY/NIGHT toggle.
         st.markdown("""
         <style>
         [data-testid="stAppViewContainer"]{background:#0b131e!important;color:#dce8f4!important}
