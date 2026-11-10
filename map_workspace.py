@@ -582,15 +582,10 @@ def _open_cdproj(data):
     st.session_state["ws_levels"]=meta.get("levels",[])
     st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
     display=meta.get("display") or {}
+    # The loader executes in a dialog fragment: stage widget values so they
+    # can be assigned BEFORE any parent widgets render on the full rerun.
     if isinstance(display,dict):
-        for field,widget in (("daynight","ws_daynight"),
-                             ("opacity","ws_map_opacity"),
-                             ("mode","ws_display_mode"),
-                             ("active_level","ws_map_level")):
-            value=display.get(field)
-            if value is not None:
-                st.session_state[widget]=value
-                st.session_state["_persist_"+widget]=value
+        st.session_state["_pending_cdproj_display"]=display
     viewport=display.get("viewport") if isinstance(display,dict) else None
     if not isinstance(viewport,dict) or not all(k in viewport for k in ("lat","lng","zoom")):
         viewport={"lat":fresh["config"].lat,"lng":fresh["config"].lon,"zoom":8}
@@ -1841,7 +1836,17 @@ def _select_comparison_levels(select_all):
 
 
 def render_workspace():
-    """One persistent map; four task-oriented sections in the 400px sidebar."""
+    """Persistent ATM workstation map with contextual engineering tools."""
+    pending=st.session_state.pop("_pending_cdproj_display",None)
+    if isinstance(pending,dict):
+        for field,widget in (("daynight","ws_daynight"),
+                             ("opacity","ws_map_opacity"),
+                             ("mode","ws_display_mode"),
+                             ("active_level","ws_map_level")):
+            value=pending.get(field)
+            if value is not None:
+                st.session_state[widget]=value
+                st.session_state["_persist_"+widget]=value
     previous=st.session_state.get("result")
     if previous is not None and "ws_radar" not in st.session_state:
         _config_state_from_project(previous["config"])
