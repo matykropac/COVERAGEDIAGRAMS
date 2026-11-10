@@ -1827,279 +1827,355 @@ def render_workspace():
     _restore_sidebar_preferences()
 
     next_section=st.session_state.pop("ws_next_section",None)
-    if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE"):
+    if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE","TERÉN","EXPORT"):
         st.session_state["ws_section"]=next_section
 
+    from workspace_theme import COMMON_CSS, header
+    # Palette and logo are shared with the VIEWER; engineering controls stay intact.
     st.markdown(STYLES,unsafe_allow_html=True)
-    st.markdown("""
-    <style>
-      [data-testid="stSidebar"]{width:400px!important;min-width:400px!important;
-          background:#ffffff!important;border-right:1px solid #dbe4ee!important}
-      [data-testid="stSidebar"] > div:first-child{width:400px!important}
-      [data-testid="stSidebarUserContent"]{padding:16px 18px!important}
-      [data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.66rem!important}
-      [data-testid="stSidebar"] [data-testid="stButton"]>button{
-          min-height:38px!important;font-size:12px!important}
-      [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p{font-size:12px!important}
-      [data-testid="stSidebar"] [data-testid="stCaptionContainer"]{font-size:11px!important}
-      [data-testid="stSidebar"] div[data-baseweb="select"]>div{min-height:36px!important}
-      .cd-nav-title{color:#627c97;font:750 11px system-ui;letter-spacing:.10em;
-          margin:19px 0 11px;border-bottom:1px solid #e4eaf1;padding-bottom:9px}
-      .cd-sidebar-brand{color:#1d3c61;font:800 16px system-ui;line-height:1.3;
-          letter-spacing:.025em;padding:6px 0 15px}
-      .cd-sidebar-brand small{display:block;font-size:10px;letter-spacing:.14em;
-          color:#7c90a4;font-weight:650}
-      [data-testid="stMainBlockContainer"],.block-container{
-          padding:9px 12px 14px!important}
-      [data-testid="stSidebar"] [data-testid="stSegmentedControl"]{
-          width:100%!important}
-      @media(max-width:700px){
-        [data-testid="stSidebar"]{width:400px!important;min-width:400px!important}
-      }
-    </style>
-    """, unsafe_allow_html=True)
+    st.markdown(COMMON_CSS,unsafe_allow_html=True)
+    result=st.session_state.get("result")
+    cfg_for_header=result["config"] if result is not None else _cfg()
+    project_name=st.session_state.get("ws_airport_code") or cfg_for_header.radar_mode
+    subtitle=("COVERAGE READY" if result is not None else "NO CALCULATION")
+    st.markdown(header("EDITOR",str(project_name),subtitle),unsafe_allow_html=True)
+    st.markdown("""<style>
+    [data-testid="stSidebar"]{width:448px!important;min-width:448px!important;
+      background:#10243b!important;border-right:1px solid #35506c!important}
+    [data-testid="stSidebar"]>div:first-child{width:448px!important}
+    [data-testid="stSidebarUserContent"]{padding:12px 10px!important;background:#10243b!important}
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.36rem!important}
+    [data-testid="stSidebar"] [data-testid="stButton"]>button{
+       min-height:35px!important;font-size:11px!important}
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"]{font-size:10px!important}
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p{font-size:11px!important}
+    [data-testid="stSidebar"] div[data-baseweb="select"]>div{min-height:32px!important}
+    [data-testid="stSidebar"] .cd-nav-title{font:750 10px system-ui;letter-spacing:.11em;
+       color:#91cce8!important;margin:13px 0 7px;border-bottom:1px solid #36516c;padding-bottom:6px}
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+    [data-testid="stSidebar"] label{color:#c2d8ea!important}
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]{gap:.35rem!important}
+    [data-testid="stSidebar"] [data-testid="stExpander"]{background:#142c45!important}
+    .cd-rail-marker{font:750 9px system-ui;letter-spacing:.15em;color:#70b8d9;
+       text-align:center;margin:5px 0 10px}
+    @media(max-width:700px){[data-testid="stSidebar"]{width:100vw!important;min-width:0!important}
+      [data-testid="stSidebar"]>div:first-child{width:100%!important}}
+    </style>""",unsafe_allow_html=True)
 
     result=st.session_state.get("result")
     config=_cfg()
     with st.sidebar:
-        st.markdown(
-            '<div class="cd-sidebar-brand"><small>RADAR COVERAGE WORKSPACE</small>'
-            'COVERAGEDIAGRAMS</div>',unsafe_allow_html=True)
-
-        st.markdown(
-            '<a href="?viewer=1" target="_blank" rel="noopener" '
-            'style="display:block;text-align:center;background:#173d65;color:#fff;'
-            'padding:12px;border-radius:7px;font-weight:750;text-decoration:none;'
-            'margin-bottom:8px">↗ VIEWER · KML/KMZ · 3D</a>',
-            unsafe_allow_html=True)
-        if result is not None:
-            if st.button("↗ OTEVŘÍT VIEWER S VÝSLEDKEM",
-                         key="ws_open_viewer_snapshot",use_container_width=True,
-                         help="Přenese vypočtené hladiny i DEM do nového okna bez dalšího uploadu."):
-                try:
-                    from viewer_bridge import publish
-                    chosen=st.session_state.get("ws_levels",[])
-                    allowed=set(core.flight_levels_for(result["config"].radar_mode))
-                    chosen=[int(x) for x in chosen if int(x) in allowed]
-                    token=publish(result,chosen,st.session_state.get("obstacles",[]),
-                                  source_ui=_airport_project_metadata())
-                    st.session_state["ws_viewer_handoff"]=token
-                except Exception as exc:
-                    st.error(f"VIEWER nelze připravit: {exc}")
-            token=st.session_state.get("ws_viewer_handoff")
-            if token:
-                st.markdown(
-                    '<a href="?viewer=1&amp;snapshot='+token+'" target="_blank" '
-                    'rel="noopener" style="display:block;text-align:center;'
-                    'border:1px solid #2865d9;background:#eef4ff;color:#174d9a;'
-                    'padding:9px;border-radius:7px;text-decoration:none;font-weight:700">'
-                    'OTEVŘÍT PŘENESENÝ PROJEKT ↗</a>',unsafe_allow_html=True)
-        if st.button("◫ NAČÍST PROJEKT · CDPROJ",
-                     key="ws_sidebar_project_load",use_container_width=True,
-                     help="Otevře uložený projekt včetně výpočtu, DEM a radarového krytí."):
-            project_load_dialog()
-        section=st.segmented_control(
-            "Pracovní sekce",
-            options=["MAPA","PŘEKÁŽKY","RADAR","POZICE"],
-            default="MAPA",key="ws_section",selection_mode="single",
-            width="stretch",label_visibility="collapsed")
-        if section is None:
-            section="MAPA"
-        if section=="MAPA":
-            st.markdown('<div class="cd-nav-title">VZHLED MAPY</div>',unsafe_allow_html=True)
-            st.segmented_control("Režim",["DAY","NIGHT"],default="DAY",
-                                 key="ws_daynight",width="stretch",
-                                 label_visibility="collapsed")
-            st.markdown('<div class="cd-nav-title">VRSTVY KRYTÍ</div>',unsafe_allow_html=True)
-            if result is None:
-                st.caption("Po výpočtu zde budeš přepínat jednotlivé letové hladiny.")
-            else:
-                supported=tuple(core.flight_levels_for(result["config"].radar_mode))
-                selected=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[])
-                                    if ft in supported))
-                if result["config"].radar_mode=="PAR-NG":
-                    selected=list(supported)
-                    st.radio("Výška PAR nad terénem / mořem",("AGL","AMSL"),
-                             horizontal=True,key="ws_par_level_reference",
-                             help="AGL = nad místním terénem. AMSL = nad hladinou moře.")
-                elif not selected:
-                    selected=list(supported)
-                st.toggle("Zobrazit radarové krytí",value=True,key="ws_show_coverage")
-                st.segmented_control(
-                    "Zobrazení hladin",["Jedna hladina","Porovnání","Cíl"],
-                    default="Jedna hladina",key="ws_display_mode",width="stretch",
-                    label_visibility="collapsed")
-                mode=st.session_state.get("ws_display_mode","Jedna hladina")
-                if mode=="Jedna hladina":
-                    previous_level=st.session_state.get("ws_map_level")
-                    if previous_level not in selected:
-                        st.session_state["ws_map_level"]=selected[0]
-                    previous_button, level_choice, next_button=st.columns(
-                        [0.65,2.7,0.65],gap="small",vertical_alignment="bottom")
-                    with previous_button:
-                        st.button("◀",key="ws_level_prev",help="Nižší letová hladina",
-                                  use_container_width=True,on_click=_step_flight_level,
-                                  args=(-1,))
-                    with level_choice:
-                        st.selectbox("Aktivní výška [ft]",selected,
-                                     key="ws_map_level",format_func=lambda ft:
-                                     f"{ft:,} ft {st.session_state.get('ws_par_level_reference','AGL') if result['config'].radar_mode=='PAR-NG' else 'AMSL'}")
-                    with next_button:
-                        st.button("▶",key="ws_level_next",help="Vyšší letová hladina",
-                                  use_container_width=True,on_click=_step_flight_level,
-                                  args=(1,))
-                    st.caption(f"Zvolená hladina · {selected.index(st.session_state['ws_map_level'])+1}"
-                               f" z {len(selected)}")
-                elif mode=="Porovnání":
-                    current=st.session_state.get("ws_comparison")
-                    if current is not None:
-                        valid=[ft for ft in current if ft in selected]
-                        if valid!=current:
-                            st.session_state["ws_comparison"]=valid
-                    st.multiselect("Hladiny současně v mapě",selected,
-                                   default=selected[:3],key="ws_comparison",
-                                   format_func=core.level_label)
-                    a,b=st.columns(2,gap="small")
-                    with a:
-                        st.button("Všechny",key="ws_levels_all",use_container_width=True,
-                                  on_click=_select_comparison_levels,args=(True,))
-                    with b:
-                        st.button("Žádná",key="ws_levels_none",use_container_width=True,
-                                  on_click=_select_comparison_levels,args=(False,))
-                    count=len(st.session_state.get("ws_comparison",[]))
-                    st.caption(f"V mapě je vybráno {count} z {len(selected)} hladin.")
-                else:
-                    st.caption("Zobrazuje se pokrytí pro cílovou výšku z nastavení radaru.")
-                if st.session_state.get("ws_previous_result") is not None:
-                    st.toggle("BEFORE / AFTER · původní krytí přerušovaně",
-                              value=True,key="ws_compare_previous")
-                with st.expander("Průhlednost krytí",expanded=False):
-                    st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity",
-                              label_visibility="collapsed")
-            st.markdown('<div class="cd-nav-title">LETECKÁ MAPA A PROVOZ</div>',unsafe_allow_html=True)
-            enabled=st.toggle("OpenAIP · letecká mapa",value=True,key="ws_openaip")
-            if enabled:
-                from aviation_basemap import configured_key
-                if not configured_key():
-                    st.caption("OpenAIP vyžaduje OPENAIP_API_KEY v nastavení aplikace.")
-            st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
-            st.markdown('<div class="cd-nav-title">EXPORTNÍ CENTRUM</div>',
-                        unsafe_allow_html=True)
+        rail, panel = st.columns([1,5],gap="small")
+        with rail:
+            st.markdown('<div class="cd-rail-marker">TOOLS</div>',unsafe_allow_html=True)
+            for name,icon_name,tip in (
+                ("MAPA",":material/map:","Mapa a krytí"),
+                ("RADAR",":material/radar:","Radar / výpočet"),
+                ("TERÉN",":material/terrain:","Terén / DEM"),
+                ("PŘEKÁŽKY",":material/layers:","Vrstvy a překážky"),
+                ("POZICE",":material/flight:","Aviation / ICAO"),
+                ("EXPORT",":material/file_download:","Export Studio")):
+                if st.button("",icon=icon_name,help=tip,key="cd_rail_"+name,
+                             use_container_width=True,type="primary" if
+                             st.session_state.get("ws_section","MAPA")==name else "secondary"):
+                    st.session_state["ws_section"]=name
+                    st.rerun()
+                st.markdown('<div class="cd-rail-label">'+
+                            {"MAPA":"MAPA","RADAR":"RADAR","TERÉN":"DEM",
+                             "PŘEKÁŽKY":"VRSTVY","POZICE":"AIP","EXPORT":"EXPORT"}[name]+
+                            '</div>',unsafe_allow_html=True)
+        with panel:
+            st.markdown('<div class="cd-panel-title">'+
+                {"MAPA":"MAPA / ANALÝZA","RADAR":"RADAR / ENGINE",
+                 "TERÉN":"TERÉN / 3D","PŘEKÁŽKY":"VRSTVY / OBSTACLES",
+                 "POZICE":"AVIATION / GEODATA","EXPORT":"EXPORT STUDIO"}.get(
+                    st.session_state.get("ws_section","MAPA"),"MAPA")+
+                '</div>',unsafe_allow_html=True)
+            st.markdown(
+                '<a href="?viewer=1" target="_blank" rel="noopener" '
+                'style="display:block;text-align:center;background:#245879;color:#e9f8ff;'
+                'padding:9px;border:1px solid #63b9e0;border-radius:7px;font-weight:750;'
+                'text-decoration:none;margin-bottom:5px">↗ VIEWER · 2D / 3D</a>',
+                unsafe_allow_html=True)
             if result is not None:
-                st.caption("Původní výstupy: PDF report 600 DPI, PNG po hladinách, "
-                           "QuickReport, zákaznický ZIP, GeoTIFF a další.")
-                if st.button("⇩ PDF 600 DPI / PNG / QUICKREPORT / ZIP",
-                             key="ws_command_export",type="primary",
-                             use_container_width=True):
-                    exports_dialog()
-            else:
-                st.caption("PDF report a PNG radarového krytí vyžadují vypočtená data. "
-                           "Samostatné geodatové vrstvy můžeš exportovat ihned.")
-            if st.button("⇩ KML / KMZ / GEOJSON · MAPOVÉ VRSTVY",
-                         key="ws_map_export_layers",use_container_width=True,
-                         help="Vrstvy RWY, CTR/TMA, překážek a okolních geodat bez výpočtu."):
-                position_layers_export_dialog()
-
-        elif section=="RADAR":
-            st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
-            st.caption("Kliknutím do mapy umístíš radar. Po výběru se vrátíš do sekce MAPA.")
-            st.markdown(f"**LAT** {config.lat:.6f}° &nbsp; **LON** {config.lon:.6f}°",
-                        unsafe_allow_html=True)
-            if st.button("⚙ Nastavení radaru",key="ws_command_radar",
-                         use_container_width=True):
-                radar_dialog()
-            st.markdown('<div class="cd-nav-title">VÝPOČET KRYTÍ</div>',unsafe_allow_html=True)
-            if st.button("▶ SPOČÍTAT KRYTÍ",type="primary",
-                         use_container_width=True,key="ws_calculate_main"):
-                _calculate_coverage()
-            if result is not None:
-                stale=(result.get("obstacles_signature")!=obstacle_signature(
-                    st.session_state.get("obstacles",[])) or config!=result["config"] or
-                    (result["config"].radar_mode=="PAR-NG" and
-                     _par_model_metadata()!=_par_pattern_metadata(result.get("antenna_pattern"))))
-                st.caption("Výsledek je potřeba přepočítat." if stale
-                           else "Výpočet je aktuální.")
-                if st.button("↻ PŘEPOČÍTAT Z ULOŽENÉHO TERÉNU",
-                             use_container_width=True,key="ws_recalculate_cached",
-                             help="Rychle zapracuje přidané, změněné či odstraněné překážky bez dalšího stažení DEM."):
+                if st.button("↗ VIEWER S VÝSLEDKEM",
+                             key="ws_open_viewer_snapshot",use_container_width=True,
+                             help="Přenese vypočtené hladiny a DEM do nového okna."):
                     try:
-                        _recalculate_cached_terrain()
-                        st.rerun()
+                        from viewer_bridge import publish
+                        chosen=st.session_state.get("ws_levels",[])
+                        allowed=set(core.flight_levels_for(result["config"].radar_mode))
+                        chosen=[int(x) for x in chosen if int(x) in allowed]
+                        token=publish(result,chosen,st.session_state.get("obstacles",[]),
+                                      source_ui=_airport_project_metadata())
+                        st.session_state["ws_viewer_handoff"]=token
                     except Exception as exc:
-                        st.error(f"Přepočet z uloženého DEM selhal; předchozí výsledek zůstal zachován: {exc}")
-            st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
-            if result is not None:
-                if st.button("⇩ PŘIPRAVIT PRACOVNÍ PROJEKT · .cdproj",
-                             use_container_width=True,key="ws_prepare_snapshot",
-                             help="Snapshot DEM a výpočtu připravit až na vyžádání."):
+                        st.error(f"VIEWER nelze připravit: {exc}")
+                token=st.session_state.get("ws_viewer_handoff")
+                if token:
+                    st.markdown(
+                        '<a href="?viewer=1&amp;snapshot='+token+'" target="_blank" '
+                        'rel="noopener" style="display:block;text-align:center;'
+                        'border:1px solid #478eae;background:#193d57;color:#c9f3ff;'
+                        'padding:8px;border-radius:7px;text-decoration:none;font-weight:700">'
+                        '↗ OTEVŘÍT VÝSLEDEK</a>',unsafe_allow_html=True)
+            first_btn,second_btn=st.columns(2,gap="small")
+            with first_btn:
+                if st.button("OPEN · CDPROJ",key="ws_sidebar_project_load",
+                             use_container_width=True):
+                    project_load_dialog()
+            with second_btn:
+                if result is not None and st.button("SAVE · CDPROJ",
+                                                     key="ws_top_prepare_project",
+                                                     use_container_width=True):
                     try:
-                        st.session_state["ws_snapshot_bytes"]=save_project(
+                        st.session_state["ws_top_project_bytes"]=save_project(
                             result,levels=st.session_state.get("ws_levels",[]),
                             obstacles=st.session_state.get("obstacles",[]),
-                            source_ui=_airport_project_metadata())
-                        st.session_state["ws_snapshot_key"]=(
-                            result.get("completed_at"),
-                            obstacle_signature(st.session_state.get("obstacles",[])),
-                            tuple(st.session_state.get("ws_levels",[])),
-                            st.session_state.get("ws_airport_code",""),
-                            tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
-                            st.session_state.get("ws_airspace_source_time",""),
-                            tuple(sorted(_par_model_metadata().items())),
-                            st.session_state.get("ws_par_level_reference","AGL"),
-                        )
+                            source_ui=_airport_project_metadata(),
+                            display={"mode":st.session_state.get("ws_display_mode","Jedna hladina"),
+                                     "opacity":st.session_state.get("ws_map_opacity",.42),
+                                     "daynight":st.session_state.get("ws_daynight","DAY"),
+                                     "active_level":st.session_state.get("ws_map_level"),
+                                     "viewport":st.session_state.get("ws_viewport"),
+                                     "section":st.session_state.get("ws_section","MAPA")})
                     except Exception as exc:
-                        st.error(f"Projekt nelze uložit: {exc}")
-                snapshot_key=(
-                    result.get("completed_at"),
-                    obstacle_signature(st.session_state.get("obstacles",[])),
-                    tuple(st.session_state.get("ws_levels",[])),
-                    st.session_state.get("ws_airport_code",""),
-                    tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
-                    st.session_state.get("ws_airspace_source_time",""),
-                    tuple(sorted(_par_model_metadata().items())),
-                    st.session_state.get("ws_par_level_reference","AGL"),
-                )
-                if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
-                    st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
-                        data=st.session_state["ws_snapshot_bytes"],
-                        file_name="COVERAGEDIAGRAMS_working.cdproj",
-                        mime="application/octet-stream",use_container_width=True,
-                        key="ws_save_working_project",
-                        help="Přenosný snapshot včetně DEM, nezávislý na dočasné cache.")
+                        st.error(f"Projekt nelze připravit: {exc}")
+            if st.session_state.get("ws_top_project_bytes"):
+                st.download_button("⇩ STÁHNOUT CDPROJ",
+                    data=st.session_state["ws_top_project_bytes"],
+                    file_name="COVERAGEDIAGRAMS_project.cdproj",
+                    mime="application/octet-stream",use_container_width=True,
+                    key="ws_top_cdproj_download")
+            section=st.session_state.get("ws_section","MAPA")
+            if section=="MAPA":
+                st.markdown('<div class="cd-nav-title">VZHLED MAPY</div>',unsafe_allow_html=True)
+                st.segmented_control("Režim",["DAY","NIGHT"],default="NIGHT",
+                                     key="ws_daynight",width="stretch",
+                                     label_visibility="collapsed")
+                st.markdown('<div class="cd-nav-title">VRSTVY KRYTÍ</div>',unsafe_allow_html=True)
+                if result is None:
+                    st.caption("Po výpočtu zde budeš přepínat jednotlivé letové hladiny.")
+                else:
+                    supported=tuple(core.flight_levels_for(result["config"].radar_mode))
+                    selected=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[])
+                                        if ft in supported))
+                    if result["config"].radar_mode=="PAR-NG":
+                        selected=list(supported)
+                        st.radio("Výška PAR nad terénem / mořem",("AGL","AMSL"),
+                                 horizontal=True,key="ws_par_level_reference",
+                                 help="AGL = nad místním terénem. AMSL = nad hladinou moře.")
+                    elif not selected:
+                        selected=list(supported)
+                    st.toggle("Zobrazit radarové krytí",value=True,key="ws_show_coverage")
+                    st.segmented_control(
+                        "Zobrazení hladin",["Jedna hladina","Porovnání","Cíl"],
+                        default="Jedna hladina",key="ws_display_mode",width="stretch",
+                        label_visibility="collapsed")
+                    mode=st.session_state.get("ws_display_mode","Jedna hladina")
+                    if mode=="Jedna hladina":
+                        previous_level=st.session_state.get("ws_map_level")
+                        if previous_level not in selected:
+                            st.session_state["ws_map_level"]=selected[0]
+                        previous_button, level_choice, next_button=st.columns(
+                            [0.65,2.7,0.65],gap="small",vertical_alignment="bottom")
+                        with previous_button:
+                            st.button("◀",key="ws_level_prev",help="Nižší letová hladina",
+                                      use_container_width=True,on_click=_step_flight_level,
+                                      args=(-1,))
+                        with level_choice:
+                            st.selectbox("Aktivní výška [ft]",selected,
+                                         key="ws_map_level",format_func=lambda ft:
+                                         f"{ft:,} ft {st.session_state.get('ws_par_level_reference','AGL') if result['config'].radar_mode=='PAR-NG' else 'AMSL'}")
+                        with next_button:
+                            st.button("▶",key="ws_level_next",help="Vyšší letová hladina",
+                                      use_container_width=True,on_click=_step_flight_level,
+                                      args=(1,))
+                        st.caption(f"Zvolená hladina · {selected.index(st.session_state['ws_map_level'])+1}"
+                                   f" z {len(selected)}")
+                    elif mode=="Porovnání":
+                        current=st.session_state.get("ws_comparison")
+                        if current is not None:
+                            valid=[ft for ft in current if ft in selected]
+                            if valid!=current:
+                                st.session_state["ws_comparison"]=valid
+                        st.multiselect("Hladiny současně v mapě",selected,
+                                       default=selected[:3],key="ws_comparison",
+                                       format_func=core.level_label)
+                        a,b=st.columns(2,gap="small")
+                        with a:
+                            st.button("Všechny",key="ws_levels_all",use_container_width=True,
+                                      on_click=_select_comparison_levels,args=(True,))
+                        with b:
+                            st.button("Žádná",key="ws_levels_none",use_container_width=True,
+                                      on_click=_select_comparison_levels,args=(False,))
+                        count=len(st.session_state.get("ws_comparison",[]))
+                        st.caption(f"V mapě je vybráno {count} z {len(selected)} hladin.")
+                    else:
+                        st.caption("Zobrazuje se pokrytí pro cílovou výšku z nastavení radaru.")
+                    if st.session_state.get("ws_previous_result") is not None:
+                        st.toggle("BEFORE / AFTER · původní krytí přerušovaně",
+                                  value=True,key="ws_compare_previous")
+                    with st.expander("Průhlednost krytí",expanded=False):
+                        st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity",
+                                  label_visibility="collapsed")
+                st.markdown('<div class="cd-nav-title">LETECKÁ MAPA A PROVOZ</div>',unsafe_allow_html=True)
+                enabled=st.toggle("OpenAIP · letecká mapa",value=True,key="ws_openaip")
+                if enabled:
+                    from aviation_basemap import configured_key
+                    if not configured_key():
+                        st.caption("OpenAIP vyžaduje OPENAIP_API_KEY v nastavení aplikace.")
+                st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
+                st.markdown('<div class="cd-nav-title">EXPORTNÍ CENTRUM</div>',
+                            unsafe_allow_html=True)
+                if result is not None:
+                    st.caption("Původní výstupy: PDF report 600 DPI, PNG po hladinách, "
+                               "QuickReport, zákaznický ZIP, GeoTIFF a další.")
+                    if st.button("⇩ PDF 600 DPI / PNG / QUICKREPORT / ZIP",
+                                 key="ws_command_export",type="primary",
+                                 use_container_width=True):
+                        exports_dialog()
+                else:
+                    st.caption("PDF report a PNG radarového krytí vyžadují vypočtená data. "
+                               "Samostatné geodatové vrstvy můžeš exportovat ihned.")
+                if st.button("⇩ KML / KMZ / GEOJSON · MAPOVÉ VRSTVY",
+                             key="ws_map_export_layers",use_container_width=True,
+                             help="Vrstvy RWY, CTR/TMA, překážek a okolních geodat bez výpočtu."):
+                    position_layers_export_dialog()
+
+            elif section=="TERÉN":
+                st.markdown('<div class="cd-nav-title">DIGITÁLNÍ MODEL TERÉNU</div>',
+                            unsafe_allow_html=True)
+                st.caption("Terén je společný pro radarový výpočet a 3D vizualizaci.")
+                if st.button("⚙ ZDROJ DEM / OPENTOPOGRAPHY",
+                             key="ws_terrain_configure",use_container_width=True):
+                    radar_dialog()
+                st.caption("3D hypsometrie a prostorové zobrazení se otevírá ve VIEWERU.")
+                if result is not None:
+                    terrain_values=np.asarray(result["terrain"],dtype=float)
+                    finite=terrain_values[np.isfinite(terrain_values)]
+                    if finite.size:
+                        st.metric("Min / max terén [m AMSL]",
+                                  f"{np.min(finite):.0f} / {np.max(finite):.0f}")
+                        st.caption(f"{finite.size:,} platných výškových vzorků")
+                    st.caption("Klikni nahoře na VIEWER S VÝSLEDKEM pro převzetí DEM.")
+                else:
+                    st.info("V sekci RADAR nastav stanoviště a zdroj terénu.")
+            elif section=="EXPORT":
+                st.markdown('<div class="cd-nav-title">ZÁKAZNICKÉ VÝSTUPY</div>',
+                            unsafe_allow_html=True)
+                if result is not None:
+                    if st.button("⇩ PDF / PNG 600 DPI / ZIP",key="ws_export_studio",
+                                 type="primary",use_container_width=True):
+                        exports_dialog()
+                    st.caption("Letové hladiny, zákaznické PDF a původní ZIP presety.")
+                else:
+                    st.caption("PDF krytí vyžaduje předchozí výpočet.")
+                if st.button("⇩ KML / KMZ / GEOJSON",key="ws_export_map_layers",
+                             use_container_width=True):
+                    position_layers_export_dialog()
+                st.caption("Mapové vrstvy lze exportovat i bez radarového výpočtu.")
+            elif section=="RADAR":
+                st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
+                st.caption("Kliknutím do mapy umístíš radar. Po výběru se vrátíš do sekce MAPA.")
+                st.markdown(f"**LAT** {config.lat:.6f}° &nbsp; **LON** {config.lon:.6f}°",
+                            unsafe_allow_html=True)
+                if st.button("⚙ Nastavení radaru",key="ws_command_radar",
+                             use_container_width=True):
+                    radar_dialog()
+                st.markdown('<div class="cd-nav-title">VÝPOČET KRYTÍ</div>',unsafe_allow_html=True)
+                if st.button("▶ SPOČÍTAT KRYTÍ",type="primary",
+                             use_container_width=True,key="ws_calculate_main"):
+                    _calculate_coverage()
+                if result is not None:
+                    stale=(result.get("obstacles_signature")!=obstacle_signature(
+                        st.session_state.get("obstacles",[])) or config!=result["config"] or
+                        (result["config"].radar_mode=="PAR-NG" and
+                         _par_model_metadata()!=_par_pattern_metadata(result.get("antenna_pattern"))))
+                    st.caption("Výsledek je potřeba přepočítat." if stale
+                               else "Výpočet je aktuální.")
+                    if st.button("↻ PŘEPOČÍTAT Z ULOŽENÉHO TERÉNU",
+                                 use_container_width=True,key="ws_recalculate_cached",
+                                 help="Rychle zapracuje přidané, změněné či odstraněné překážky bez dalšího stažení DEM."):
+                        try:
+                            _recalculate_cached_terrain()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Přepočet z uloženého DEM selhal; předchozí výsledek zůstal zachován: {exc}")
+                st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
+                if result is not None:
+                    if st.button("⇩ PŘIPRAVIT PRACOVNÍ PROJEKT · .cdproj",
+                                 use_container_width=True,key="ws_prepare_snapshot",
+                                 help="Snapshot DEM a výpočtu připravit až na vyžádání."):
+                        try:
+                            st.session_state["ws_snapshot_bytes"]=save_project(
+                                result,levels=st.session_state.get("ws_levels",[]),
+                                obstacles=st.session_state.get("obstacles",[]),
+                                source_ui=_airport_project_metadata())
+                            st.session_state["ws_snapshot_key"]=(
+                                result.get("completed_at"),
+                                obstacle_signature(st.session_state.get("obstacles",[])),
+                                tuple(st.session_state.get("ws_levels",[])),
+                                st.session_state.get("ws_airport_code",""),
+                                tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
+                                st.session_state.get("ws_airspace_source_time",""),
+                                tuple(sorted(_par_model_metadata().items())),
+                                st.session_state.get("ws_par_level_reference","AGL"),
+                            )
+                        except Exception as exc:
+                            st.error(f"Projekt nelze uložit: {exc}")
+                    snapshot_key=(
+                        result.get("completed_at"),
+                        obstacle_signature(st.session_state.get("obstacles",[])),
+                        tuple(st.session_state.get("ws_levels",[])),
+                        st.session_state.get("ws_airport_code",""),
+                        tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
+                        st.session_state.get("ws_airspace_source_time",""),
+                        tuple(sorted(_par_model_metadata().items())),
+                        st.session_state.get("ws_par_level_reference","AGL"),
+                    )
+                    if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
+                        st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
+                            data=st.session_state["ws_snapshot_bytes"],
+                            file_name="COVERAGEDIAGRAMS_working.cdproj",
+                            mime="application/octet-stream",use_container_width=True,
+                            key="ws_save_working_project",
+                            help="Přenosný snapshot včetně DEM, nezávislý na dočasné cache.")
  
-        elif section=="POZICE":
-            st.markdown('<div class="cd-nav-title">POZICE / AIRPORT & AIRSPACE</div>',
-                        unsafe_allow_html=True)
-            st.caption("Práce s polohou a vektorovými vrstvami funguje bez radarového výpočtu.")
-            _airport_controls()
-            _airspace_controls()
-            _position_nearby_controls()
+            elif section=="POZICE":
+                st.markdown('<div class="cd-nav-title">POZICE / AIRPORT & AIRSPACE</div>',
+                            unsafe_allow_html=True)
+                st.caption("Práce s polohou a vektorovými vrstvami funguje bez radarového výpočtu.")
+                _airport_controls()
+                _airspace_controls()
+                _position_nearby_controls()
 
-        else:  # PŘEKÁŽKY
-            st.markdown('<div class="cd-nav-title">ZAKRESLENÍ PŘEKÁŽEK</div>',unsafe_allow_html=True)
-            st.caption("Na hlavní mapě použij nástroj polygon. Po dokončení zadáš výšku a název.")
-            total_catalog=len(st.session_state.get("ws_imported_catalog",[]))
-            st.metric("Výpočetní překážky",len(st.session_state.get("obstacles",[])))
-            st.caption(f"Načtené geodatové objekty v editoru: {total_catalog:,} "
-                       "(včetně neznámých výšek).")
-            if st.button("⬡ Geodata / okolní překážky",key="ws_command_geodata",
-                         use_container_width=True):
-                layers_dialog()
-            if st.button("▧ Upravit / odstranit překážky",key="ws_command_obstacles",
-                         use_container_width=True):
-                obstacles_dialog()
-            st.caption("Změny překážek vyžadují nový výpočet krytí. "
-                       "Přejdi do sekce RADAR a klikni na SPOČÍTAT KRYTÍ.")
+            else:  # PŘEKÁŽKY
+                st.markdown('<div class="cd-nav-title">ZAKRESLENÍ PŘEKÁŽEK</div>',unsafe_allow_html=True)
+                st.caption("Na hlavní mapě použij nástroj polygon. Po dokončení zadáš výšku a název.")
+                total_catalog=len(st.session_state.get("ws_imported_catalog",[]))
+                st.metric("Výpočetní překážky",len(st.session_state.get("obstacles",[])))
+                st.caption(f"Načtené geodatové objekty v editoru: {total_catalog:,} "
+                           "(včetně neznámých výšek).")
+                if st.button("⬡ Geodata / okolní překážky",key="ws_command_geodata",
+                             use_container_width=True):
+                    layers_dialog()
+                if st.button("▧ Upravit / odstranit překážky",key="ws_command_obstacles",
+                             use_container_width=True):
+                    obstacles_dialog()
+                st.caption("Změny překážek vyžadují nový výpočet krytí. "
+                           "Přejdi do sekce RADAR a klikni na SPOČÍTAT KRYTÍ.")
 
-        # Legacy controls remain available without mixing export tools into obstacles.
-        with st.expander("Pokročilé",expanded=False):
-            st.toggle("Původní Folium mapa (záloha)",value=False,
-                      key="ws_legacy_map",help="Pro kontrolu starého mapového zobrazení.")
-            if st.button("Klasické UI",key="ws_legacy",use_container_width=True):
-                st.query_params["classic"]="1"
-                st.rerun()
+            # Legacy controls remain available without mixing export tools into obstacles.
+            with st.expander("Pokročilé",expanded=False):
+                st.toggle("Původní Folium mapa (záloha)",value=False,
+                          key="ws_legacy_map",help="Pro kontrolu starého mapového zobrazení.")
+                if st.button("Klasické UI",key="ws_legacy",use_container_width=True):
+                    st.query_params["classic"]="1"
+                    st.rerun()
 
-    if st.session_state.get("ws_daynight","DAY")=="NIGHT":
+    if st.session_state.get("ws_daynight","NIGHT")=="NIGHT":
         st.markdown("""
         <style>
         [data-testid="stAppViewContainer"]{background:#0b131e!important;color:#dce8f4!important}
