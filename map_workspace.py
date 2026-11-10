@@ -305,7 +305,7 @@ def position_layers_export_dialog():
         st.markdown("**RADAROVÉ KRYTÍ · VŠECHNY LETOVÉ HLADINY**")
         st.caption("Tento export je jiný než mapová geodata výše: obsahuje jednotlivé "
                    "vypočtené hladiny, cílové krytí, překážky a kružnice 20–260 NM.")
-        possible=tuple(core.flight_levels_for(result["config"].radar_mode))
+        possible=_available_levels(result["config"].radar_mode)
         levels=st.multiselect("Hladiny krytí pro KML [ft]",
             options=possible,
             default=[x for x in st.session_state.get("ws_levels",[]) if x in possible],
@@ -441,6 +441,22 @@ def _airport_controls():
             st.session_state["ws_bearing"]=round(az,2)
             st.info(f"Osa PAR nastavena na {az:.2f}° TRUE směrem k přibližovacímu koridoru (5 NM). "
                     "Pokud se stanoviště liší, ověř mechanickou orientaci systému.")
+
+
+def _available_levels(mode):
+    """All selectable levels, including custom PAR altitudes saved in session."""
+    preset=tuple(core.flight_levels_for(mode))
+    if mode != "PAR-NG":
+        return preset
+    custom=[int(x) for x in st.session_state.get("ws_levels",[])
+            if core.valid_flight_level(mode,x)]
+    return tuple(sorted(set(preset).union(custom)))
+
+
+def _chosen_levels(mode):
+    """Single source of truth for map, exports and VIEWER handoff."""
+    values=st.session_state.get("ws_levels",[3000,10000])
+    return sorted(set(int(x) for x in values if core.valid_flight_level(mode,x)))
 
 
 def _cfg():
@@ -753,10 +769,39 @@ def radar_dialog():
             st.number_input("Výška cíle [m]",-500.,30000.,1000.,key="ws_target")
         with b:
             st.selectbox("Reference cíle",["AMSL","AGL"],key="ws_reference")
-        choices=core.flight_levels_for(st.session_state.get("ws_radar","RL-2000"))
+        mode=st.session_state.get("ws_radar","RL-2000")
+        if mode=="PAR-NG":
+            st.markdown("**VLASTNÍ LETOVÉ HLADINY · PAR**")
+            st.caption("Celé hodnoty 1–66 000 ft. Příklady: 300, 400, 900, 1500. "
+                       "Vlastní hladiny fungují v mapě, KML, PDF, ZIP i CDPROJ.")
+            a,b=st.columns([3,1],gap="small",vertical_alignment="bottom")
+            with a:
+                raw=st.text_input("Přidat hladiny [ft] · čárky, mezery nebo středníky",
+                                  placeholder="300, 400, 900, 1500",
+                                  key="ws_par_custom_input")
+            with b:
+                if st.button("PŘIDAT",key="ws_par_add_levels",
+                             use_container_width=True):
+                    try:
+                        additions=core.parse_par_flight_levels(raw)
+                        if not additions:
+                            raise ValueError("Zadej alespoň jednu výšku.")
+                        current=_chosen_levels("PAR-NG")
+                        updated=sorted(set(current).union(additions))
+                        if len(updated)>core.PAR_CUSTOM_MAX_COUNT:
+                            raise ValueError("Maximálně 100 vybraných hladin.")
+                        st.session_state["ws_levels"]=updated
+                        st.session_state["ws_par_custom_input"]=""
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+        choices=_available_levels(mode)
         default=[x for x in (3000,10000) if x in choices]
         st.multiselect("Letové hladiny [ft AMSL]",choices,default=default,
                        format_func=core.level_label,key="ws_levels")
+        if mode=="PAR-NG":
+            st.caption(f"Vybráno {len(_chosen_levels(mode))} hladin. "
+                       "Odebrání je možné křížkem ve výběru.")
         if st.session_state.get("ws_radar")=="PAR-NG":
             st.markdown("**PAR-NG · ANTÉNA / DETEKCE**")
             st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
@@ -1422,7 +1467,7 @@ def exports_dialog():
     if result is None:
         st.info("Export je dostupný po výpočtu.")
         return
-    opts=tuple(core.flight_levels_for(result["config"].radar_mode))
+    opts=_available_levels(result["config"].radar_mode)
     st.caption("Původní exportní nástroje: PDF report 600 DPI, PNG, QuickReport, zákaznické balíčky a datové formáty. Vyber požadované výstupy.")
     groups=st.columns(3)
     names={
@@ -1546,15 +1591,13 @@ def _draw_map_folium():
         add_openaip_map(m)
     if result is not None and st.session_state.get("ws_show_coverage",True):
         mode=st.session_state.get("ws_display_mode","Jedna hladina")
-        levels=(list(core.flight_levels_for(c.radar_mode)) if c.radar_mode=="PAR-NG" else
-                [x for x in st.session_state.get("ws_levels",[3000,10000])
-                 if x in core.flight_levels_for(c.radar_mode)])
+        levels=_chosen_levels(c.radar_mode)
         if mode=="Cíl":active=[None]
         elif mode=="Porovnání":active=st.session_state.get("ws_comparison",levels[:3])
         elif levels:active=[st.session_state.get("ws_map_level",levels[0])]
         else:active=[]
         for level in active:
-            if level is not None and level not in core.flight_levels_for(c.radar_mode):
+            if level is not None and not core.valid_flight_level(c.radar_mode,level):
                 continue
             geo=coverage_geojson(result,level,
                 reference=st.session_state.get("ws_par_level_reference","AGL")
@@ -1665,11 +1708,8 @@ def _draw_map():
     active=[]
     if result is not None and st.session_state.get("ws_show_coverage",True):
         mode=st.session_state.get("ws_display_mode","Jedna hladina")
-        available=(list(core.flight_levels_for(c.radar_mode)) if c.radar_mode=="PAR-NG" else
-                   [ft for ft in st.session_state.get("ws_levels",[3000,10000])
-                    if ft in core.flight_levels_for(c.radar_mode)])
-        if not available:
-            available=list(core.flight_levels_for(c.radar_mode))
+        available=_chosen_levels(c.radar_mode)
+        # An empty user selection must not secretly re-enable every PAR preset.
         if mode=="Cíl":
             active=[None]
         elif mode=="Porovnání":
@@ -1913,9 +1953,8 @@ def _step_flight_level(direction):
     result=st.session_state.get("result")
     if result is None:
         return
-    allowed=tuple(core.flight_levels_for(result["config"].radar_mode))
-    levels=(list(allowed) if result["config"].radar_mode=="PAR-NG" else
-            [int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed])
+    allowed=_available_levels(result["config"].radar_mode)
+    levels=_chosen_levels(result["config"].radar_mode)
     if not levels:
         levels=list(allowed)
     levels=sorted(set(levels))
@@ -1934,8 +1973,7 @@ def _select_comparison_levels(select_all):
     if result is None:
         return
     allowed=tuple(core.flight_levels_for(result["config"].radar_mode))
-    levels=(list(allowed) if result["config"].radar_mode=="PAR-NG" else
-            sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[]) if ft in allowed)))
+    levels=_chosen_levels(result["config"].radar_mode)
     if not levels:
         levels=list(allowed)
     st.session_state["ws_comparison"]=levels if select_all else []
@@ -2061,16 +2099,13 @@ def render_workspace():
                 if result is None:
                     st.caption("Po výpočtu zde budeš přepínat jednotlivé letové hladiny.")
                 else:
-                    supported=tuple(core.flight_levels_for(result["config"].radar_mode))
+                    supported=_available_levels(result["config"].radar_mode)
                     selected=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[])
                                         if ft in supported))
                     if result["config"].radar_mode=="PAR-NG":
-                        selected=list(supported)
                         st.radio("Výška PAR nad terénem / mořem",("AGL","AMSL"),
                                  horizontal=True,key="ws_par_level_reference",
                                  help="AGL = nad místním terénem. AMSL = nad hladinou moře.")
-                    elif not selected:
-                        selected=list(supported)
                     st.toggle("Zobrazit radarové krytí",value=True,key="ws_show_coverage")
                     st.segmented_control(
                         "Zobrazení hladin",["Jedna hladina","Porovnání","Cíl"],
@@ -2214,7 +2249,7 @@ def render_workspace():
                         try:
                             from viewer_bridge import publish
                             chosen=st.session_state.get("ws_levels",[])
-                            allowed=set(core.flight_levels_for(result["config"].radar_mode))
+                            allowed=set(_available_levels(result["config"].radar_mode))
                             chosen=[int(x) for x in chosen if int(x) in allowed]
                             token=publish(result,chosen,st.session_state.get("obstacles",[]),
                                           source_ui=_airport_project_metadata())
