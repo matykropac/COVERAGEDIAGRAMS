@@ -773,6 +773,32 @@ def radar_dialog():
                             config={"displaylogo":False,"responsive":True})
             st.caption("DATA SOURCE · "+source_name)
             st.caption(limitations)
+            if mode=="PAR-NG":
+                from antenna_workspace_preview import par_3d_figure,par_pattern_info
+                detail=par_pattern_info(diagram_pattern)
+                st.markdown("**3D ANTENNA GAIN · 9 GHz SOURCE GRID**")
+                view=st.segmented_control("Pohled diagramu",
+                    ["Provozní sektor ±20°","Celá anténa ±180°"],
+                    default="Provozní sektor ±20°",
+                    key="ws_par_3d_view",width="stretch")
+                fig3d=par_3d_figure(
+                    diagram_pattern,near_field=view=="Provozní sektor ±20°")
+                st.plotly_chart(fig3d,use_container_width=True,
+                    key="ws_radar_par_3d_heatmap",
+                    config={"displaylogo":False,"responsive":True})
+                a,b,c=st.columns(3,gap="small")
+                a.metric("ELEVACE × AZIMUT",
+                    f"{detail['elevation_samples']} × {detail['azimuth_samples']}")
+                b.metric("KROK DIAGRAMU",
+                    f"{detail['elevation_step_deg']:g}° / {detail['azimuth_step_deg']:g}°")
+                c.metric("MAX. ZDROJOVÁ HODNOTA",
+                    f"{detail['source_peak_db']:.4f} dB")
+                st.caption("SOUBOR: 3Dscan9GHz05deg(2).txt · SHA-256 "
+                           +detail["sha256"])
+                st.info("Výpočet používá relativní zisk normalizovaný na 0 dB v "
+                        "globálním maximu. Importovaný 3D diagram nemá doložený "
+                        "absolutní zisk v dBi, certifikovanou kalibraci, "
+                        "model rušení ani atmosférické útlumy.")
             if mode=="RL-2000":
                 st.caption("LOW = vysílací/přijímací svazek · "
                            "HIGH = pouze přijímací svazek. Průběhy jsou "
