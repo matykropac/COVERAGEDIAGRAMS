@@ -766,6 +766,26 @@ def radar_dialog():
             st.number_input("Min. elevace [°]",-5.,88.,-1.,key="ws_min")
             st.number_input("Max. elevace [°]",-4.,89.,45.,key="ws_max")
             st.number_input("Tilt antény [°]",-15.,15.,-1.,key="ws_tilt")
+        if mode=="PAR-NG":
+            st.markdown("**VÝPOČETNÍ ANTÉNY PAR-NG**")
+            st.radio("Anténa použitá pro výpočet krytí",
+                options=["AZ","EL","BOTH"],horizontal=True,
+                format_func=lambda mode:{
+                    "AZ":"HORIZONTAL · AZ",
+                    "EL":"VERTICAL · EL",
+                    "BOTH":"OBĚ · AZ + EL",
+                }[mode],key="ws_par_channels")
+            st.caption("AZ = dostupný importovaný 3D diagram (přiřazení "
+                       "anténě je pracovní předpoklad). EL = ideální "
+                       "elevační sken −1° až +14°; chybí druhé měření. "
+                       "OBĚ = průnik samostatných dosahových podmínek, "
+                       "nikoli součet zisků či SNR.")
+
+            if st.session_state.get("ws_par_channels","BOTH") in ("EL","BOTH"):
+                st.warning("EL anténa zatím používá pouze ideální "
+                           "Y8600 sektorový model, protože nemáme "
+                           "její nezávislý kalibrovaný 3D diagram. "
+                           "Výsledek není ověřená detekční obálka.")
         st.markdown('<div class="cd-panel-title">ANTENNA GAIN / ELEVATION CUT</div>',
                     unsafe_allow_html=True)
         try:
@@ -894,19 +914,6 @@ def radar_dialog():
                            format_func=core.level_label,key="ws_levels")
         if st.session_state.get("ws_radar")=="PAR-NG":
             st.markdown("**PAR-NG · ANTÉNA / DETEKCE**")
-            st.radio("Anténa použitá pro výpočet krytí",
-                options=["AZ","EL","BOTH"],horizontal=True,
-                format_func=lambda mode:{
-                    "AZ":"HORIZONTAL · AZ",
-                    "EL":"VERTICAL · EL",
-                    "BOTH":"OBĚ · AZ + EL",
-                }[mode],key="ws_par_channels")
-            st.caption("AZ = dostupný importovaný 3D diagram (přiřazení "
-                       "anténě je pracovní předpoklad). EL = ideální "
-                       "elevační sken −1° až +14°; chybí druhé měření. "
-                       "OBĚ = průnik samostatných dosahových podmínek, "
-                       "nikoli součet zisků či SNR.")
-
             st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
                          format_func=lambda mode:"Ideální azimutální sken + ztráta vychýlení"
                          if mode=="TRACKING" else "Pevný 3D diagram bez elektronického skenu",
