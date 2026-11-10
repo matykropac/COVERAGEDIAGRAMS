@@ -21,7 +21,7 @@ for package in ['numpy', 'pandas', 'PIL', 'webview']:
 
 # Streamlit has dynamic imports from the script not visible to the analyzer.
 hiddenimports.extend([
-    'coverage_viewer', 'viewer_bridge', 'map_workspace', 'radar_core', 'web_support', 'ssr_custom', 'obstacles', 'obstacle_ui',
+    'coverage_viewer', 'viewer_bridge', 'viewer_export', 'workspace_theme', 'map_workspace', 'radar_core', 'web_support', 'ssr_custom', 'obstacles', 'obstacle_ui',
     'project_file', 'project_widgets', 'live_simulation', 'radar_window',
     'wind_turbines', 'wind_offline', 'site_picker', 'standalone_radar',
     'coverage_diagnostics', 'diagnostics_ui', 'environment_layers',
