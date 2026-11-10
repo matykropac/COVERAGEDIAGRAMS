@@ -712,6 +712,23 @@ def render_viewer():
     [data-baseweb="popover"] [role="option"] *,
     [data-baseweb="popover"] [role="listbox"] *{
       color:#eaf4ff!important;-webkit-text-fill-color:#eaf4ff!important}
+    /* Persistent, visible 2D / 3D toolbar above map. */
+    .st-key-viewer_mode_toolbar{
+      background:#11263b!important;border:1px solid #355773!important;
+      border-radius:7px!important;padding:6px 12px!important;
+      margin-bottom:5px!important}
+    .st-key-viewer_mode_toolbar [data-testid="stMarkdown"] p{
+      color:#c9ebff!important;letter-spacing:.07em!important;font-size:12px!important}
+    .st-key-viewer_mode_toolbar button{
+      background:#1c3853!important;border:1px solid #507393!important;
+      color:#edf7ff!important;-webkit-text-fill-color:#edf7ff!important;
+      font-weight:750!important;font-size:12px!important;min-height:37px!important;
+      opacity:1!important}
+    .st-key-viewer_mode_toolbar button[kind="primary"]{
+      background:#2563c7!important;border-color:#5392ff!important;
+      color:#fff!important;-webkit-text-fill-color:#fff!important}
+    .st-key-viewer_mode_toolbar button:hover{
+      border-color:#89d9ff!important;background:#24577b!important}
     /* Compact inspection console: 2 numeric settings per row, no giant
        sliders and no repeated full-width card paddings. */
     .st-key-viewer_inspector [data-testid="stVerticalBlock"]{gap:.25rem!important}
@@ -750,13 +767,28 @@ def render_viewer():
     @media(max-width:900px){.v-title{max-width:75%;text-overflow:ellipsis;overflow:hidden}}
     </style>""",unsafe_allow_html=True)
     editor_result,editor_meta=_snapshot()
-    top_left,top_right=st.columns([3,2],gap="small",vertical_alignment="center")
-    with top_left:
-        st.caption("LAYER STUDIO  /  GEO DATA  /  3D TERRAIN")
-    with top_right:
-        mode=st.segmented_control("Režim",["2D MAPA","3D TERÉN / HYPSOMETRIE"],
-                                  default="2D MAPA",key="viewer_mode",
-                                  label_visibility="collapsed",width="stretch")
+    # Explicit, high-contrast view controls: the previous segmented control
+    # was visually lost under the global dark Streamlit theme.
+    with st.container(key="viewer_mode_toolbar"):
+        caption_col,map_col,terrain_col=st.columns([3.2,1.25,1.9],
+                                                    gap="small",
+                                                    vertical_alignment="center")
+        with caption_col:
+            st.markdown("**VIEWER · PROSTOROVÉ ZOBRAZENÍ**")
+        current_mode=st.session_state.get("viewer_mode","2D MAPA")
+        with map_col:
+            if st.button("▧  2D MAPA",key="viewer_mode_2d_btn",
+                         use_container_width=True,
+                         type="primary" if current_mode=="2D MAPA" else "secondary"):
+                st.session_state["viewer_mode"]="2D MAPA"
+                st.rerun()
+        with terrain_col:
+            if st.button("◈  3D TERÉN / HYPSOMETRIE",key="viewer_mode_3d_btn",
+                         use_container_width=True,
+                         type="primary" if current_mode=="3D TERÉN / HYPSOMETRIE" else "secondary"):
+                st.session_state["viewer_mode"]="3D TERÉN / HYPSOMETRIE"
+                st.rerun()
+    mode=st.session_state.get("viewer_mode","2D MAPA")
     editor_meta=editor_meta or {}
     if editor_result is not None:
         st.caption("● EDITOR LINK · výpočty a výškový model převzaty bez přepočtu")
