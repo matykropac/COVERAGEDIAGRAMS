@@ -622,6 +622,56 @@ def _restore_viewer_workspace():
         st.session_state["viewer_workspace_error"]=str(exc)
 
 
+@st.fragment
+def _viewer_export_panel(layers,styles,title,mode,basemap,show_legend,show_north):
+    """Export controls rerun independently; they never redraw Leaflet."""
+    with st.expander("EXPORT STUDIO · PNG / PDF / CDVIEW",expanded=False):
+        fmt=st.segmented_control("Typ výstupu",["PNG","PDF"],default="PNG",
+                                 key="viewer_print_format",width="stretch")
+        dpi=st.select_slider("Kvalita [DPI]",options=[300,600],
+                             value=300,key="viewer_print_dpi")
+        print_theme=st.radio("Tisková paleta",["NIGHT","LIGHT"],horizontal=True,
+                             key="viewer_print_theme")
+        if st.button("GENEROVAT MAPOVÝ ATLAS",type="primary",
+                     use_container_width=True,key="viewer_export_render"):
+            try:
+                from viewer_export import render_print
+                blob=render_print(layers,styles,title,fmt=fmt.lower(),
+                                  dpi=dpi,
+                                  night=print_theme=="NIGHT")
+                st.session_state["viewer_print_ready"]=(blob,fmt.lower(),dpi)
+            except Exception as exc:
+                st.error(f"Tiskový export selhal: {exc}")
+        ready=st.session_state.get("viewer_print_ready")
+        if ready:
+            blob,filetype,quality=ready
+            st.download_button("⇩ STÁHNOUT "+filetype.upper(),
+                blob,file_name="COVERAGEDIAGRAMS_Map_"+str(quality)+"dpi."+filetype,
+                mime="application/pdf" if filetype=="pdf" else "image/png",
+                use_container_width=True,key="viewer_print_download")
+        st.caption("Tisk obsahuje data a legendu. Online mapové dlaždice "
+                   "se do tohoto vektorového výstupu nepřebírají.")
+        st.divider()
+        if st.button("ULOŽIT ROZLOŽENÍ · CDVIEW",
+                     key="viewer_workspace_save",use_container_width=True):
+            try:
+                from viewer_workspace_file import make_workspace
+                st.session_state["viewer_workspace_bytes"]=make_workspace(
+                    layers,styles,{"viewer_mode":mode,
+                                   "viewer_basemap":basemap,
+                                   "viewer_map_title":title,
+                                   "viewer_legend":show_legend,
+                                   "viewer_north":show_north})
+            except Exception as exc:
+                st.error(f"VIEWER projekt nelze uložit: {exc}")
+        if st.session_state.get("viewer_workspace_bytes"):
+            st.download_button("⇩ STÁHNOUT CDVIEW",
+                data=st.session_state["viewer_workspace_bytes"],
+                file_name="COVERAGEDIAGRAMS_viewer.cdview",
+                mime="application/octet-stream",use_container_width=True,
+                key="viewer_workspace_download")
+
+
 def render_viewer():
     from workspace_theme import COMMON_CSS
     st.markdown(COMMON_CSS,unsafe_allow_html=True)
@@ -753,51 +803,8 @@ def render_viewer():
         with st.container(key="viewer_inspector"):
             basemap,title,show_legend,show_north=_layer_properties(
                 layers,styles,visible)
-            with st.expander("EXPORT STUDIO · PNG / PDF / CDVIEW",expanded=False):
-                fmt=st.segmented_control("Typ výstupu",["PNG","PDF"],default="PNG",
-                                         key="viewer_print_format",width="stretch")
-                dpi=st.select_slider("Kvalita [DPI]",options=[300,600],
-                                     value=300,key="viewer_print_dpi")
-                print_theme=st.radio("Tisková paleta",["NIGHT","LIGHT"],horizontal=True,
-                                     key="viewer_print_theme")
-                if st.button("GENEROVAT MAPOVÝ ATLAS",type="primary",
-                             use_container_width=True,key="viewer_export_render"):
-                    try:
-                        from viewer_export import render_print
-                        blob=render_print(layers,styles,title,fmt=fmt.lower(),
-                                          dpi=dpi,
-                                          night=print_theme=="NIGHT")
-                        st.session_state["viewer_print_ready"]=(blob,fmt.lower(),dpi)
-                    except Exception as exc:
-                        st.error(f"Tiskový export selhal: {exc}")
-                ready=st.session_state.get("viewer_print_ready")
-                if ready:
-                    blob,filetype,quality=ready
-                    st.download_button("⇩ STÁHNOUT "+filetype.upper(),
-                        blob,file_name="COVERAGEDIAGRAMS_Map_"+str(quality)+"dpi."+filetype,
-                        mime="application/pdf" if filetype=="pdf" else "image/png",
-                        use_container_width=True,key="viewer_print_download")
-                st.caption("Tisk obsahuje data a legendu. Online mapové dlaždice "
-                           "se do tohoto vektorového výstupu nepřebírají.")
-                st.divider()
-                if st.button("ULOŽIT ROZLOŽENÍ · CDVIEW",
-                             key="viewer_workspace_save",use_container_width=True):
-                    try:
-                        from viewer_workspace_file import make_workspace
-                        st.session_state["viewer_workspace_bytes"]=make_workspace(
-                            layers,styles,{"viewer_mode":mode,
-                                           "viewer_basemap":basemap,
-                                           "viewer_map_title":title,
-                                           "viewer_legend":show_legend,
-                                           "viewer_north":show_north})
-                    except Exception as exc:
-                        st.error(f"VIEWER projekt nelze uložit: {exc}")
-                if st.session_state.get("viewer_workspace_bytes"):
-                    st.download_button("⇩ STÁHNOUT CDVIEW",
-                        data=st.session_state["viewer_workspace_bytes"],
-                        file_name="COVERAGEDIAGRAMS_viewer.cdview",
-                        mime="application/octet-stream",use_container_width=True,
-                        key="viewer_workspace_download")
+            _viewer_export_panel(layers,styles,title,mode,basemap,
+                                 show_legend,show_north)
     with canvas:
         if mode=="3D TERÉN / HYPSOMETRIE":
             _three_dimensional(layers,visible,editor_result,center,styles,title)
