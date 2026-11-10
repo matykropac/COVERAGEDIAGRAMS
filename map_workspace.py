@@ -791,7 +791,6 @@ def radar_dialog():
                         if len(updated)>core.PAR_CUSTOM_MAX_COUNT:
                             raise ValueError("Maximálně 100 vybraných hladin.")
                         st.session_state["ws_levels"]=updated
-                        st.session_state["ws_par_custom_input"]=""
                         st.rerun()
                     except ValueError as exc:
                         st.error(str(exc))
