@@ -428,7 +428,7 @@ def _layer_properties(layers, styles, visible):
         config=styles[chosen]
         st.caption(f"{len(layers[chosen])} objektů · {('zobrazena' if chosen in visible else 'skrytá')}")
         color=st.color_picker("Barva vrstvy",value=config["color"],
-                              key="viewer_property_color_"+chosen)
+                              key="viewer_property_color_"+chosen+"_"+str(st.session_state.get("viewer_color_refresh",0)))
         opacity=st.slider("Průhlednost",0.,1.,float(config["opacity"]),.05,
                           key="viewer_property_alpha_"+chosen)
         weight=st.slider("Tloušťka linie [px]",.5,10.,float(config["width"]),.5,
@@ -448,7 +448,8 @@ def _layer_properties(layers, styles, visible):
                              help=c,use_container_width=True):
                     styles[chosen]["color"]=c
                     # Reset picker state before its next render.
-                    st.session_state.pop("viewer_property_color_"+chosen,None)
+                    st.session_state["viewer_color_refresh"]=(
+                        st.session_state.get("viewer_color_refresh",0)+1)
                     st.session_state["v_grid_version"]=st.session_state.get("v_grid_version",0)+1
                     st.rerun()
     else:
@@ -548,7 +549,32 @@ def render_viewer():
     with right:
         basemap,title,show_legend,show_north=_layer_properties(layers,styles,visible)
         st.markdown('<div class="cd-panel-title">EXPORT STUDIO</div>',unsafe_allow_html=True)
-        st.caption("Pracovní kompozice pro předání a prezentaci.")
+        st.caption("Vysoké rozlišení a konzistentní zákaznická grafika.")
+        fmt=st.segmented_control("Typ výstupu",["PNG","PDF"],default="PNG",
+                                 key="viewer_print_format",width="stretch")
+        dpi=st.select_slider("Kvalita [DPI]",options=[150,300,600],
+                             value=300,key="viewer_print_dpi")
+        print_theme=st.radio("Tisková paleta",["NIGHT","LIGHT"],horizontal=True,
+                             key="viewer_print_theme")
+        if st.button("GENEROVAT MAPOVÝ ATLAS",type="primary",
+                     use_container_width=True,key="viewer_export_render"):
+            try:
+                from viewer_export import render_print
+                blob=render_print(layers,styles,title,fmt=fmt.lower(),
+                                  dpi=300 if dpi==150 else dpi,
+                                  night=print_theme=="NIGHT")
+                st.session_state["viewer_print_ready"]=(blob,fmt.lower(),dpi)
+            except Exception as exc:
+                st.error(f"Tiskový export selhal: {exc}")
+        ready=st.session_state.get("viewer_print_ready")
+        if ready:
+            blob,filetype,quality=ready
+            st.download_button("⇩ STÁHNOUT "+filetype.upper(),
+                blob,file_name="COVERAGEDIAGRAMS_Map_"+str(quality)+"dpi."+filetype,
+                mime="application/pdf" if filetype=="pdf" else "image/png",
+                use_container_width=True,key="viewer_print_download")
+        st.caption("Tisk obsahuje data a legendu. Online mapové dlaždice "
+                   "se do tohoto vektorového výstupu nepřebírají.")
     with canvas:
         if mode=="3D TERÉN / HYPSOMETRIE":
             _three_dimensional(layers,visible,editor_result,center,styles,title)
