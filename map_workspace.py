@@ -2334,6 +2334,10 @@ def render_workspace():
                             help="Přepnutí nevyžaduje nové stažení DEM. "
                                  "Vrstvy používají stejnou fyziku, ale "
                                  "oddělené kanálové podmínky.")
+                        if st.session_state.get("ws_par_diagnostic_layer")=="LIMIT":
+                            st.caption("LIMITING CHANNEL · AZ = cyan | EL = žlutá. "
+                                       "Zobrazuje pouze společně pokryté oblasti, "
+                                       "kde jeden z kanálů omezuje rezervu.")
 
                     st.toggle("Zobrazit radarové krytí",value=True,key="ws_show_coverage")
                     st.segmented_control(
