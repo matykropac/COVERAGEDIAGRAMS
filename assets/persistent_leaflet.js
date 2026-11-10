@@ -351,6 +351,7 @@ function updateOpenAip(s,data) {
   if(s.openaipLayer){s.map.removeLayer(s.openaipLayer);s.openaipLayer=null;}
   if(option.enabled&&option.url){
     s.openaipLayer=L.tileLayer(option.url,{maxZoom:18,className:"cd-aip-tile",
+      updateWhenIdle:true,updateWhenZooming:false,keepBuffer:2,
       attribution:"Aeronautical data © <a target='_blank' href='https://www.openaip.net/'>OpenAIP</a>",
       opacity:.88});
     // OpenAIP failures were previously silent: a checked overlay could be blank.
@@ -369,7 +370,7 @@ function updateOpenAip(s,data) {
     };
     s.openaipLayer.on("tileerror",()=>{
       errors++;
-      if(errors>=2 && loaded===0)warn("OpenAIP: mapové dlaždice se nenačítají. Zkontroluj Network → openaip → Status/Response. HTTP 401 znamená odmítnutý API klíč; ověř nebo vyměň klíč v OpenAIP a Streamlit Secrets.");
+      if(errors>=2 && loaded===0)warn("OpenAIP: dlaždice nelze načíst. V MAPA klikni na OVĚŘIT OPENAIP · API / DLAŽDICE pro přesný důvod (401/403/429 nebo připojení).");
     });
     s.openaipLayer.on("tileload",()=>{
       loaded++;
