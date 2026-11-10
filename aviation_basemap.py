@@ -66,7 +66,7 @@ def test_tiles_connection(key=None, *, timeout=7):
             code=response.status
             mime=response.headers.get("Content-Type","").lower()
             blob=response.read(24)
-        if code==200 and (mime.startswith("image/") or blob[:3]==b"PNG"):
+        if code==200 and (mime.startswith("image/") or blob[:4]==bytes((137,80,78,71))):
             return True, "OpenAIP HTTP 200: mapová dlaždice je dostupná."
         return False, f"OpenAIP HTTP {code}: odpověď není obrázek."
     except HTTPError as exc:
