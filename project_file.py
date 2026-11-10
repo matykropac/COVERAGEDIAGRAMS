@@ -20,6 +20,9 @@ MAX_UNPACKED = 220 * 1024 * 1024
 
 def save_project(result, *, levels, obstacles, display=None, source_ui=None):
     """Return compressed bytes for a self-contained, read-only result snapshot."""
+    if (not isinstance(levels,(tuple,list)) or len(levels)>core.PAR_CUSTOM_MAX_COUNT or
+            any(not core.valid_flight_level(result['config'].radar_mode,ft) for ft in levels)):
+        raise ValueError('Neplatný výběr výškových hladin pro projekt.')
     meta = dict(format=FORMAT, version=VERSION, config=asdict(result['config']),
                 levels=list(levels), obstacles=list(obstacles),
                 display=display or {}, source_ui=source_ui or {},
@@ -82,7 +85,8 @@ def load_project(blob, antenna_pattern=None):
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
             raise ValueError('Neplatná překážka v projektu: ' + str(exc)) from exc
     levels = meta.get('levels', [])
-    if not isinstance(levels, list) or any(l not in core.flight_levels_for(config.radar_mode) for l in levels):
+    if (not isinstance(levels,list) or len(levels)>core.PAR_CUSTOM_MAX_COUNT or
+            any(not core.valid_flight_level(config.radar_mode,l) for l in levels)):
         raise ValueError('Neplatný výběr výškových hladin.')
     result = dict(data, config=config, antenna=meta['antenna'], site_height=meta['site_height'],
                   antenna_pattern=antenna_pattern, obstacles=obstacles,
