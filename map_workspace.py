@@ -2444,6 +2444,39 @@ def render_workspace():
                 if st.button("⇩ KML / KMZ / GEOJSON",key="ws_export_map_layers",
                              use_container_width=True):
                     position_layers_export_dialog()
+                if result is not None and result["config"].radar_mode=="PAR-NG":
+                    with st.expander("PAR · AZ / EL / OBĚ / LIMITING CHANNEL",
+                                     expanded=False):
+                        levels=_chosen_levels("PAR-NG")
+                        if levels:
+                            level=st.selectbox("Diagnostická hladina [ft]",
+                                levels,key="ws_par_diagnostic_export_level")
+                            reference=st.session_state.get("ws_par_level_reference","AMSL")
+                            if st.button("PŘIPRAVIT DIAGNOSTICKÝ ZIP",
+                                         key="ws_par_diag_prepare",
+                                         use_container_width=True):
+                                try:
+                                    from par_diagnostics_export import make_diagnostics_zip
+                                    blob=make_diagnostics_zip(result,int(level),
+                                                             reference=reference)
+                                    st.session_state["ws_par_diag_zip"]={
+                                        "key":(result.get("completed_at"),int(level),reference),
+                                        "data":blob}
+                                except Exception as exc:
+                                    st.error(f"Nelze připravit PAR diagnostiku: {exc}")
+                            ready=st.session_state.get("ws_par_diag_zip")
+                            if ready and ready["key"]==(result.get("completed_at"),
+                                                         int(level),reference):
+                                st.download_button("⇩ STÁHNOUT PAR DIAGNOSTIKU",
+                                    data=ready["data"],
+                                    file_name=f"PAR_AESA_{level}ft_{reference}.zip",
+                                    mime="application/zip",use_container_width=True,
+                                    key="ws_par_diag_download")
+                            st.caption("AZ, EL a společné GeoJSON; regiony limitující "
+                                       "antény AZ/EL; rastry rezerv kanálů "
+                                       "v NPZ a popis předpokladů.")
+                        else:
+                            st.info("Vyber výšky PAR v RADAR → CÍL / FL.")
                 st.caption("Mapové vrstvy lze exportovat i bez radarového výpočtu.")
                 st.markdown('<div class="cd-nav-title">SPRÁVA PROJEKTU / CDPROJ</div>',
                             unsafe_allow_html=True)
