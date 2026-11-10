@@ -15,6 +15,11 @@ class AipAndY8600Tests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("OPENAIP_API_KEY",message)
 
+    def test_existing_data_key_also_enables_tiles(self):
+        with patch.dict("os.environ",
+                        {"OPENAIP_API_KEY":"","OPENAIP_DATA_API_KEY":"DATA_TOKEN"}):
+            self.assertEqual(aip.configured_key(),"DATA_TOKEN")
+
     def test_aip_http_errors_do_not_leak_url_or_key(self):
         for code in (401,403,429):
             with self.subTest(code=code):
