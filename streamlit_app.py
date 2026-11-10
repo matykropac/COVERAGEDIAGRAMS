@@ -69,6 +69,12 @@ if _pending_radar_site is not None:
 if st.query_params.get('classic') == '1':
     st.markdown('<style>' + (Path(__file__).resolve().parent / 'assets' / 'atm-theme.css').read_text(encoding='utf-8') + '</style>', unsafe_allow_html=True)
 
+# VIEWER is a first-class mode of this same app, opened in its own window.
+if st.query_params.get("viewer") == "1":
+    from coverage_viewer import render_viewer
+    render_viewer()
+    st.stop()
+
 # The separate radar tab is a lightweight route, not a second dashboard.
 if render_radar_window():
     st.stop()
