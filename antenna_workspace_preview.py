@@ -70,3 +70,63 @@ def antenna_figure(config, pattern):
         hovermode="x unified",
     )
     return fig,provenance,source
+
+
+def par_3d_figure(pattern, *, near_field=False):
+    """Display the actual embedded PAR-NG 3D gain grid, not an invented beam.
+
+    Downsample for browser responsiveness, retain original full-resolution data
+    in the engine. 0 dB is global pattern peak, not absolute dBi.
+    """
+    if not isinstance(pattern,core.ParScanPattern):
+        raise TypeError("3D PAR diagram requires ParScanPattern.")
+    az=np.asarray(pattern.azimuths_deg)
+    el=np.asarray(pattern.angles_deg)
+    grid=np.asarray(pattern.gain_grid_db)
+    if grid.shape!=(len(el),len(az)):
+        raise ValueError("PAR diagram has inconsistent grid dimensions.")
+    ei=np.arange(0,len(el),2,dtype=int)
+    ai=np.arange(0,len(az),2,dtype=int)
+    if ei[-1]!=len(el)-1:ei=np.r_[ei,len(el)-1]
+    if ai[-1]!=len(az)-1:ai=np.r_[ai,len(az)-1]
+    fig=go.Figure(go.Heatmap(
+        x=az[ai],y=el[ei],z=np.maximum(grid[np.ix_(ei,ai)],-80),
+        colorscale=[[0,"#10243b"],[.25,"#275477"],[.5,"#287eaa"],
+                    [.72,"#39a8c7"],[.9,"#82dce0"],[1,"#ffe3a0"]],
+        zmin=-80,zmax=0,
+        colorbar=dict(title=dict(text="Relative gain [dB]",side="right"),
+                      tickfont=dict(color="#c9dfed",size=10),
+                      thickness=13,len=.75),
+        hovertemplate="Azimuth %{x:.1f}°<br>Elevation %{y:.1f}°"
+                      "<br>Relative gain %{z:.1f} dB<extra></extra>",
+    ))
+    fig.add_vline(x=0,line=dict(color="#ffc77d",dash="dot",width=1))
+    fig.add_hline(y=0,line=dict(color="#ffc77d",dash="dot",width=1))
+    fig.update_layout(
+        template="plotly_dark",height=360,
+        paper_bgcolor="#0e2237",plot_bgcolor="#0e2237",
+        margin=dict(l=55,r=12,t=12,b=52),
+        font=dict(color="#c9dfed",size=10),
+        xaxis=dict(title="Relative azimuth [°]",gridcolor="#29445c",
+                   range=[-20,20] if near_field else [-180,180]),
+        yaxis=dict(title="Elevation [°]",gridcolor="#29445c",
+                   range=[-15,50] if near_field else [-90,90]),
+    )
+    return fig
+
+
+def par_pattern_info(pattern):
+    """Provenance from actual imported source, with units never conflated."""
+    if not isinstance(pattern,core.ParScanPattern):
+        raise TypeError("Requires PAR 3D pattern.")
+    return {
+        "file":pattern.name,
+        "sha256":pattern.source_sha256,
+        "samples":int(pattern.gain_grid_db.size),
+        "elevation_samples":len(pattern.angles_deg),
+        "azimuth_samples":len(pattern.azimuths_deg),
+        "source_peak_db":pattern.source_peak_db,
+        "relative_max_db":float(np.max(pattern.gain_grid_db)),
+        "elevation_step_deg":float(np.median(np.diff(pattern.angles_deg))),
+        "azimuth_step_deg":float(np.median(np.diff(pattern.azimuths_deg))),
+    }
