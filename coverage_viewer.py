@@ -346,10 +346,13 @@ def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.), st
         if xx:
             fig.add_trace(go.Scatter3d(x=xx,y=yy,z=zz,mode="lines",
                 line=dict(color=color,width=max(.5,float(cfg.get("width",2.)))*2),
+                opacity=max(0.,min(1.,float(cfg.get("opacity",.4)))),
                 name=key,showlegend=True,hoverinfo="name"))
         if mx:
             fig.add_trace(go.Scatter3d(x=mx,y=my,z=mz,mode="markers",
-                marker=dict(color=color,size=4),name=key,showlegend=not bool(xx),
+                marker=dict(color=color,size=4),
+                opacity=max(0.,min(1.,float(cfg.get("opacity",.4)))),
+                name=key,showlegend=not bool(xx),
                 hoverinfo="name"))
     fig.update_layout(template="plotly_dark",paper_bgcolor="#091525",
         title=dict(text=title,font=dict(size=18,color="#e2edff")),
@@ -389,30 +392,22 @@ def _layer_grid(layers):
     if not layers:
         st.caption("Načti KML/KMZ nebo projekt z EDITORU.")
         return set(),{}
-    rows=[{"ON":styles[k]["show"],"VRSTVA":k,"#":len(v),
-           "HEX":styles[k]["color"],"α":styles[k]["opacity"],"px":styles[k]["width"]}
+    # One very compact row per layer. Styling belongs in the right inspector,
+    # never in six cramped columns next to a 3D canvas.
+    rows=[{"ON":styles[k]["show"],"VRSTVA":k,"#":len(v)}
           for k,v in layers.items()]
     grid=st.data_editor(pd.DataFrame(rows),hide_index=True,num_rows="fixed",
-        height=min(490,max(110,45+len(rows)*35)),use_container_width=True,
+        height=min(490,max(110,45+len(rows)*32)),use_container_width=True,
         key="v_grid_"+str(st.session_state.get("v_grid_version",0)),
         column_config={
             "ON":st.column_config.CheckboxColumn("✓",width="small"),
-            "VRSTVA":st.column_config.TextColumn("VRSTVA",disabled=True,width="medium"),
+            "VRSTVA":st.column_config.TextColumn("VRSTVA",disabled=True,width="large"),
             "#":st.column_config.NumberColumn("#",disabled=True,width="small"),
-            "HEX":st.column_config.TextColumn("HEX",width="small"),
-            "α":st.column_config.NumberColumn("α",min_value=0.,max_value=1.,step=.05,format="%.2f",width="small"),
-            "px":st.column_config.NumberColumn("px",min_value=.5,max_value=10.,step=.5,format="%.1f",width="small"),
         })
     for row in grid.to_dict("records"):
-        key=row["VRSTVA"]
-        previous=styles[key]
-        candidate=str(row["HEX"]).strip()
-        styles[key]=dict(show=bool(row["ON"]),
-            color=candidate if re.fullmatch(r"#[0-9a-fA-F]{6}",candidate) else previous["color"],
-            opacity=max(0.,min(1.,float(row["α"] if pd.notna(row["α"]) else .4))),
-            width=max(.5,min(10.,float(row["px"] if pd.notna(row["px"]) else 2.))))
+        styles[row["VRSTVA"]]["show"]=bool(row["ON"])
     visible={key for key in layers if styles[key]["show"]}
-    st.caption(f"Aktivní {len(visible)} / {len(layers)} · tabulka má vlastní posuvník")
+    st.caption(f"Aktivní {len(visible)} / {len(layers)} · upravuj vybranou vrstvu vpravo")
     return visible,{key:styles[key] for key in layers}
 
 
@@ -552,7 +547,7 @@ def render_viewer():
         st.caption("Vysoké rozlišení a konzistentní zákaznická grafika.")
         fmt=st.segmented_control("Typ výstupu",["PNG","PDF"],default="PNG",
                                  key="viewer_print_format",width="stretch")
-        dpi=st.select_slider("Kvalita [DPI]",options=[150,300,600],
+        dpi=st.select_slider("Kvalita [DPI]",options=[300,600],
                              value=300,key="viewer_print_dpi")
         print_theme=st.radio("Tisková paleta",["NIGHT","LIGHT"],horizontal=True,
                              key="viewer_print_theme")
@@ -561,7 +556,7 @@ def render_viewer():
             try:
                 from viewer_export import render_print
                 blob=render_print(layers,styles,title,fmt=fmt.lower(),
-                                  dpi=300 if dpi==150 else dpi,
+                                  dpi=dpi,
                                   night=print_theme=="NIGHT")
                 st.session_state["viewer_print_ready"]=(blob,fmt.lower(),dpi)
             except Exception as exc:
