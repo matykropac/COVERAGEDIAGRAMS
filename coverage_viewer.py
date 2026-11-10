@@ -148,16 +148,134 @@ def _dem_from_bytes(data, max_size=180):
         return lon,lat,z
 
 
-def _three_dimensional(layers, visible):
-    import plotly.graph_objects as go
-    dem=st.file_uploader("Výškový model · GeoTIFF / DEM (WGS84 i projektovaný CRS)",
-                         type=["tif","tiff"],key="viewer_dem")
-    if dem is None:
-        st.info("Pro skutečný 3D terén a hypsometrii nahraj GeoTIFF s nadmořskou výškou. "
-                "Bez DEM aplikace nevymýšlí výšky z 2D mapy.")
-        return
+
+def _snapshot():
+    token=st.query_params.get("snapshot")
+    if not token:
+        return None,None
     try:
-        lon,lat,z=_dem_from_bytes(dem.getvalue())
+        from viewer_bridge import acquire
+        @st.cache_resource(show_spinner=False,max_entries=8)
+        def cached_snapshot(token):
+            return acquire(token)
+        return cached_snapshot(str(token))
+    except Exception as exc:
+        st.warning("Projekt z EDITORU se nepodařilo načíst: "+str(exc))
+        return None,None
+
+
+def _bbox(lat,lon,radius_km):
+    from pyproj import Geod
+    az=np.arange(0,360,5,dtype=float)
+    lons,lats,_=Geod(ellps="WGS84").fwd(
+        np.full(len(az),float(lon)),np.full(len(az),float(lat)),
+        az,np.full(len(az),float(radius_km)*1000))
+    return dict(south=float(min(lats)),north=float(max(lats)),
+                west=float(min(lons)),east=float(max(lons)))
+
+
+@st.dialog("STÁHNOUT DIGITÁLNÍ MODEL TERÉNU",width="large")
+def download_dem_dialog(center):
+    """User-controlled OpenTopography request, with the existing core cache."""
+    st.caption("OpenTopography Global DEM · autentický výškový model terénu. "
+               "Po stažení se 3D scéna aktualizuje automaticky.")
+    a,b=st.columns(2)
+    with a:
+        lat=st.number_input("Střed · LAT",min_value=-80.0,max_value=80.0,
+                            value=float(np.clip(center[0],-80,80)),format="%.6f",key="viewer_dl_lat")
+    with b:
+        lon=st.number_input("Střed · LON",min_value=-180.0,max_value=180.0,
+                            value=float(np.clip(center[1],-180,180)),format="%.6f",key="viewer_dl_lon")
+    dataset=st.selectbox("Výškový model",core.DATASETS,index=0,key="viewer_dl_dataset",
+                         help="COP30 má přibližně 30m rozlišení; COP90 přibližně 90m.")
+    radius=st.slider("Poloměr stažení [km]",2,250,35,1,key="viewer_dl_radius")
+    st.caption("Oblast stahování je obdélník kolem středu. Limit velikosti kontroluje OpenTopography klient.")
+    import os
+    key=os.environ.get("OPENTOPOGRAPHY_API_KEY","").strip()
+    if not key:
+        try:
+            key=str(st.secrets.get("OPENTOPOGRAPHY_API_KEY","")).strip()
+        except (FileNotFoundError,KeyError,OSError):
+            pass
+    if not key:
+        key=st.text_input("OpenTopography API key",type="password",key="viewer_dl_api",
+                          help="Klíč se neukládá do projektu.")
+    if st.button("STÁHNOUT TERÉN DO VIEWERU",type="primary",
+                 use_container_width=True,key="viewer_dl_start"):
+        try:
+            if not key:
+                raise ValueError("Chybí OpenTopography API key.")
+            with st.status("Načítám DEM z OpenTopography",expanded=True) as status:
+                event=st.empty()
+                def progress(msg,*_):
+                    event.caption(str(msg).replace(key,"[API KEY]"))
+                path=core.download(None,key,dataset,progress,
+                                   bbox=_bbox(lat,lon,radius))
+                # Validate before accepting a downloaded file.
+                _dem_from_bytes(path.read_bytes(),max_size=12)
+                st.session_state["viewer_dem_path"]=str(path)
+                st.session_state["viewer_dem_source"]=f"OpenTopography · {dataset} · {radius} km"
+                status.update(label="DEM připraven · "+dataset,state="complete")
+            st.rerun()
+        except Exception as exc:
+            st.error("Stažení DEM selhalo: "+str(exc).replace(key,"[API KEY]") if key else str(exc))
+
+
+def _polar_dem(result,max_size=160):
+    """Convert the actual editor radar-sampled DEM from polar to WGS84 mesh."""
+    from pyproj import Geod
+    az=np.asarray(result["az"],dtype=float)
+    dist=np.asarray(result["distance"],dtype=float)
+    ai=np.unique(np.linspace(0,len(az)-1,min(len(az),max_size)).astype(int))
+    di=np.unique(np.linspace(0,len(dist)-1,min(len(dist),max_size)).astype(int))
+    angles=np.broadcast_to(az[ai,None],(len(ai),len(di)))
+    ranges=np.broadcast_to(dist[None,di],angles.shape)
+    cfg=result["config"]
+    lon,lat,_=Geod(ellps="WGS84").fwd(
+        np.full(angles.shape,cfg.lon),np.full(angles.shape,cfg.lat),
+        angles,ranges)
+    z=np.asarray(result["terrain"],dtype=float)[np.ix_(ai,di)]
+    return lon,lat,z
+
+
+def _editor_layers(result,meta):
+    from web_support import coverage_geojson
+    selected=meta.get("levels",[]) if isinstance(meta,dict) else []
+    available=set(core.flight_levels_for(result["config"].radar_mode))
+    selected=[ft for ft in selected if ft in available]
+    if not selected:
+        selected=list(core.flight_levels_for(result["config"].radar_mode))[:3]
+    if st.session_state.get("viewer_import_all_fl"):
+        selected=list(core.flight_levels_for(result["config"].radar_mode))
+    collections={}
+    for ft in selected:
+        try:
+            collections["RADAR / "+core.level_label(ft)]=coverage_geojson(result,ft).get("features",[])
+        except Exception as exc:
+            st.warning(f"Vrstva {ft} ft není dostupná: {exc}")
+    return collections
+
+
+def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.)):
+    import plotly.graph_objects as go
+    st.button("☁ STÁHNOUT TERÉN · OPENTOPOGRAPHY",type="primary",
+              on_click=download_dem_dialog,args=(center,),key="viewer_download_3d")
+    stored=st.session_state.get("viewer_dem_path")
+    try:
+        if stored:
+            from pathlib import Path
+            path=Path(stored)
+            if not path.is_file():
+                raise FileNotFoundError("Stažený model již není dostupný v cache.")
+            lon,lat,z=_dem_from_bytes(path.read_bytes())
+            st.caption(st.session_state.get("viewer_dem_source","Stažený výškový model"))
+        elif editor_result is not None:
+            lon,lat,z=_polar_dem(editor_result)
+            st.caption("DEM automaticky převzatý z EDITORU · radiálně vzorkovaný terén")
+        else:
+            st.info("Pro 3D terén vyber STÁHNOUT TERÉN a nastav oblast a dataset. "
+                    "Žádný soubor nemusíš ručně nahrávat.")
+            return
     except Exception as e:
         st.error(f"DEM nelze načíst: {e}")
         return
@@ -203,6 +321,10 @@ def _three_dimensional(layers, visible):
                    zaxis_title="Relative terrain elevation (m)",
                    aspectmode="manual",aspectratio=dict(x=1,y=1,z=.45)))
     st.plotly_chart(fig,use_container_width=True)
+    st.download_button("EXPORT 3D SCÉNY · INTERAKTIVNÍ HTML",
+                       fig.to_html(full_html=True,include_plotlyjs=True).encode("utf-8"),
+                       file_name="COVERAGEDIAGRAMS_3D_viewer.html",mime="text/html",
+                       use_container_width=True,key="viewer_3d_html_export")
     st.caption("3D: reálné hodnoty DEM, hypsometrie podle výšky AMSL. "
                "Z-exaggerace mění pouze vzhled. Importované vektory se přikládají k nejbližší "
                "vzorkované výšce terénu, nikoli k certifikovanému 3D povrchu.")
@@ -215,15 +337,22 @@ def render_viewer():
     </style>""",unsafe_allow_html=True)
     st.markdown("### COVERAGEDIAGRAMS  /  VIEWER")
     st.caption("Samostatné okno integrované v aplikaci · KML / KMZ / GeoJSON · 2D / 3D · bez radarového přepočtu")
+    editor_result,editor_meta=_snapshot()
+    if editor_result is not None:
+        st.success("Vypočtené krytí a vzorkovaný DEM převzaty z EDITORU bez dalšího nahrávání.")
+        st.toggle("Načíst všechny dostupné letové hladiny",value=False,key="viewer_import_all_fl")
+    else:
+        st.caption("Bez otevřeného projektu můžeš přidat KML/KMZ a stáhnout vlastní DEM.")
     uploads=st.file_uploader("NAČÍST MAPOVÉ VRSTVY",type=["kml","kmz","geojson","json"],
                              accept_multiple_files=True,key="viewer_uploads")
-    layers={}
+    layers=_editor_layers(editor_result,editor_meta) if editor_result is not None else {}
     for file in uploads or []:
         try:
             for folder,features in _load_layers(file).items():
                 layers[f"{file.name} / {folder}"]=features
         except Exception as exc:
             st.warning(f"{file.name}: {exc}")
+    editor_center=(editor_result["config"].lat,editor_result["config"].lon) if editor_result is not None else (50.,15.)
     sidebar,maparea=st.columns([1,4],gap="medium")
     with sidebar:
         st.markdown("**SPRÁVCE VRSTEV**")
@@ -243,12 +372,12 @@ def render_viewer():
     with maparea:
         mode=st.radio("REŽIM ZOBRAZENÍ",["2D MAPA","3D TERÉN / HYPSOMETRIE"],horizontal=True)
         if mode=="3D TERÉN / HYPSOMETRIE":
-            _three_dimensional(layers,visible)
+            _three_dimensional(layers,visible,editor_result,editor_center)
         else:
             coords=[p for key,features in layers.items() if key in visible
                     for f in features for p in _iter_coords(f.get("geometry"))]
             center=[float(np.mean([p[1] for p in coords[:2000]])),
-                    float(np.mean([p[0] for p in coords[:2000]]))] if coords else [50.0,15.0]
+                    float(np.mean([p[0] for p in coords[:2000]]))] if coords else list(editor_center)
             m=folium.Map(location=center,zoom_start=7,tiles=None,control_scale=True)
             url,attr=BASEMAPS[basemap]
             folium.TileLayer(url,attr=attr,name=basemap,max_zoom=19).add_to(m)
