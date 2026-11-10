@@ -412,41 +412,57 @@ def _layer_grid(layers):
 
 
 
+_STYLE_PRESETS = {
+    "Vlastní barva": None,
+    "Cyan · #5DCDF4": "#5DCDF4",
+    "Mint · #46E1BE": "#46E1BE",
+    "Amber · #F7C66B": "#F7C66B",
+    "Magenta · #E581DE": "#E581DE",
+}
+
+
 def _layer_properties(layers, styles, visible):
-    """Inspector is intentionally separate from the dense layer browser."""
+    """Transactional layer styling: apply only once, not on every slider move.
+
+    The selected layer stays outside the form so switching the inspector does
+    not accidentally commit unsaved settings from another layer.
+    """
     st.markdown('<div class="cd-panel-title">GRAFICKÉ VLASTNOSTI</div>',
                 unsafe_allow_html=True)
     names=list(layers)
     if names:
         chosen=st.selectbox("Vybraná vrstva",names,key="viewer_inspected_layer",
                             format_func=lambda x: x if len(x)<40 else x[:37]+"…")
-        config=styles[chosen]
-        st.caption(f"{len(layers[chosen])} objektů · {('zobrazena' if chosen in visible else 'skrytá')}")
-        color=st.color_picker("Barva vrstvy",value=config["color"],
-                              key="viewer_property_color_"+chosen+"_"+str(st.session_state.get("viewer_color_refresh",0)))
-        opacity=st.slider("Průhlednost",0.,1.,float(config["opacity"]),.05,
-                          key="viewer_property_alpha_"+chosen)
-        weight=st.slider("Tloušťka linie [px]",.5,10.,float(config["width"]),.5,
-                         key="viewer_property_width_"+chosen)
-        new=(color,opacity,weight)
-        old=(config["color"],config["opacity"],config["width"])
-        if new!=old:
-            styles[chosen].update(color=color,opacity=opacity,width=weight)
-            # Recreate the compact table next rerun to stay synchronized.
-            st.session_state["v_grid_version"]=st.session_state.get("v_grid_version",0)+1
-        st.markdown('<div class="cd-panel-title">RYCHLÉ PALETY</div>',
-                    unsafe_allow_html=True)
-        cols=st.columns(4,gap="small")
-        for i,c in enumerate(("#5DCDF4","#46E1BE","#F7C66B","#E581DE")):
-            with cols[i]:
-                if st.button("●",key="viewer_preset_"+str(i)+"_"+chosen,
-                             help=c,use_container_width=True):
-                    styles[chosen]["color"]=c
-                    # Reset picker state before its next render.
-                    st.session_state["viewer_color_refresh"]=(
-                        st.session_state.get("viewer_color_refresh",0)+1)
-                    st.session_state["v_grid_version"]=st.session_state.get("v_grid_version",0)+1
-                    st.rerun()
+        cfg=styles[chosen]
+        st.caption(f"{len(layers[chosen])} objektů · "
+                   f"{'zobrazena' if chosen in visible else 'skrytá'}")
+        # Input keys change only after applying or loading a workspace. This
+        # avoids stale color-picker state overriding loaded/saved layer styles.
+        revision=st.session_state.get("viewer_style_revision",0)
+        key_suffix=f"{revision}_{names.index(chosen)}"
+        with st.form("viewer_style_editor",clear_on_submit=False,
+                     enter_to_submit=False):
+            color=st.color_picker("Barva vrstvy",value=cfg["color"],
+                                  key="viewer_form_color_"+key_suffix)
+            opacity=st.slider("Průhlednost",0.,1.,float(cfg["opacity"]),.05,
+                              key="viewer_form_opacity_"+key_suffix)
+            weight=st.slider("Tloušťka linie [px]",.5,10.,float(cfg["width"]),.5,
+                             key="viewer_form_weight_"+key_suffix)
+            preset=st.selectbox("Rychlá paleta",list(_STYLE_PRESETS),
+                                index=0,key="viewer_form_preset_"+key_suffix,
+                                help="Přednastavená barva má při použití přednost před vlastní.")
+            if _STYLE_PRESETS[preset]:
+                st.caption("Použije se "+preset)
+            submitted=st.form_submit_button("POUŽÍT STYL",type="primary",
+                                            use_container_width=True)
+        if submitted:
+            selected_color=_STYLE_PRESETS[preset] or color
+            cfg.update(color=selected_color,opacity=float(opacity),
+                       width=float(weight))
+            st.session_state["viewer_style_revision"]=revision+1
+            # Exactly one rerun after an explicit apply, rather than on slider
+            # changes. Existing render/print code reads styles from this dict.
+            st.rerun()
     else:
         st.caption("Vyber nebo naimportuj vrstvu.")
     st.markdown('<div class="cd-panel-title">MAPOVÁ KOMPOZICE</div>',
@@ -481,6 +497,7 @@ def _restore_viewer_workspace():
         layers,styles,settings=load_workspace(upload.getvalue())
         st.session_state["viewer_imported_workspace_layers"]=layers
         st.session_state["viewer_styles"]=styles
+        st.session_state["viewer_style_revision"]=st.session_state.get("viewer_style_revision",0)+1
         allowed={"viewer_mode":("2D MAPA","3D TERÉN / HYPSOMETRIE"),
                  "viewer_basemap":tuple(BASEMAPS)}
         for key,choices in allowed.items():
@@ -509,6 +526,41 @@ def render_viewer():
     [data-testid="stVerticalBlock"]{gap:.36rem!important}
     [data-testid="stDataFrame"]{border:1px solid #3a5571!important;border-radius:8px}
     [data-testid="stButton"] button{min-height:31px!important}
+    /* Streamlit renders dropdown popovers outside the VIEWER columns.
+       Style inputs and overlay menus explicitly instead of inheriting the
+       white BaseWeb control backgrounds from the light app theme. */
+    [data-testid="stAppViewContainer"] div[data-baseweb="select"] > div,
+    [data-testid="stAppViewContainer"] div[data-baseweb="input"] > div,
+    [data-testid="stAppViewContainer"] div[data-baseweb="input"]{
+      background:#172d44!important;border-color:#40627d!important;
+      color:#eaf4ff!important}
+    [data-testid="stAppViewContainer"] div[data-baseweb="select"] *,
+    [data-testid="stAppViewContainer"] div[data-baseweb="input"] input,
+    [data-testid="stAppViewContainer"] div[data-baseweb="select"] input,
+    [data-testid="stAppViewContainer"] input[type="text"]{
+      color:#eaf4ff!important;-webkit-text-fill-color:#eaf4ff!important}
+    [data-testid="stAppViewContainer"] input::placeholder{
+      color:#a2bbce!important;-webkit-text-fill-color:#a2bbce!important}
+    [data-baseweb="popover"] [role="listbox"],
+    [data-baseweb="popover"] [data-baseweb="menu"],
+    [data-baseweb="popover"] [data-baseweb="select"]{
+      background:#142940!important;color:#eaf4ff!important;
+      border:1px solid #40627d!important}
+    [data-baseweb="popover"] [role="option"],
+    [data-baseweb="popover"] [role="listbox"] li,
+    [data-baseweb="menu"] [role="option"]{
+      background:#142940!important;color:#eaf4ff!important;
+      -webkit-text-fill-color:#eaf4ff!important}
+    [data-baseweb="popover"] [role="option"]:hover,
+    [data-baseweb="popover"] [aria-selected="true"]{
+      background:#255173!important;color:#ffffff!important}
+    [data-baseweb="popover"] [role="option"] *,
+    [data-baseweb="popover"] [role="listbox"] *{
+      color:#eaf4ff!important;-webkit-text-fill-color:#eaf4ff!important}
+    [data-testid="stAppViewContainer"] [data-testid="stForm"]{
+      border:1px solid #304e68!important;border-radius:9px!important;
+      background:#11243a!important;padding:11px!important}
+
     .v-title{position:absolute;z-index:9999;left:50%;top:15px;transform:translateX(-50%);
       border:1px solid #527294;border-radius:6px;padding:9px 20px;
       background:#07182de8;color:#f3f8ff;font:700 14px system-ui;letter-spacing:.12em;
