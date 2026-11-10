@@ -539,7 +539,9 @@ def _par_pattern_metadata(pattern):
     return {name:getattr(pattern,name) for name in (
         "scan_mode","steering_loss_db_per_deg","detection_model",
         "reference_snr_db","pd","pfa","pulses","channel_mode",
-        "az_beam_step_deg","el_beam_step_deg")}
+        "az_beam_step_deg","el_beam_step_deg",
+        "coverage_mode","gas_loss_db_per_km","rain_loss_db_per_km",
+        "additional_loss_db")}
 
 
 def _par_model_metadata():
@@ -555,6 +557,10 @@ def _par_model_metadata():
         "channel_mode":st.session_state.get("ws_par_channels","BOTH"),
         "az_beam_step_deg":float(st.session_state.get("ws_par_az_beam_step",0.3)),
         "el_beam_step_deg":float(st.session_state.get("ws_par_el_beam_step",0.2)),
+        "coverage_mode":st.session_state.get("ws_par_quality","FAST"),
+        "gas_loss_db_per_km":float(st.session_state.get("ws_par_gas_loss",0.0)),
+        "rain_loss_db_per_km":float(st.session_state.get("ws_par_rain_loss",0.0)),
+        "additional_loss_db":float(st.session_state.get("ws_par_extra_loss",0.0)),
     }
 
 
@@ -575,6 +581,10 @@ def _restore_par_model_metadata(meta):
         "channel_mode":"ws_par_channels",
         "az_beam_step_deg":"ws_par_az_beam_step",
         "el_beam_step_deg":"ws_par_el_beam_step",
+        "coverage_mode":"ws_par_quality",
+        "gas_loss_db_per_km":"ws_par_gas_loss",
+        "rain_loss_db_per_km":"ws_par_rain_loss",
+        "additional_loss_db":"ws_par_extra_loss",
     }
     if set(values)-set(allowed):
         raise ValueError("Neznámé parametry PAR v projektu.")
@@ -953,6 +963,36 @@ def radar_dialog():
                          key="ws_par_scan_mode")
             st.number_input("Ztráta skenu [dB/°] · orientační",min_value=0.,max_value=5.,
                             value=0.,step=.05,key="ws_par_scan_loss")
+            st.markdown("**REŽIM VÝPOČTU · AESA**")
+            st.segmented_control("Úroveň detailu",["FAST","ENGINEERING"],
+                                 default="FAST",key="ws_par_quality",
+                                 width="stretch")
+            if st.session_state.get("ws_par_quality","FAST")=="FAST":
+                st.caption("FAST · předpočítaná úhlová LUT, stejný fyzikální "
+                           "model, rychlé opakované hladiny a změny kanálu.")
+            else:
+                st.caption("ENGINEERING · přímé vyhodnocení poloh skenu bez LUT. "
+                           "Zohledňuje zadané scénářové útlumy na každé "
+                           "skutečné šikmé vzdálenosti.")
+            with st.expander("RF ZTRÁTY / PROPAGACE · SCÉNÁŘ",expanded=False):
+                st.caption("Jednosměrné koeficienty dB/km. Pro radar se "
+                           "uplatní obousměrný útlum. Nuly znamenají "
+                           "nezadaný útlum, nikoli bezchybnou atmosféru.")
+                p,q=st.columns(2,gap="small")
+                with p:
+                    st.number_input("Atmosférické plyny [dB/km]",
+                        min_value=0.,max_value=60.,step=.005,format="%.3f",
+                        value=0.,key="ws_par_gas_loss")
+                with q:
+                    st.number_input("Déšť [dB/km]",
+                        min_value=0.,max_value=60.,step=.01,format="%.3f",
+                        value=0.,key="ws_par_rain_loss")
+                st.number_input("Další ztráta RF systému [dB]",
+                    min_value=0.,max_value=60.,step=.5,value=0.,
+                    key="ws_par_extra_loss")
+                st.caption("Koeficienty nejsou automaticky odvozené z "
+                           "ITU-R ani z měření Y8600. Clutter a difrakce "
+                           "nejsou součástí tohoto modelu.")
             st.selectbox("Detekční rozpočet",["RELATIVE","ALBERSHEIM"],
                          format_func=lambda mode:"Relativní obálka 40 km"
                          if mode=="RELATIVE" else "Ilustrační SNR / Pd / Pfa",
