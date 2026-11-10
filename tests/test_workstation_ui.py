@@ -3,6 +3,7 @@ import unittest
 
 from workspace_theme import header, COMMON_CSS
 from viewer_export import render_print
+from viewer_workspace_file import make_workspace, load_workspace
 
 
 class WorkstationTests(unittest.TestCase):
@@ -21,6 +22,18 @@ class WorkstationTests(unittest.TestCase):
     def test_print_rejects_bad_format(self):
         with self.assertRaises(ValueError):
             render_print({},{},"Empty",fmt="svg",dpi=300)
+
+    def test_viewer_layout_roundtrip(self):
+        layers={"FL 030":[{"type":"Feature","properties":{"name":"FL"},
+                "geometry":{"type":"Point","coordinates":[15.0,50.0]}}]}
+        styles={"FL 030":{"show":True,"color":"#63c9ef","opacity":.5,"width":2.}}
+        settings={"viewer_mode":"3D TERÉN / HYPSOMETRIE",
+                  "viewer_map_title":"RADAR TEST"}
+        blob=make_workspace(layers,styles,settings)
+        actual_layers,actual_styles,actual_settings=load_workspace(blob)
+        self.assertEqual(layers,actual_layers)
+        self.assertEqual(styles,actual_styles)
+        self.assertEqual(settings,actual_settings)
 
     def test_render_vector_pdf(self):
         features={"Test / RWY":[{"type":"Feature",
