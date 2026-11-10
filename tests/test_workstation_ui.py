@@ -61,6 +61,16 @@ class WorkstationTests(unittest.TestCase):
         self.assertIn("not site-calibrated",note)
         self.assertTrue(np.isfinite(fig.data[0].y).any())
 
+    def test_viewer_inspector_is_explicitly_applied(self):
+        from pathlib import Path
+        text=Path(__file__).resolve().parents[1].joinpath(
+            "coverage_viewer.py").read_text(encoding="utf-8")
+        self.assertIn('with st.form("viewer_style_editor"',text)
+        self.assertIn('st.form_submit_button("POUŽÍT STYL"',text)
+        self.assertIn('"Cyan · #5DCDF4"',text)
+        self.assertNotIn('key="viewer_preset_"',text)
+        self.assertIn('[data-baseweb="popover"] [role="option"]',text)
+
     def test_viewer_layout_roundtrip(self):
         layers={"FL 030":[{"type":"Feature","properties":{"name":"FL"},
                 "geometry":{"type":"Point","coordinates":[15.0,50.0]}}]}
