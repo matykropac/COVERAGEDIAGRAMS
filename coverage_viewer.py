@@ -501,7 +501,7 @@ def _restore_viewer_workspace():
 
 
 def render_viewer():
-    from workspace_theme import COMMON_CSS,header
+    from workspace_theme import COMMON_CSS
     st.markdown(COMMON_CSS,unsafe_allow_html=True)
     st.markdown("""<style>
     [data-testid="stAppViewContainer"]{background:#0b1626!important}
@@ -525,10 +525,6 @@ def render_viewer():
     @media(max-width:900px){.v-title{max-width:75%;text-overflow:ellipsis;overflow:hidden}}
     </style>""",unsafe_allow_html=True)
     editor_result,editor_meta=_snapshot()
-    ptitle=("RADAR / "+editor_result["config"].radar_mode if editor_result is not None
-            else "GEODATA / UNTITLED")
-    st.markdown(header("VIEWER",ptitle,"3D · CARTOGRAPHY · PRESENTATION"),
-                unsafe_allow_html=True)
     top_left,top_right=st.columns([3,2],gap="small",vertical_alignment="center")
     with top_left:
         st.caption("LAYER STUDIO  /  GEO DATA  /  3D TERRAIN")
