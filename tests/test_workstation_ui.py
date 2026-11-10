@@ -79,6 +79,8 @@ class WorkstationTests(unittest.TestCase):
         self.assertIn('_viewer_folium_cache',source)
         self.assertIn('_viewer_upload_cache',source)
         self.assertIn('_viewer_editor_layer_cache',source)
+        self.assertIn('@st.fragment\\ndef _viewer_export_panel(',source)
+        self.assertIn('def _cached_map_html(',source)
         self.assertIn('returned_objects=[]',source)
         self.assertIn('st.container(key="viewer_inspector")',source)
         self.assertIn('opacity_percent=st.number_input',source)
