@@ -15,14 +15,25 @@ URL = "https://api.tiles.openaip.net/api/data/openaip/{z}/{x}/{y}.png?apiKey={ke
 
 
 def configured_key():
-    key = os.environ.get("OPENAIP_API_KEY", "").strip()
-    if key:
-        return key
+    """Prefer dedicated tiles token; accept existing OpenAIP data token.
+
+    A number of deployments configured OPENAIP_DATA_API_KEY for aviation
+    overlays, but the Leaflet layer previously looked for OPENAIP_API_KEY only.
+    Provider API access scope still governs whether tiles are authorized.
+    """
+    for field in ("OPENAIP_API_KEY","OPENAIP_DATA_API_KEY"):
+        value=os.environ.get(field,"").strip()
+        if value:
+            return value
     try:
         import streamlit as st
-        return str(st.secrets.get("OPENAIP_API_KEY", "")).strip() or None
-    except (FileNotFoundError, KeyError, OSError):
+        for field in ("OPENAIP_API_KEY","OPENAIP_DATA_API_KEY"):
+            value=str(st.secrets.get(field,"")).strip()
+            if value:
+                return value
+    except (FileNotFoundError,KeyError,OSError):
         return None
+    return None
 
 
 def controls():
@@ -58,7 +69,7 @@ def test_tiles_connection(key=None, *, timeout=7):
     from urllib.error import HTTPError, URLError
     key=key or configured_key()
     if not key:
-        return False, "Chybí OPENAIP_API_KEY v nastavení aplikace."
+        return False, "Chybí OPENAIP_API_KEY nebo OPENAIP_DATA_API_KEY v nastavení aplikace."
     url=URL.format(z=6,x=34,y=21,key=quote(key,safe=""))
     try:
         req=Request(url,headers={"User-Agent":"COVERAGEDIAGRAMS-AIP-Check/1.0"})
