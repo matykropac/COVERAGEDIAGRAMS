@@ -246,13 +246,13 @@ def _polar_dem(result,max_size=160):
 
 def _editor_layers(result,meta):
     from web_support import coverage_geojson
+    mode=result["config"].radar_mode
     selected=meta.get("levels",[]) if isinstance(meta,dict) else []
-    available=set(core.flight_levels_for(result["config"].radar_mode))
-    selected=[ft for ft in selected if ft in available]
-    if not selected:
-        selected=list(core.flight_levels_for(result["config"].radar_mode))[:3]
+    selected=[ft for ft in selected if core.valid_flight_level(mode,ft)]
+    if not selected and not (isinstance(meta,dict) and "levels" in meta):
+        selected=list(core.flight_levels_for(mode))[:3]
     if st.session_state.get("viewer_import_all_fl"):
-        selected=list(core.flight_levels_for(result["config"].radar_mode))
+        selected=sorted(set(core.flight_levels_for(mode)).union(selected))
     # Cache expensive polygon generation in the user session. The snapshot
     # token is immutable; the selected flight levels are the only variable.
     signature=(str(st.query_params.get("snapshot","")),tuple(selected))
