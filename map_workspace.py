@@ -795,6 +795,12 @@ def radar_dialog():
                     except ValueError as exc:
                         st.error(str(exc))
         choices=_available_levels(mode)
+        # Switching away from PAR must discard PAR-only values BEFORE the
+        # multiselect widget is instantiated, not after it has rendered.
+        if mode!="PAR-NG" and "ws_levels" in st.session_state:
+            st.session_state["ws_levels"]=[
+                x for x in st.session_state["ws_levels"]
+                if core.valid_flight_level(mode,x)]
         default=[x for x in (3000,10000) if x in choices]
         st.multiselect("Letové hladiny [ft AMSL]",choices,default=default,
                        format_func=core.level_label,key="ws_levels")
