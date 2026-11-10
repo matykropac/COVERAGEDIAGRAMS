@@ -1913,17 +1913,27 @@ def _draw_map():
     coverage=[]
     reference=(st.session_state.get("ws_par_level_reference","AGL")
                if c.radar_mode=="PAR-NG" else "AMSL")
+    channel_view=(st.session_state.get("ws_par_diagnostic_layer","VÝSLEDEK")
+                  if c.radar_mode=="PAR-NG" else "VÝSLEDEK")
     for level in active:
-        cache_key=(level,reference)
+        cache_key=(level,reference,channel_view)
         if cache_key not in st.session_state.setdefault("geometry",{}):
-            st.session_state.geometry[cache_key]=coverage_geojson(
-                result,level,reference=reference)
+            if channel_view=="VÝSLEDEK":
+                geo=coverage_geojson(result,level,reference=reference)
+            else:
+                from web_support import par_diagnostic_geojson
+                geo=par_diagnostic_geojson(result,level,channel_view,
+                                           reference=reference)
+            st.session_state.geometry[cache_key]=geo
+        colors={"AZ":"#5dcdf4","EL":"#f7c66b","BOTH":"#46e1be"}
         coverage.append({
             "geojson":st.session_state.geometry[cache_key],
-            "color":"#247ad3" if level is None else to_hex(core.level_color(level)),
+            "color":colors[channel_view] if channel_view in colors else (
+                "#247ad3" if level is None else to_hex(core.level_color(level))),
         })
         previous=st.session_state.get("ws_previous_result")
-        if previous is not None and st.session_state.get("ws_compare_previous",True):
+        if (channel_view=="VÝSLEDEK" and previous is not None
+                and st.session_state.get("ws_compare_previous",True)):
             if previous["config"]==c:
                 # Read-only historic result: retain before/after visibility even
                 # when obstacles are removed or the current geometry is cached.
@@ -2298,6 +2308,18 @@ def render_workspace():
                         st.radio("Výška PAR nad terénem / mořem",("AGL","AMSL"),
                                  horizontal=True,key="ws_par_level_reference",
                                  help="AGL = nad místním terénem. AMSL = nad hladinou moře.")
+                        st.selectbox("PAR · VRSTVA KRYTÍ",
+                            ["VÝSLEDEK","AZ","EL","BOTH"],
+                            format_func=lambda value:{
+                                "VÝSLEDEK":"Nastavená anténa",
+                                "AZ":"AZ · horizontální sken",
+                                "EL":"EL · vertikální sken",
+                                "BOTH":"AZ + EL · společná oblast",
+                            }[value],key="ws_par_diagnostic_layer",
+                            help="Přepnutí nevyžaduje nové stažení DEM. "
+                                 "Vrstvy používají stejnou fyziku, ale "
+                                 "oddělené kanálové podmínky.")
+
                     st.toggle("Zobrazit radarové krytí",value=True,key="ws_show_coverage")
                     st.segmented_control(
                         "Zobrazení hladin",["Jedna hladina","Porovnání","Cíl"],
