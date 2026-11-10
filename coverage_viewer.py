@@ -290,9 +290,19 @@ def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.), st
         return
     scale=st.slider("Vertikální převýšení (vizuální)",1.0,8.0,2.0,0.5,key="viewer_exaggeration")
     palette=st.selectbox("Hypsometrie",["Terrain","Viridis","Earth","Turbo","Greys"],key="viewer_hypsometry")
+    # Plotly supports Viridis/Earth/Turbo/Greys but not the Matplotlib name
+    # "Terrain". Convert the authentic Matplotlib terrain palette to explicit
+    # stop/color pairs accepted by Plotly Surface.
+    if palette == "Terrain":
+        from matplotlib import colormaps
+        from matplotlib.colors import to_hex
+        terrain_cmap = colormaps["terrain"]
+        surface_scale = [[i / 32, to_hex(terrain_cmap(i / 32))] for i in range(33)]
+    else:
+        surface_scale = palette
     z0=float(np.nanmin(z))
     fig=go.Figure(go.Surface(x=lon,y=lat,z=z0+(z-z0)*scale,
-                            surfacecolor=z,colorscale=palette,connectgaps=False,
+                            surfacecolor=z,colorscale=surface_scale,connectgaps=False,
                             colorbar=dict(title="m AMSL"),
                             hovertemplate="LON %{x:.5f}<br>LAT %{y:.5f}<br>Relativní Z %{z:.1f}<extra></extra>"))
     # KML geometries are horizontally georeferenced and draped onto nearest DEM elevations.
