@@ -831,6 +831,20 @@ def radar_dialog():
                 st.plotly_chart(fig3d,use_container_width=True,
                     key="ws_radar_par_3d_heatmap",
                     config={"displaylogo":False,"responsive":True})
+                if diagram_pattern.scan_mode=="TRACKING":
+                    from antenna_workspace_preview import par_scanned_coverage_figure
+                    st.markdown("**AESA · SKENOVANÁ DOSAHOVÁ OBÁLKA**")
+                    st.caption("Výpočet napříč všemi povelovanými polohami "
+                               "svazku, nikoli statický anténní diagram. "
+                               "Barva vyjadřuje maximální *modelový* dosah "
+                               "před započtením terénního horizontu.")
+                    scanned=par_scanned_coverage_figure(diagram_pattern)
+                    st.plotly_chart(scanned,use_container_width=True,
+                        key="ws_radar_par_scan_envelope",
+                        config={"displaylogo":False,"responsive":True})
+                    st.caption("Základ je 40 km; nejisté parametry EL a skutečného "
+                               "RF rozpočtu nelze zaměňovat za ověřenou Pd.")
+
                 a,b,c=st.columns(3,gap="small")
                 a.metric("ELEVACE × AZIMUT",
                     f"{detail['elevation_samples']} × {detail['azimuth_samples']}")
