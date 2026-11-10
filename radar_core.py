@@ -151,6 +151,42 @@ def flight_levels_for(mode):
     return PAR_LOW_LEVELS_FT + FLIGHT_LEVELS_LIST if mode in ('PAR', 'PAR-NG') else FLIGHT_LEVELS_LIST
 
 
+PAR_CUSTOM_MIN_FT = 1
+PAR_CUSTOM_MAX_FT = 66000
+PAR_CUSTOM_MAX_COUNT = 100
+
+
+def valid_flight_level(mode, ft):
+    """Presets for PSR/SSR; any whole-foot elevation 1..66000 for PAR.
+
+    Bool/float/string are rejected, so project metadata cannot silently
+    change an altitude or accept fractional/unsafe values.
+    """
+    if isinstance(ft, (bool, np.bool_)) or not isinstance(ft, (int, np.integer)):
+        return False
+    ft=int(ft)
+    if mode in ('PAR','PAR-NG'):
+        return PAR_CUSTOM_MIN_FT <= ft <= PAR_CUSTOM_MAX_FT
+    return ft in flight_levels_for(mode)
+
+
+def parse_par_flight_levels(text):
+    """Read comma/semicolon/whitespace separated custom flight levels in ft."""
+    import re
+    raw=str(text or "").strip()
+    if not raw:
+        return ()
+    tokens=[x for x in re.split(r"[,;\\s]+",raw) if x]
+    if len(tokens)>PAR_CUSTOM_MAX_COUNT:
+        raise ValueError(f"Maximálně {PAR_CUSTOM_MAX_COUNT} vlastních hladin.")
+    if any(not re.fullmatch(r"[0-9]+",token) for token in tokens):
+        raise ValueError("Zadej celá čísla v ft, například 300, 400, 900, 1500.")
+    values=tuple(sorted(set(int(token) for token in tokens)))
+    if any(not valid_flight_level('PAR-NG',ft) for ft in values):
+        raise ValueError(f"PAR hladiny musí být v rozsahu {PAR_CUSTOM_MIN_FT}–{PAR_CUSTOM_MAX_FT} ft.")
+    return values
+
+
 HEIGHT_PRESETS_FT = FLIGHT_LEVELS_LIST
 
 
