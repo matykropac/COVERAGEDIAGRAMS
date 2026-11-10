@@ -35,6 +35,9 @@ class WorkstationTests(unittest.TestCase):
                     "ws_par_pulses","ws_beam","ws_target","ws_reference","ws_levels"):
             self.assertIn('key="'+key+'"',text,key)
         self.assertIn("cd-viewer-rail-link",text)
+        self.assertIn('st.container(key="cd_nav_rail")',text)
+        self.assertIn('f"{symbol}  {label}"',text)
+        self.assertNotIn('cd-rail-label',text)
         self.assertIn("ws_export_project_load",text)
         self.assertNotIn('st.segmented_control("Režim",["DAY","NIGHT"]',text)
 
