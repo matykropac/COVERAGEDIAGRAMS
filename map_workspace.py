@@ -546,45 +546,56 @@ def _config_state_from_project(config):
     st.session_state.update(values)
 
 
+def _open_cdproj(data):
+    """Restore a saved project through the original validated calculation path."""
+    result,meta=load_project(data)
+    airport_data=meta.get("source_ui") or {}
+    if airport_data.get("airport_icao") and airport_data.get("airport_runways"):
+        validate_saved_geometry(airport_data["airport_icao"],airport_data["airport_runways"])
+    validate_saved_airspaces(airport_data.get("airspaces",[]))
+    _restore_par_model_metadata(meta)
+    cfg=result["config"]
+    fresh=core.solve(cfg,result["terrain"],result["site_height"],_pattern(cfg))
+    apply_obstacles(fresh,meta.get("obstacles",[]))
+    fresh.update(source=result.get("source","PROJECT"),
+                 completed_at=result.get("completed_at",""),
+                 duration_s=result.get("duration_s",0),
+                 obstacles_signature=obstacle_signature(meta.get("obstacles",[])))
+    _config_state_from_project(fresh["config"])
+    _restore_airport_metadata(meta)
+    st.session_state["result"]=fresh
+    for key in ("ws_previous_result","ws_before_geometry","ws_snapshot_bytes",
+                "ws_viewer_handoff","ws_coverage_kml_ready","ws_zip_ready"):
+        st.session_state.pop(key,None)
+    st.session_state["geometry"]={}
+    st.session_state["obstacles"]=meta.get("obstacles",[])
+    st.session_state["ws_levels"]=meta.get("levels",[])
+    st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
+    st.session_state["ws_viewport"]={
+        "lat":fresh["config"].lat,"lng":fresh["config"].lon,"zoom":8}
+    st.session_state["ws_next_section"]="MAPA"
+
+
+@st.dialog("OTEVŘÍT PROJEKT · CDPROJ",width="large")
+def project_load_dialog():
+    st.caption("Načte projekt COVERAGEDIAGRAMS včetně vypočteného krytí, "
+               "terénních dat, překážek a nastavení. Není potřeba znovu stahovat DEM.")
+    uploaded=st.file_uploader("Soubor projektu (.cdproj)",type=["cdproj"],
+                              key="ws_project_upload")
+    if st.button("NAČÍST PROJEKT",type="primary",use_container_width=True,
+                 key="ws_project_load",disabled=uploaded is None):
+        try:
+            _open_cdproj(uploaded.getvalue())
+            st.rerun()
+        except (ValueError,KeyError,TypeError,OSError) as exc:
+            st.error(f"Projekt nelze načíst: {exc}")
+
+
 @st.dialog("RADAR / Nastavení a výpočet", width="large")
 def radar_dialog():
-    with st.expander("OTEVŘÍT EXISTUJÍCÍ PROJEKT · .cdproj",expanded=False):
-        uploaded_project=st.file_uploader("Projekt COVERAGEDIAGRAMS",type=["cdproj"],
-                                          key="ws_project_upload")
-        if uploaded_project is not None and st.button("NAČÍST PROJEKT",key="ws_project_load"):
-            try:
-                result,meta=load_project(uploaded_project.getvalue())
-                airport_data=meta.get("source_ui") or {}
-                if airport_data.get("airport_icao") and airport_data.get("airport_runways"):
-                    validate_saved_geometry(airport_data["airport_icao"],airport_data["airport_runways"])
-                validate_saved_airspaces(airport_data.get("airspaces",[]))
-                _restore_par_model_metadata(meta)
-                # Recreate the antenna-aware solution from the embedded DEM.
-                # Stored status/lower may already include obstacles; never reuse
-                # them as the base when editing or removing obstructions.
-                cfg=result["config"]
-                fresh=core.solve(cfg,result["terrain"],result["site_height"],_pattern(cfg))
-                apply_obstacles(fresh,meta.get("obstacles",[]))
-                fresh.update(source=result.get("source","PROJECT"),
-                             completed_at=result.get("completed_at",""),
-                             duration_s=result.get("duration_s",0),
-                             obstacles_signature=obstacle_signature(meta.get("obstacles",[])))
-                result=fresh
-                _config_state_from_project(result["config"])
-                _restore_airport_metadata(meta)
-                st.session_state["result"]=result
-                st.session_state.pop("ws_previous_result",None)
-                st.session_state.pop("ws_before_geometry",None)
-                st.session_state["geometry"]={}
-                st.session_state.pop("ws_snapshot_bytes",None)
-                st.session_state["obstacles"]=meta.get("obstacles",[])
-                st.session_state["ws_levels"]=meta.get("levels",[])
-                st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
-                st.session_state["ws_viewport"]={
-                    "lat":result["config"].lat,"lng":result["config"].lon,"zoom":8}
-                st.rerun()
-            except (ValueError,KeyError,TypeError) as exc:
-                st.error(f"Projekt nelze načíst: {exc}")
+    if st.button("NAČÍST EXISTUJÍCÍ PROJEKT · CDPROJ",
+                 key="ws_radar_open_project",use_container_width=True):
+        project_load_dialog()
     st.caption("Nastav stanoviště, parametry a letové hladiny. Výsledek se objeví přímo v mapě.")
     site, settings = st.columns(2, gap="medium")
     with site:
@@ -1883,6 +1894,10 @@ def render_workspace():
                     'border:1px solid #2865d9;background:#eef4ff;color:#174d9a;'
                     'padding:9px;border-radius:7px;text-decoration:none;font-weight:700">'
                     'OTEVŘÍT PŘENESENÝ PROJEKT ↗</a>',unsafe_allow_html=True)
+        if st.button("◫ NAČÍST PROJEKT · CDPROJ",
+                     key="ws_sidebar_project_load",use_container_width=True,
+                     help="Otevře uložený projekt včetně výpočtu, DEM a radarového krytí."):
+            project_load_dialog()
         section=st.segmented_control(
             "Pracovní sekce",
             options=["MAPA","PŘEKÁŽKY","RADAR","POZICE"],
