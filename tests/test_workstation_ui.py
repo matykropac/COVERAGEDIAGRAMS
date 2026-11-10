@@ -71,6 +71,17 @@ class WorkstationTests(unittest.TestCase):
         self.assertNotIn('key="viewer_preset_"',text)
         self.assertIn('[data-baseweb="popover"] [role="option"]',text)
 
+    def test_viewer_2d_3d_modes_are_visible_buttons(self):
+        from pathlib import Path
+        source=Path(__file__).resolve().parents[1].joinpath(
+            "coverage_viewer.py").read_text(encoding="utf-8")
+        self.assertIn('st.container(key="viewer_mode_toolbar")',source)
+        self.assertIn('key="viewer_mode_2d_btn"',source)
+        self.assertIn('key="viewer_mode_3d_btn"',source)
+        self.assertIn('st.session_state["viewer_mode"]="3D TERÉN / HYPSOMETRIE"',source)
+        self.assertIn('mode=st.session_state.get("viewer_mode","2D MAPA")',source)
+        self.assertNotIn('mode=st.segmented_control("Režim"',source)
+
     def test_viewer_map_is_cached_and_inspector_compact(self):
         from pathlib import Path
         source=Path(__file__).resolve().parents[1].joinpath(
