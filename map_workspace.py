@@ -546,6 +546,16 @@ def _config_state_from_project(config):
     st.session_state.update(values)
 
 
+def _visual_project_state():
+    """Visual settings saved alongside radar matrices in the CDPROJ metadata."""
+    return {"mode":st.session_state.get("ws_display_mode","Jedna hladina"),
+            "opacity":st.session_state.get("ws_map_opacity",.42),
+            "daynight":st.session_state.get("ws_daynight","NIGHT"),
+            "active_level":st.session_state.get("ws_map_level"),
+            "viewport":st.session_state.get("ws_viewport"),
+            "section":st.session_state.get("ws_section","MAPA")}
+
+
 def _open_cdproj(data):
     """Restore a saved project through the original validated calculation path."""
     result,meta=load_project(data)
@@ -571,8 +581,20 @@ def _open_cdproj(data):
     st.session_state["obstacles"]=meta.get("obstacles",[])
     st.session_state["ws_levels"]=meta.get("levels",[])
     st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
-    st.session_state["ws_viewport"]={
-        "lat":fresh["config"].lat,"lng":fresh["config"].lon,"zoom":8}
+    display=meta.get("display") or {}
+    if isinstance(display,dict):
+        for field,widget in (("daynight","ws_daynight"),
+                             ("opacity","ws_map_opacity"),
+                             ("mode","ws_display_mode"),
+                             ("active_level","ws_map_level")):
+            value=display.get(field)
+            if value is not None:
+                st.session_state[widget]=value
+                st.session_state["_persist_"+widget]=value
+    viewport=display.get("viewport") if isinstance(display,dict) else None
+    if not isinstance(viewport,dict) or not all(k in viewport for k in ("lat","lng","zoom")):
+        viewport={"lat":fresh["config"].lat,"lng":fresh["config"].lon,"zoom":8}
+    st.session_state["ws_viewport"]=viewport
     st.session_state["ws_next_section"]="MAPA"
 
 
@@ -1934,12 +1956,7 @@ def render_workspace():
                             result,levels=st.session_state.get("ws_levels",[]),
                             obstacles=st.session_state.get("obstacles",[]),
                             source_ui=_airport_project_metadata(),
-                            display={"mode":st.session_state.get("ws_display_mode","Jedna hladina"),
-                                     "opacity":st.session_state.get("ws_map_opacity",.42),
-                                     "daynight":st.session_state.get("ws_daynight","DAY"),
-                                     "active_level":st.session_state.get("ws_map_level"),
-                                     "viewport":st.session_state.get("ws_viewport"),
-                                     "section":st.session_state.get("ws_section","MAPA")})
+                            display=_visual_project_state())
                     except Exception as exc:
                         st.error(f"Projekt nelze připravit: {exc}")
             if st.session_state.get("ws_top_project_bytes"):
