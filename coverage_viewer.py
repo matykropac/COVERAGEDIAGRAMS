@@ -457,6 +457,15 @@ def _get_2d_map(layers, styles, visible, basemap, title, show_legend, show_north
     return m
 
 
+def _cached_map_html(m):
+    cached=st.session_state.get("_viewer_html_cache")
+    if cached and cached[0] is m:
+        return cached[1]
+    page=m.get_root().render().encode("utf-8")
+    st.session_state["_viewer_html_cache"]=(m,page)
+    return page
+
+
 def _layer_grid(layers):
     """Dense scrollable grid, constant screen height even for 30+ layers."""
     styles=st.session_state.setdefault("viewer_styles",{})
@@ -527,23 +536,30 @@ def _layer_properties(layers, styles, visible):
         revision=st.session_state.get("viewer_style_revision",0)
         key_suffix=f"{revision}_{names.index(chosen)}"
         with st.form("viewer_style_editor",clear_on_submit=False,
-                     enter_to_submit=False):
-            color=st.color_picker("Barva vrstvy",value=cfg["color"],
-                                  key="viewer_form_color_"+key_suffix)
-            opacity=st.slider("Průhlednost",0.,1.,float(cfg["opacity"]),.05,
-                              key="viewer_form_opacity_"+key_suffix)
-            weight=st.slider("Tloušťka linie [px]",.5,10.,float(cfg["width"]),.5,
-                             key="viewer_form_weight_"+key_suffix)
-            preset=st.selectbox("Rychlá paleta",list(_STYLE_PRESETS),
-                                index=0,key="viewer_form_preset_"+key_suffix,
-                                help="Přednastavená barva má při použití přednost před vlastní.")
-            if _STYLE_PRESETS[preset]:
-                st.caption("Použije se "+preset)
+                     enter_to_submit=False,border=False):
+            color_col,preset_col=st.columns([1,3],gap="small",
+                                             vertical_alignment="bottom")
+            with color_col:
+                color=st.color_picker("Barva",value=cfg["color"],
+                    key="viewer_form_color_"+key_suffix)
+            with preset_col:
+                preset=st.selectbox("Paleta",list(_STYLE_PRESETS),
+                    index=0,key="viewer_form_preset_"+key_suffix,
+                    help="Vybraný preset má přednost před vlastní barvou.")
+            op_col,line_col=st.columns(2,gap="small")
+            with op_col:
+                opacity_percent=st.number_input("Výplň [%]",min_value=0,
+                    max_value=100,value=int(round(float(cfg["opacity"])*100)),
+                    step=5,key="viewer_form_opacity_"+key_suffix)
+            with line_col:
+                weight=st.number_input("Linie [px]",min_value=.5,max_value=10.,
+                    value=float(cfg["width"]),step=.5,format="%.1f",
+                    key="viewer_form_weight_"+key_suffix)
             submitted=st.form_submit_button("POUŽÍT STYL",type="primary",
                                             use_container_width=True)
         if submitted:
             selected_color=_STYLE_PRESETS[preset] or color
-            cfg.update(color=selected_color,opacity=float(opacity),
+            cfg.update(color=selected_color,opacity=opacity_percent/100.,
                        width=float(weight))
             st.session_state["viewer_style_revision"]=revision+1
             # Exactly one rerun after an explicit apply, rather than on slider
@@ -551,13 +567,16 @@ def _layer_properties(layers, styles, visible):
             st.rerun()
     else:
         st.caption("Vyber nebo naimportuj vrstvu.")
-    st.markdown('<div class="cd-panel-title">MAPOVÁ KOMPOZICE</div>',
-                unsafe_allow_html=True)
-    basemap=st.selectbox("Podklad",list(BASEMAPS),index=0,key="viewer_basemap")
-    title=st.text_input("Titulek mapy","RADAR COVERAGE / GEOSPATIAL VIEWER",
-                        key="viewer_map_title")
-    legend=st.toggle("Legenda",value=True,key="viewer_legend")
-    north=st.toggle("Severka",value=True,key="viewer_north")
+    with st.expander("MAPOVÁ KOMPOZICE",expanded=False):
+        basemap=st.selectbox("Podklad",list(BASEMAPS),index=0,
+                             key="viewer_basemap")
+        title=st.text_input("Titulek mapy","RADAR COVERAGE / GEOSPATIAL VIEWER",
+                            key="viewer_map_title")
+        a,b=st.columns(2,gap="small")
+        with a:
+            legend=st.toggle("Legenda",value=True,key="viewer_legend")
+        with b:
+            north=st.toggle("Severka",value=True,key="viewer_north")
     return basemap,title,legend,north
 
 
@@ -643,6 +662,24 @@ def render_viewer():
     [data-baseweb="popover"] [role="option"] *,
     [data-baseweb="popover"] [role="listbox"] *{
       color:#eaf4ff!important;-webkit-text-fill-color:#eaf4ff!important}
+    /* Compact inspection console: 2 numeric settings per row, no giant
+       sliders and no repeated full-width card paddings. */
+    .st-key-viewer_inspector [data-testid="stVerticalBlock"]{gap:.25rem!important}
+    .st-key-viewer_inspector [data-testid="stForm"]{
+      padding:4px 0!important;margin:0!important;background:transparent!important;
+      border:none!important}
+    .st-key-viewer_inspector [data-testid="stWidgetLabel"] p{
+      font-size:11px!important;line-height:1.1!important;margin-bottom:0!important}
+    .st-key-viewer_inspector [data-testid="stNumberInput"] input{
+      min-height:29px!important;font-size:12px!important}
+    .st-key-viewer_inspector [data-testid="stSelectbox"]{
+      margin-bottom:0!important}
+    .st-key-viewer_inspector [data-testid="stExpander"]{
+      margin:3px 0!important}
+    .st-key-viewer_inspector [data-testid="stExpander"] summary{
+      min-height:32px!important;font-size:11px!important}
+    .st-key-viewer_inspector [data-testid="stColorPicker"]{
+      min-width:46px!important}
     [data-testid="stAppViewContainer"] [data-testid="stForm"]{
       border:1px solid #304e68!important;border-radius:9px!important;
       background:#11243a!important;padding:11px!important}
@@ -713,55 +750,54 @@ def render_viewer():
                 file_name="COVERAGEDIAGRAMS_viewer.geojson",mime="application/geo+json",
                 use_container_width=True)
     with right:
-        basemap,title,show_legend,show_north=_layer_properties(layers,styles,visible)
-        st.markdown('<div class="cd-panel-title">EXPORT STUDIO</div>',unsafe_allow_html=True)
-        st.caption("Vysoké rozlišení a konzistentní zákaznická grafika.")
-        fmt=st.segmented_control("Typ výstupu",["PNG","PDF"],default="PNG",
-                                 key="viewer_print_format",width="stretch")
-        dpi=st.select_slider("Kvalita [DPI]",options=[300,600],
-                             value=300,key="viewer_print_dpi")
-        print_theme=st.radio("Tisková paleta",["NIGHT","LIGHT"],horizontal=True,
-                             key="viewer_print_theme")
-        if st.button("GENEROVAT MAPOVÝ ATLAS",type="primary",
-                     use_container_width=True,key="viewer_export_render"):
-            try:
-                from viewer_export import render_print
-                blob=render_print(layers,styles,title,fmt=fmt.lower(),
-                                  dpi=dpi,
-                                  night=print_theme=="NIGHT")
-                st.session_state["viewer_print_ready"]=(blob,fmt.lower(),dpi)
-            except Exception as exc:
-                st.error(f"Tiskový export selhal: {exc}")
-        ready=st.session_state.get("viewer_print_ready")
-        if ready:
-            blob,filetype,quality=ready
-            st.download_button("⇩ STÁHNOUT "+filetype.upper(),
-                blob,file_name="COVERAGEDIAGRAMS_Map_"+str(quality)+"dpi."+filetype,
-                mime="application/pdf" if filetype=="pdf" else "image/png",
-                use_container_width=True,key="viewer_print_download")
-        st.caption("Tisk obsahuje data a legendu. Online mapové dlaždice "
-                   "se do tohoto vektorového výstupu nepřebírají.")
-        st.divider()
-        if st.button("ULOŽIT ROZLOŽENÍ · CDVIEW",
-                     key="viewer_workspace_save",use_container_width=True):
-            try:
-                from viewer_workspace_file import make_workspace
-                st.session_state["viewer_workspace_bytes"]=make_workspace(
-                    layers,styles,{"viewer_mode":mode,
-                                   "viewer_basemap":basemap,
-                                   "viewer_map_title":title,
-                                   "viewer_legend":show_legend,
-                                   "viewer_north":show_north})
-            except Exception as exc:
-                st.error(f"VIEWER projekt nelze uložit: {exc}")
-        if st.session_state.get("viewer_workspace_bytes"):
-            st.download_button("⇩ STÁHNOUT CDVIEW",
-                data=st.session_state["viewer_workspace_bytes"],
-                file_name="COVERAGEDIAGRAMS_viewer.cdview",
-                mime="application/octet-stream",use_container_width=True,
-                key="viewer_workspace_download")
-        st.caption("Přenositelný VIEWER preset: vrstvy, barvy, průhlednost, "
-                   "mapová kompozice. DEM zůstává v CDPROJ nebo cache.")
+        with st.container(key="viewer_inspector"):
+            basemap,title,show_legend,show_north=_layer_properties(
+                layers,styles,visible)
+            with st.expander("EXPORT STUDIO · PNG / PDF / CDVIEW",expanded=False):
+            fmt=st.segmented_control("Typ výstupu",["PNG","PDF"],default="PNG",
+                                     key="viewer_print_format",width="stretch")
+            dpi=st.select_slider("Kvalita [DPI]",options=[300,600],
+                                 value=300,key="viewer_print_dpi")
+            print_theme=st.radio("Tisková paleta",["NIGHT","LIGHT"],horizontal=True,
+                                 key="viewer_print_theme")
+            if st.button("GENEROVAT MAPOVÝ ATLAS",type="primary",
+                         use_container_width=True,key="viewer_export_render"):
+                try:
+                    from viewer_export import render_print
+                    blob=render_print(layers,styles,title,fmt=fmt.lower(),
+                                      dpi=dpi,
+                                      night=print_theme=="NIGHT")
+                    st.session_state["viewer_print_ready"]=(blob,fmt.lower(),dpi)
+                except Exception as exc:
+                    st.error(f"Tiskový export selhal: {exc}")
+            ready=st.session_state.get("viewer_print_ready")
+            if ready:
+                blob,filetype,quality=ready
+                st.download_button("⇩ STÁHNOUT "+filetype.upper(),
+                    blob,file_name="COVERAGEDIAGRAMS_Map_"+str(quality)+"dpi."+filetype,
+                    mime="application/pdf" if filetype=="pdf" else "image/png",
+                    use_container_width=True,key="viewer_print_download")
+            st.caption("Tisk obsahuje data a legendu. Online mapové dlaždice "
+                       "se do tohoto vektorového výstupu nepřebírají.")
+            st.divider()
+            if st.button("ULOŽIT ROZLOŽENÍ · CDVIEW",
+                         key="viewer_workspace_save",use_container_width=True):
+                try:
+                    from viewer_workspace_file import make_workspace
+                    st.session_state["viewer_workspace_bytes"]=make_workspace(
+                        layers,styles,{"viewer_mode":mode,
+                                       "viewer_basemap":basemap,
+                                       "viewer_map_title":title,
+                                       "viewer_legend":show_legend,
+                                       "viewer_north":show_north})
+                except Exception as exc:
+                    st.error(f"VIEWER projekt nelze uložit: {exc}")
+            if st.session_state.get("viewer_workspace_bytes"):
+                st.download_button("⇩ STÁHNOUT CDVIEW",
+                    data=st.session_state["viewer_workspace_bytes"],
+                    file_name="COVERAGEDIAGRAMS_viewer.cdview",
+                    mime="application/octet-stream",use_container_width=True,
+                    key="viewer_workspace_download")
     with canvas:
         if mode=="3D TERÉN / HYPSOMETRIE":
             _three_dimensional(layers,visible,editor_result,center,styles,title)
@@ -773,6 +809,6 @@ def render_viewer():
             st_folium(m,height=780,use_container_width=True,key="viewer_2d_map",
                       returned_objects=[])
             st.download_button("⇩ MAPA · INTERAKTIVNÍ HTML",
-                m.get_root().render().encode("utf-8"),
+                _cached_map_html(m),
                 file_name="COVERAGEDIAGRAMS_map_viewer.html",mime="text/html",
                 use_container_width=True,key="viewer_map_html")
