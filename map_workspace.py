@@ -1859,8 +1859,30 @@ def render_workspace():
             '<a href="?viewer=1" target="_blank" rel="noopener" '
             'style="display:block;text-align:center;background:#173d65;color:#fff;'
             'padding:12px;border-radius:7px;font-weight:750;text-decoration:none;'
-            'margin-bottom:12px">↗ OTEVŘÍT VIEWER · KML/KMZ · 3D</a>',
+            'margin-bottom:8px">↗ VIEWER · KML/KMZ · 3D</a>',
             unsafe_allow_html=True)
+        if result is not None:
+            if st.button("↗ OTEVŘÍT VIEWER S VÝSLEDKEM",
+                         key="ws_open_viewer_snapshot",use_container_width=True,
+                         help="Přenese vypočtené hladiny i DEM do nového okna bez dalšího uploadu."):
+                try:
+                    from viewer_bridge import publish
+                    chosen=st.session_state.get("ws_levels",[])
+                    allowed=set(core.flight_levels_for(result["config"].radar_mode))
+                    chosen=[int(x) for x in chosen if int(x) in allowed]
+                    token=publish(result,chosen,st.session_state.get("obstacles",[]),
+                                  source_ui=_airport_project_metadata())
+                    st.session_state["ws_viewer_handoff"]=token
+                except Exception as exc:
+                    st.error(f"VIEWER nelze připravit: {exc}")
+            token=st.session_state.get("ws_viewer_handoff")
+            if token:
+                st.markdown(
+                    '<a href="?viewer=1&amp;snapshot='+token+'" target="_blank" '
+                    'rel="noopener" style="display:block;text-align:center;'
+                    'border:1px solid #2865d9;background:#eef4ff;color:#174d9a;'
+                    'padding:9px;border-radius:7px;text-decoration:none;font-weight:700">'
+                    'OTEVŘÍT PŘENESENÝ PROJEKT ↗</a>',unsafe_allow_html=True)
         section=st.segmented_control(
             "Pracovní sekce",
             options=["MAPA","PŘEKÁŽKY","RADAR","POZICE"],
