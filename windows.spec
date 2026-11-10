@@ -7,7 +7,7 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 root = Path(SPECPATH).resolve()
 required = [
     'streamlit', 'streamlit_folium', 'folium', 'branca',
-    'rasterio', 'pyproj', 'shapely', 'matplotlib',
+    'rasterio', 'pyproj', 'shapely', 'matplotlib', 'plotly', 'scipy',
 ]
 datas, binaries, hiddenimports = [], [], []
 for package in required:
@@ -21,7 +21,7 @@ for package in ['numpy', 'pandas', 'PIL', 'webview']:
 
 # Streamlit has dynamic imports from the script not visible to the analyzer.
 hiddenimports.extend([
-    'radar_core', 'web_support', 'ssr_custom', 'obstacles', 'obstacle_ui',
+    'coverage_viewer', 'map_workspace', 'radar_core', 'web_support', 'ssr_custom', 'obstacles', 'obstacle_ui',
     'project_file', 'project_widgets', 'live_simulation', 'radar_window',
     'wind_turbines', 'wind_offline', 'site_picker', 'standalone_radar',
     'coverage_diagnostics', 'diagnostics_ui', 'environment_layers',
