@@ -807,6 +807,31 @@ def radar_dialog():
             st.warning("Anténní náhled není dostupný: "+str(exc))
         st.caption("Graf je pouze čtecí náhled. RF výpočet stále používá "
                    "původní anténní objekt a jeho interpolaci.")
+        if mode=="PAR-NG":
+            from par_y8600_spec import (
+                AZIMUTH_ANTENNA,ELEVATION_ANTENNA,audit)
+            with st.expander("Y8600 · DVĚ ANTÉNY / KONTROLA MODELU",
+                             expanded=False):
+                cols=st.columns(2,gap="small")
+                with cols[0]:
+                    st.markdown("**AZIMUTH ANTENNA**")
+                    st.caption("Úzký horizontální svazek; HPBW ≤ "
+                               f"{AZIMUTH_ANTENNA.beamwidth_limit_deg:.2f}°")
+                    st.caption("Vertikální charakteristika: kosekantní.")
+                with cols[1]:
+                    st.markdown("**ELEVATION ANTENNA**")
+                    st.caption("Úzký vertikální svazek; HPBW ≤ "
+                               f"{ELEVATION_ANTENNA.beamwidth_limit_deg:.2f}°")
+                    st.caption("Horizontální charakteristika: široká.")
+                rows=audit(_cfg())
+                st.dataframe(rows,hide_index=True,use_container_width=True)
+                if any(not row["aligned"] for row in rows):
+                    st.warning("Aktuální geometrie není zcela shodná s "
+                               "provozními limity Y8600 (elevace −1 až +14°).")
+                st.caption("Y8600 potvrzuje dva fyzické RF kanály, ale "
+                           "importovaný diagram je jeden datový soubor. "
+                           "Bez druhé kalibrované charakteristiky nelze "
+                           "zaručit fyzikálně správný společný detekční model.")
 
     with terrain_tab:
         st.markdown('<div class="cd-radar-guide">Terénní zdroj a numerická mřížka '
