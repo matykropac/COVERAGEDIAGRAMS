@@ -10,12 +10,16 @@ from xml.etree import ElementTree as ET
 
 import folium
 import numpy as np
+import pandas as pd
 import streamlit as st
+import html
+import re
 from folium.plugins import Fullscreen, MeasureControl
 from streamlit_folium import st_folium
 
 K = "{http://www.opengis.net/kml/2.2}"
 BASEMAPS = {
+    "NIGHT · Dark Matter": ("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", "© OpenStreetMap © CARTO"),
     "OpenStreetMap": ("https://tile.openstreetmap.org/{z}/{x}/{y}.png", "© OpenStreetMap contributors"),
     "Esri World Imagery": ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", "Tiles © Esri"),
     "Esri World Topographic": ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", "Tiles © Esri"),
@@ -256,7 +260,7 @@ def _editor_layers(result,meta):
     return collections
 
 
-def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.)):
+def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.), styles=None, title='RADAR COVERAGE'):
     import plotly.graph_objects as go
     if st.button("☁ STÁHNOUT TERÉN · OPENTOPOGRAPHY",type="primary",
                  key="viewer_download_3d"):
@@ -298,7 +302,7 @@ def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.)):
     for key,features in layers.items():
         if key not in visible or tree is None:
             continue
-        color=st.session_state.get("viewer_color_"+key,PALETTE[0])
+        color=(styles or {}).get(key,{}).get("color",PALETTE[0])
         for feature in features[:350]:
             geom=feature.get("geometry") or {}
             typ=geom.get("type")
@@ -317,10 +321,12 @@ def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.)):
                     mode="markers" if typ=="Point" else "lines",line=dict(color=color,width=6),
                     marker=dict(color=color,size=4),name=key,showlegend=False,
                     hovertext=feature.get("properties",{}).get("name",key)))
-    fig.update_layout(height=700,margin=dict(l=0,r=0,t=10,b=0),
+    fig.update_layout(template="plotly_dark",paper_bgcolor="#091525",
+        title=dict(text=title,font=dict(size=18,color="#e2edff")),
+        height=760,margin=dict(l=0,r=0,t=48,b=0),
         scene=dict(xaxis_title="Longitude",yaxis_title="Latitude",
                    zaxis_title="Relative terrain elevation (m)",
-                   aspectmode="manual",aspectratio=dict(x=1,y=1,z=.45)))
+                   bgcolor="#10243a",aspectmode="manual",aspectratio=dict(x=1,y=1,z=.45)))
     st.plotly_chart(fig,use_container_width=True)
     st.download_button("EXPORT 3D SCÉNY · INTERAKTIVNÍ HTML",
                        fig.to_html(full_html=True,include_plotlyjs=True).encode("utf-8"),
@@ -331,72 +337,150 @@ def _three_dimensional(layers, visible, editor_result=None, center=(50.,15.)):
                "vzorkované výšce terénu, nikoli k certifikovanému 3D povrchu.")
 
 
+
+def _layer_grid(layers):
+    """Dense scrollable grid, constant screen height even for 30+ layers."""
+    styles=st.session_state.setdefault("viewer_styles",{})
+    for i,key in enumerate(layers):
+        styles.setdefault(key,{"show":True,"color":PALETTE[i%len(PALETTE)],
+                               "opacity":.4,"width":2.})
+    a,b,c=st.columns([3,1,1],gap="small",vertical_alignment="center")
+    with a:st.markdown(f"**VRSTVY · {len(layers)}**")
+    with b:
+        if st.button("VŠE",key="v_all",use_container_width=True):
+            for key in layers:styles[key]["show"]=True
+            st.session_state["v_grid_version"]=st.session_state.get("v_grid_version",0)+1
+            st.rerun()
+    with c:
+        if st.button("NIC",key="v_none",use_container_width=True):
+            for key in layers:styles[key]["show"]=False
+            st.session_state["v_grid_version"]=st.session_state.get("v_grid_version",0)+1
+            st.rerun()
+    if not layers:
+        st.caption("Načti KML/KMZ nebo projekt z EDITORU.")
+        return set(),{}
+    rows=[{"ON":styles[k]["show"],"VRSTVA":k,"#":len(v),
+           "HEX":styles[k]["color"],"α":styles[k]["opacity"],"px":styles[k]["width"]}
+          for k,v in layers.items()]
+    grid=st.data_editor(pd.DataFrame(rows),hide_index=True,num_rows="fixed",
+        height=min(490,max(110,45+len(rows)*35)),use_container_width=True,
+        key="v_grid_"+str(st.session_state.get("v_grid_version",0)),
+        column_config={
+            "ON":st.column_config.CheckboxColumn("✓",width="small"),
+            "VRSTVA":st.column_config.TextColumn("VRSTVA",disabled=True,width="medium"),
+            "#":st.column_config.NumberColumn("#",disabled=True,width="small"),
+            "HEX":st.column_config.TextColumn("HEX",width="small"),
+            "α":st.column_config.NumberColumn("α",min_value=0.,max_value=1.,step=.05,format="%.2f",width="small"),
+            "px":st.column_config.NumberColumn("px",min_value=.5,max_value=10.,step=.5,format="%.1f",width="small"),
+        })
+    for row in grid.to_dict("records"):
+        key=row["VRSTVA"]
+        previous=styles[key]
+        candidate=str(row["HEX"]).strip()
+        styles[key]=dict(show=bool(row["ON"]),
+            color=candidate if re.fullmatch(r"#[0-9a-fA-F]{6}",candidate) else previous["color"],
+            opacity=max(0.,min(1.,float(row["α"] if pd.notna(row["α"]) else .4))),
+            width=max(.5,min(10.,float(row["px"] if pd.notna(row["px"]) else 2.))))
+    visible={key for key in layers if styles[key]["show"]}
+    st.caption(f"Aktivní {len(visible)} / {len(layers)} · tabulka má vlastní posuvník")
+    return visible,{key:styles[key] for key in layers}
+
+
 def render_viewer():
     st.markdown("""<style>
-      [data-testid="stAppViewContainer"]{background:#f3f6fb}
-      .block-container{max-width:100%;padding:12px 20px}
+    [data-testid="stAppViewContainer"]{background:#091525!important;color:#dceafe!important}
+    [data-testid="stHeader"]{background:#091525!important}
+    .block-container{max-width:100%!important;padding:10px 16px!important}
+    [data-testid="stVerticalBlock"]{gap:.35rem!important}
+    [data-testid="stAppViewContainer"] h3{color:#f1f7ff!important}
+    [data-testid="stAppViewContainer"] p{color:#b6cce3}
+    [data-testid="stDataFrame"]{border:1px solid #334c68;border-radius:8px}
+    [data-testid="stButton"] button{min-height:30px!important}
     </style>""",unsafe_allow_html=True)
-    st.markdown("### COVERAGEDIAGRAMS  /  VIEWER")
-    st.caption("Samostatné okno integrované v aplikaci · KML / KMZ / GeoJSON · 2D / 3D · bez radarového přepočtu")
+    st.markdown("### COVERAGEDIAGRAMS / VIEWER")
     editor_result,editor_meta=_snapshot()
     if editor_result is not None:
-        st.success("Vypočtené krytí a vzorkovaný DEM převzaty z EDITORU bez dalšího nahrávání.")
-        st.toggle("Načíst všechny dostupné letové hladiny",value=False,key="viewer_import_all_fl")
-    else:
-        st.caption("Bez otevřeného projektu můžeš přidat KML/KMZ a stáhnout vlastní DEM.")
-    uploads=st.file_uploader("NAČÍST MAPOVÉ VRSTVY",type=["kml","kmz","geojson","json"],
-                             accept_multiple_files=True,key="viewer_uploads")
+        st.caption("● EDITOR LINK · Přeneseny radarové hladiny a DEM")
+        st.toggle("Načíst všechny hladiny",value=False,key="viewer_import_all_fl")
+    uploads=st.file_uploader("PŘIDAT VRSTVY · KML/KMZ/GeoJSON",
+        type=["kml","kmz","geojson","json"],accept_multiple_files=True,key="viewer_uploads")
     layers=_editor_layers(editor_result,editor_meta) if editor_result is not None else {}
     for file in uploads or []:
         try:
             for folder,features in _load_layers(file).items():
                 layers[f"{file.name} / {folder}"]=features
-        except Exception as exc:
-            st.warning(f"{file.name}: {exc}")
-    editor_center=(editor_result["config"].lat,editor_result["config"].lon) if editor_result is not None else (50.,15.)
-    sidebar,maparea=st.columns([1,4],gap="medium")
+        except Exception as exc:st.warning(f"{file.name}: {exc}")
+    center=(editor_result["config"].lat,editor_result["config"].lon) if editor_result is not None else (50.,15.)
+    sidebar,maparea=st.columns([1.6,4.8],gap="small")
     with sidebar:
-        st.markdown("**SPRÁVCE VRSTEV**")
-        visible=set()
-        for i,(key,features) in enumerate(layers.items()):
-            st.caption(f"{key} · {len(features)} objektů")
-            if st.checkbox("Zobrazit",value=True,key="viewer_show_"+key):
-                visible.add(key)
-            st.color_picker("Barva",PALETTE[i%len(PALETTE)],key="viewer_color_"+key)
-        opacity=st.slider("Průhlednost výplně",0.0,1.0,0.35,0.05,key="viewer_opacity")
-        basemap=st.selectbox("Mapový podklad",list(BASEMAPS),key="viewer_basemap")
+        visible,styles=_layer_grid(layers)
+        basemap=st.selectbox("MAPOVÝ PODKLAD",list(BASEMAPS),index=0,key="viewer_basemap")
+        title=st.text_input("TITULEK","RADAR COVERAGE / GEOSPATIAL VIEWER",key="viewer_map_title")
+        c1,c2=st.columns(2)
+        with c1:show_legend=st.toggle("Legenda",value=True,key="viewer_legend")
+        with c2:show_north=st.toggle("Severka",value=True,key="viewer_north")
         if layers:
-            fc={"type":"FeatureCollection","features":[f for k,fs in layers.items() if k in visible for f in fs]}
-            st.download_button("EXPORT VIDITELNÝCH VRSTEV · GEOJSON",json.dumps(fc,ensure_ascii=False).encode(),
-                               file_name="COVERAGEDIAGRAMS_viewer.geojson",
-                               mime="application/geo+json",use_container_width=True)
+            data={"type":"FeatureCollection","features":[f for key,fs in layers.items()
+                  if key in visible for f in fs]}
+            st.download_button("⇩ VIDITELNÉ VRSTVY · GEOJSON",
+                json.dumps(data,ensure_ascii=False).encode(),
+                file_name="COVERAGEDIAGRAMS_viewer.geojson",mime="application/geo+json",
+                use_container_width=True)
     with maparea:
-        mode=st.radio("REŽIM ZOBRAZENÍ",["2D MAPA","3D TERÉN / HYPSOMETRIE"],horizontal=True)
+        mode=st.segmented_control("REŽIM",["2D MAPA","3D TERÉN / HYPSOMETRIE"],
+            default="2D MAPA",key="viewer_mode",width="stretch",label_visibility="collapsed")
         if mode=="3D TERÉN / HYPSOMETRIE":
-            _three_dimensional(layers,visible,editor_result,editor_center)
+            _three_dimensional(layers,visible,editor_result,center,styles,title)
         else:
             coords=[p for key,features in layers.items() if key in visible
                     for f in features for p in _iter_coords(f.get("geometry"))]
-            center=[float(np.mean([p[1] for p in coords[:2000]])),
-                    float(np.mean([p[0] for p in coords[:2000]]))] if coords else list(editor_center)
-            m=folium.Map(location=center,zoom_start=7,tiles=None,control_scale=True)
+            mapcenter=[float(np.mean([p[1] for p in coords[:2000]])),
+                       float(np.mean([p[0] for p in coords[:2000]]))] if coords else list(center)
+            m=folium.Map(location=mapcenter,zoom_start=7,tiles=None,control_scale=True,
+                         prefer_canvas=True,zoom_animation=False,fade_animation=False)
             url,attr=BASEMAPS[basemap]
             folium.TileLayer(url,attr=attr,name=basemap,max_zoom=19).add_to(m)
             for key,features in layers.items():
-                if key not in visible:continue
-                color=st.session_state.get("viewer_color_"+key,PALETTE[0])
-                def style(_feature,color=color,opacity=opacity):
-                    return {"color":color,"weight":2,"fillColor":color,"fillOpacity":opacity}
-                folium.GeoJson({"type":"FeatureCollection","features":features},name=key,
-                               style_function=style,tooltip=folium.GeoJsonTooltip(
-                                fields=["name"],aliases=["Name:"],sticky=True) if features and
-                               all("name" in f.get("properties",{}) for f in features) else None).add_to(m)
+                if key not in visible or not features:continue
+                cfg=styles[key]
+                def style(_feature,cfg=cfg):
+                    return {"color":cfg["color"],"weight":cfg["width"],
+                            "fillColor":cfg["color"],"fillOpacity":cfg["opacity"]}
+                folium.GeoJson({"type":"FeatureCollection","features":features},
+                    name=key,style_function=style,
+                    tooltip=folium.GeoJsonTooltip(fields=["name"],labels=False)
+                    if all("name" in f.get("properties",{}) for f in features) else None).add_to(m)
             if coords:
                 lats=[p[1] for p in coords];lons=[p[0] for p in coords]
                 m.fit_bounds([[min(lats),min(lons)],[max(lats),max(lons)]])
+            legend=""
+            if show_legend:
+                legend='<div class="v-legend"><b>LAYERS / '+str(len(visible))+'</b>'
+                for key in list(layers)[:60]:
+                    if key in visible:
+                        legend+='<div class="v-legrow"><i style="background:'+styles[key]["color"]+'"></i>'+html.escape(key)+'</div>'
+                legend+='</div>'
+            overlay='<div class="v-title">'+html.escape(title)+'</div>'
+            if show_north:overlay+='<div class="v-north">↑ N</div>'
+            from branca.element import Element
+            m.get_root().html.add_child(Element("""<style>
+            .v-title{position:absolute;z-index:9999;left:50%;top:15px;transform:translateX(-50%);
+                border:1px solid #527294;border-radius:6px;padding:10px 22px;
+                background:#07182de8;color:#f3f8ff;font:700 14px system-ui;letter-spacing:.12em}
+            .v-north{position:absolute;right:22px;top:80px;z-index:9999;color:#f3f8ff;
+                font:800 26px system-ui;text-shadow:0 2px 6px #000}
+            .v-legend{position:absolute;z-index:9999;left:12px;bottom:24px;
+                padding:12px;max-height:330px;overflow:auto;max-width:290px;background:#07182de8;
+                border:1px solid #527294;color:#e2ebf7;border-radius:7px;font:11px system-ui}
+            .v-legend b{display:block;color:#8bd9fc;margin-bottom:9px;letter-spacing:.1em}
+            .v-legrow{display:flex;gap:8px;align-items:center;margin:4px 0;white-space:nowrap}
+            .v-legrow i{width:12px;height:9px;flex-shrink:0;border-radius:2px}
+            </style>"""+overlay+legend))
             folium.LayerControl(collapsed=True).add_to(m)
             Fullscreen().add_to(m)
             MeasureControl(primary_length_unit="kilometers").add_to(m)
-            st_folium(m,height=740,use_container_width=True,key="viewer_2d_map",
-                      returned_objects=[])
-            st.caption("Výběr vrstev a základní kartografie. Tiskový PNG/PDF layout bude následovat.")
+            st_folium(m,height=780,use_container_width=True,key="viewer_2d_map",returned_objects=[])
+            st.download_button("⇩ MAPOVÁ KOMPOZICE · HTML",
+                m.get_root().render().encode("utf-8"),
+                file_name="COVERAGEDIAGRAMS_map_viewer.html",mime="text/html",
+                use_container_width=True,key="viewer_map_html")
