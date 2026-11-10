@@ -443,6 +443,51 @@ def _airport_controls():
                     "Pokud se stanoviště liší, ověř mechanickou orientaci systému.")
 
 
+def _apply_par_free_levels(raw_key):
+    """Streamlit callback runs before widgets are constructed.
+
+    There is no PAR multiselect widget bound to ws_levels: editable input
+    directly replaces the whole selection, including the empty selection.
+    """
+    try:
+        raw=st.session_state.get(raw_key,"")
+        levels=list(core.parse_par_flight_levels(raw))
+        st.session_state["ws_levels"]=levels
+        st.session_state["_par_levels_message"]=(
+            f"Uloženo {len(levels)} vlastních výšek." if levels
+            else "Výběr hladin je prázdný.")
+        st.session_state.pop("_par_levels_error",None)
+        st.session_state["_par_levels_epoch"]=st.session_state.get("_par_levels_epoch",0)+1
+        # Map selection is reconciled later, before rendering the selector.
+        st.session_state.pop("ws_coverage_kml_ready",None)
+        st.session_state.pop("ws_zip_ready",None)
+    except ValueError as exc:
+        st.session_state["_par_levels_error"]=str(exc)
+        st.session_state.pop("_par_levels_message",None)
+
+
+def _par_free_levels_editor(context):
+    """One text-driven input for PAR, shared by RADAR and MAPA."""
+    key=f"ws_par_free_{context}_{st.session_state.get('_par_levels_epoch',0)}"
+    present=_chosen_levels("PAR-NG")
+    with st.form(f"ws_par_levels_form_{context}",clear_on_submit=False,
+                 enter_to_submit=False):
+        st.text_area("Vlastní výšky PAR [ft]",
+            value=", ".join(map(str,present)),height=90,
+            key=key,placeholder="300, 400, 900, 1500",
+            help="Celé výšky v ft, oddělené čárkou, mezerou, "
+                 "středníkem nebo novým řádkem. Přepiš celý seznam.")
+        st.form_submit_button("POUŽÍT ZADANÉ HLADINY",
+            type="primary",use_container_width=True,
+            on_click=_apply_par_free_levels,args=(key,))
+    if st.session_state.get("_par_levels_error"):
+        st.error(st.session_state["_par_levels_error"])
+    elif st.session_state.get("_par_levels_message"):
+        st.caption(st.session_state["_par_levels_message"])
+    st.caption("Zadáváš přímo kompletní seznam, bez omezení na presety. "
+               "Prázdný seznam vypne vrstvy výškového krytí.")
+
+
 def _available_levels(mode):
     """All selectable levels, including custom PAR altitudes saved in session."""
     preset=tuple(core.flight_levels_for(mode))
@@ -595,6 +640,9 @@ def _open_cdproj(data):
     st.session_state["geometry"]={}
     st.session_state["obstacles"]=meta.get("obstacles",[])
     st.session_state["ws_levels"]=meta.get("levels",[])
+    st.session_state["_par_levels_epoch"]=st.session_state.get("_par_levels_epoch",0)+1
+    st.session_state.pop("_par_levels_message",None)
+    st.session_state.pop("_par_levels_error",None)
     st.session_state["ws_map_revision"]=st.session_state.get("ws_map_revision",0)+1
     display=meta.get("display") or {}
     # The loader executes in a dialog fragment: stage widget values so they
@@ -771,42 +819,18 @@ def radar_dialog():
             st.selectbox("Reference cíle",["AMSL","AGL"],key="ws_reference")
         mode=st.session_state.get("ws_radar","RL-2000")
         if mode=="PAR-NG":
-            st.markdown("**VLASTNÍ LETOVÉ HLADINY · PAR**")
-            st.caption("Celé hodnoty 1–66 000 ft. Příklady: 300, 400, 900, 1500. "
-                       "Vlastní hladiny fungují v mapě, KML, PDF, ZIP i CDPROJ.")
-            a,b=st.columns([3,1],gap="small",vertical_alignment="bottom")
-            with a:
-                raw=st.text_input("Přidat hladiny [ft] · čárky, mezery nebo středníky",
-                                  placeholder="300, 400, 900, 1500",
-                                  key="ws_par_custom_input")
-            with b:
-                if st.button("PŘIDAT",key="ws_par_add_levels",
-                             use_container_width=True):
-                    try:
-                        additions=core.parse_par_flight_levels(raw)
-                        if not additions:
-                            raise ValueError("Zadej alespoň jednu výšku.")
-                        current=_chosen_levels("PAR-NG")
-                        updated=sorted(set(current).union(additions))
-                        if len(updated)>core.PAR_CUSTOM_MAX_COUNT:
-                            raise ValueError("Maximálně 100 vybraných hladin.")
-                        st.session_state["ws_levels"]=updated
-                        st.rerun()
-                    except ValueError as exc:
-                        st.error(str(exc))
-        choices=_available_levels(mode)
-        # Switching away from PAR must discard PAR-only values BEFORE the
-        # multiselect widget is instantiated, not after it has rendered.
-        if mode!="PAR-NG" and "ws_levels" in st.session_state:
-            st.session_state["ws_levels"]=[
-                x for x in st.session_state["ws_levels"]
-                if core.valid_flight_level(mode,x)]
-        default=[x for x in (3000,10000) if x in choices]
-        st.multiselect("Letové hladiny [ft AMSL]",choices,default=default,
-                       format_func=core.level_label,key="ws_levels")
-        if mode=="PAR-NG":
-            st.caption(f"Vybráno {len(_chosen_levels(mode))} hladin. "
-                       "Odebrání je možné křížkem ve výběru.")
+            st.markdown("**LIBOVOLNÉ VÝŠKY · PAR-NG**")
+            _par_free_levels_editor("radar")
+        else:
+            # Preset-based PSR/SSR logic remains unchanged.
+            choices=_available_levels(mode)
+            if "ws_levels" in st.session_state:
+                st.session_state["ws_levels"]=[
+                    x for x in st.session_state["ws_levels"]
+                    if core.valid_flight_level(mode,x)]
+            default=[x for x in (3000,10000) if x in choices]
+            st.multiselect("Letové hladiny [ft AMSL]",choices,default=default,
+                           format_func=core.level_label,key="ws_levels")
         if st.session_state.get("ws_radar")=="PAR-NG":
             st.markdown("**PAR-NG · ANTÉNA / DETEKCE**")
             st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
@@ -2104,6 +2128,10 @@ def render_workspace():
                     selected=sorted(set(int(ft) for ft in st.session_state.get("ws_levels",[])
                                         if ft in supported))
                     if result["config"].radar_mode=="PAR-NG":
+                        with st.expander("UPRAVIT VLASTNÍ VÝŠKY PAR",expanded=False):
+                            _par_free_levels_editor("map")
+                        # Form callbacks may have updated selection before this render.
+                        selected=_chosen_levels("PAR-NG")
                         st.radio("Výška PAR nad terénem / mořem",("AGL","AMSL"),
                                  horizontal=True,key="ws_par_level_reference",
                                  help="AGL = nad místním terénem. AMSL = nad hladinou moře.")
