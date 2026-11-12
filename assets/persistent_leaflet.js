@@ -679,7 +679,9 @@ function parDestination(lat,lon,azDeg,distanceKm){
 function updateParSector(s,data){
   const cfg=data.parSector||{};
   const enabled=cfg.enabled===true;
-  const sig=JSON.stringify([enabled,cfg.lat,cfg.lon,cfg.bearing,cfg.rangeKm]);
+  const sig=JSON.stringify([enabled,cfg.lat,cfg.lon,cfg.bearing,cfg.rangeKm,
+                            cfg.referenceRunway?.key,cfg.referenceRunway?.heading_deg_true,
+                            cfg.referenceEnd]);
   if(s.last.parSector===sig)return;
   s.last.parSector=sig;
   s.groups.parSector.clearLayers();
@@ -689,6 +691,21 @@ function updateParSector(s,data){
   if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(az)||
      !Number.isFinite(distance)||distance<=0)return;
   const site=[lat,lon],axis=parDestination(lat,lon,az,distance);
+  // Draw a runway-parallel reference line through the radar whenever a
+  // runway has been loaded. The line is geodesic at the radar site and is
+  // indicative (OurAirports, not certified AIP).
+  const runway=cfg.referenceRunway;
+  if(runway&&Number.isFinite(Number(runway.heading_deg_true))){
+    const rwAz=(Number(runway.heading_deg_true)+
+                (Number(cfg.referenceEnd)===1?180:0))%360;
+    const from=parDestination(lat,lon,rwAz+180,distance);
+    const to=parDestination(lat,lon,rwAz,distance);
+    L.polyline([from,site,to],{
+      color:"#f08ae8",weight:3,dashArray:"11 6",opacity:.95,
+      interactive:false
+    }).bindTooltip("ROVNOBĚŽKA RWY "+String(runway.label||"")+
+                   " · "+rwAz.toFixed(2)+"° TRUE · orientační podklad").addTo(s.groups.parSector);
+  }
   const left=parDestination(lat,lon,az-15,distance);
   const right=parDestination(lat,lon,az+15,distance);
   // Full scan geometry: continuous outer boundary plus radial ±15° edges.
