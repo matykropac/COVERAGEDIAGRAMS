@@ -307,11 +307,22 @@ def _airport_project_metadata():
         "airspace_source_time":st.session_state.get("ws_airspace_source_time",""),
         "par_model":_par_model_metadata(),
         "par_level_reference":st.session_state.get("ws_par_level_reference","AGL"),
+        "radar_ui_mode":_radar_ui_mode(),
     }
 
 
 def _restore_airport_metadata(meta):
     saved=meta.get("source_ui") or {}
+    # The ASR display choice shares the PSR solver but is retained in
+    # project metadata, so reopening CDPROJ restores the correct dialog.
+    ui=saved.get("radar_ui_mode")
+    model=st.session_state.get("ws_radar","RL-2000")
+    if ui in ("PSR","ASR") and model=="RL-2000":
+        st.session_state["ws_radar_ui_mode"]=ui
+    elif ui=="SSR" and model=="SSR":
+        st.session_state["ws_radar_ui_mode"]=ui
+    elif ui=="PAR" and model=="PAR-NG":
+        st.session_state["ws_radar_ui_mode"]=ui
     st.session_state["ws_airspaces"]=validate_saved_airspaces(saved.get("airspaces",[]))
     st.session_state["ws_airspace_source_time"]=str(saved.get("airspace_source_time",""))[:100]
     code=saved.get("airport_icao")
