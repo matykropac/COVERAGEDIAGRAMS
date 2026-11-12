@@ -1131,7 +1131,7 @@ def _radar_settings_body(ui_mode):
 
     if step=="CÍL / FL":
         st.markdown('<div class="cd-radar-guide">Referenční výška cíle a letové '
-                    'hladiny pro výsledné mapy. AMSL = nad mořem, AGL = nad terénem.</div>',
+                    'hladiny pro výsledné mapy jsou výhradně AMSL.</div>',
                     unsafe_allow_html=True)
         a,b=st.columns(2,gap="small")
         with a:
@@ -1140,7 +1140,7 @@ def _radar_settings_body(ui_mode):
             st.caption("Výšková reference cíle: **AMSL** · pevně nastavena.")
         mode=st.session_state.get("ws_radar","RL-2000")
         if mode=="PAR-NG":
-            st.markdown("**LIBOVOLNÉ VÝŠKY · PAR-NG**")
+            st.markdown("**STANDARDNÍ VÝŠKY · PAR-NG · AMSL**")
             _par_standard_levels_info("radar")
         else:
             st.caption("JEDINÝ POVOLENÝ SET: 100–9000 ft / 100 ft "
@@ -2425,9 +2425,8 @@ def _render_los_validation(result):
         ri=min(len(d_values)-1,max(0,int(len(d_values)*.5)))
         st.caption("Zatím žádný bod z mapy: kontroluji střed sektoru na polovině dosahu.")
 
-    ref_options=("AMSL","AGL")
-    selected_ref=st.selectbox("Výšková reference",ref_options,
-        index=0,key="ws_los_reference")
+    selected_ref="AMSL"
+    st.caption("Výšková reference: AMSL (pevná)")
     levels=_chosen_levels(c.radar_mode)
     selected_level=st.selectbox("Cílová hladina [ft]",
         levels if levels else [2000],key="ws_los_flight_level")
