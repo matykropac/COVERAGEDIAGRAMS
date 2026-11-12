@@ -28,7 +28,7 @@ from traffic_overlay import fetch_snapshot, add_traffic_layer
 from obstacle_ui import render_obstacle_editor
 from live_simulation import simulation_tab
 from project_file import save_project, load_project
-from position_export import make_layer_features, kml_bytes as position_kml_bytes, kmz_bytes as position_kmz_bytes, geojson_bytes as position_geojson_bytes
+from position_export import make_layer_features, par_helper_features, kml_bytes as position_kml_bytes, kmz_bytes as position_kmz_bytes, geojson_bytes as position_geojson_bytes
 from airport_geometry import airport_runways, runway_rows, runway_geometry, par_bearing_for_runway, validate_icao, validate_saved_geometry
 from airspace_geometry import fetch_airspaces, validate_saved_airspaces, visible_airspaces, as_geojson, import_geojson
 from ssr_custom import load_measured_ssr
@@ -180,6 +180,21 @@ def _position_nearby_controls():
 
 
 @st.dialog("MAPA / EXPORT VRSTEV",width="large")
+def _par_helper_context():
+    """Current editable radar configuration, plus the selected RWY reference."""
+    cfg=_cfg()
+    if cfg.radar_mode!="PAR-NG":
+        return None
+    runways=st.session_state.get("ws_airport_geometry") or []
+    index=int(st.session_state.get("ws_runway_index",0))
+    runway=runways[index] if 0<=index<len(runways) else None
+    return {
+        "enabled":True,"lat":cfg.lat,"lon":cfg.lon,
+        "bearing":cfg.bearing_deg,"range_km":cfg.range_km,
+        "runway":runway,"runway_end":int(st.session_state.get("ws_runway_end",0))
+    }
+
+
 def position_layers_export_dialog():
     """Export map layers without requiring an existing computed coverage."""
     st.caption("Vyber vrstvy pro QGIS / Google Earth. Radarový výpočet není potřeba. "
@@ -197,6 +212,8 @@ def position_layers_export_dialog():
     format_name=st.segmented_control(
         "Formát",["KMZ","KML","GeoJSON"],default="KMZ",
         key="ws_pos_export_format",width="stretch")
+    if _par_helper_context():
+        st.caption("Pomocné PAR geometrie (osa, ±15°, RWY rovnoběžka, RANGE 20–260 NM) jsou automaticky součástí KML/KMZ i GeoJSON.")
     selected=tuple(bool(st.session_state.get("ws_pos_export_"+key,True))
                    for key,_ in names)
     result=st.session_state.get("result")
@@ -215,7 +232,17 @@ def position_layers_export_dialog():
             try:
                 from web_support import export_kml
                 st.session_state["ws_coverage_kml_ready"]=(
-                    tuple(levels),export_kml(result,levels))
+                    tuple(levels),export_kml(
+                        result,levels,
+                        helper_features=par_helper_features(**{
+                            "site_lat":_par_helper_context()["lat"],
+                            "site_lon":_par_helper_context()["lon"],
+                            "bearing_deg":_par_helper_context()["bearing"],
+                            "range_km":_par_helper_context()["range_km"],
+                            "runway":_par_helper_context()["runway"],
+                            "runway_end":_par_helper_context()["runway_end"],
+                            "include_range":False
+                        }) if _par_helper_context() else None))
             except Exception as exc:
                 st.error(f"Radarový KML export selhal: {exc}")
         prepared=st.session_state.get("ws_coverage_kml_ready")
@@ -242,7 +269,8 @@ def position_layers_export_dialog():
                 environment=environment,
                 site_lat=cfg.lat,site_lon=cfg.lon,
                 include_runways=selected[0],include_airspaces=selected[1],
-                include_obstacles=selected[2],include_environment=selected[3])
+                include_obstacles=selected[2],include_environment=selected[3],
+                par=_par_helper_context())
             if not features:
                 raise ValueError("Nejsou dostupné žádné prvky ve zvolených vrstvách.")
             fmt=(format_name or "KMZ").upper()
@@ -2119,7 +2147,9 @@ def _draw_map():
         "parSector":{"enabled":configured.radar_mode=="PAR-NG",
                      "bearing":float(configured.bearing_deg),
                      "rangeKm":float(configured.range_km),
-                     "lat":float(configured.lat),"lon":float(configured.lon)},
+                     "lat":float(configured.lat),"lon":float(configured.lon),
+                     "referenceRunway":(_par_helper_context() or {}).get("runway"),
+                     "referenceEnd":(_par_helper_context() or {}).get("runway_end",0)},
         "live":False,
         "coverage":coverage,
         "airportGeometry":runway_geometry(st.session_state.get("ws_airport_geometry") or [])
@@ -2627,6 +2657,18 @@ def render_workspace():
                 if st.session_state.get("ws_par_aiming") and config.radar_mode=="PAR-NG":
                     st.info("⌖ PAR SMĚROVÁNÍ · Klikni do mapy na požadovaný "
                             "směr osy od radaru. Zobrazí se sektor ±15°.")
+                    reference=(_par_helper_context() or {}).get("runway")
+                    if reference:
+                        end=int(st.session_state.get("ws_runway_end",0))
+                        bearing=(float(reference["heading_deg_true"])+180*end)%360
+                        st.caption(f"RWY {reference['label']} · rovnoběžka přes radar: "
+                                   f"{bearing:.2f}° TRUE (OurAirports, informativní).")
+                        if st.button("↗ PŘEVZÍT ROVNOBĚŽKU RWY JAKO OSU PAR",
+                                     key="ws_par_parallel_accept",
+                                     use_container_width=True):
+                            st.session_state["ws_bearing"]=round(bearing,2)
+                            st.session_state["ws_par_aiming"]=False
+                            st.rerun()
                     if st.button("ZRUŠIT SMĚROVÁNÍ PAR",key="ws_par_aim_cancel",
                                  use_container_width=True):
                         st.session_state["ws_par_aiming"]=False
