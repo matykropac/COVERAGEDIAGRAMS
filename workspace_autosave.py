@@ -99,6 +99,37 @@ def capture(state):
     return data
 
 
+def export_draft(state):
+    """Portable credential-free JSON for users on ephemeral/cloud hosting."""
+    payload={"format":FORMAT,"version":VERSION,
+             "saved_at":datetime.now(timezone.utc).isoformat(),
+             "fields":capture(state)}
+    data=json.dumps(payload,ensure_ascii=False,indent=2,
+                    allow_nan=False).encode("utf-8")
+    if len(data)>MAX_BYTES:
+        raise ValueError("Záloha radarových parametrů přesahuje limit.")
+    return data
+
+
+def import_draft(data):
+    """Validate portable drafts exactly like on-disk drafts."""
+    if not isinstance(data,(bytes,bytearray)) or len(data)>MAX_BYTES:
+        raise ValueError("Nesprávný typ nebo velikost zálohy.")
+    try:
+        raw=json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError,ValueError) as exc:
+        raise ValueError("Záloha není platný UTF-8 JSON.") from None
+    if not isinstance(raw,dict) or raw.get("format")!=FORMAT or raw.get("version")!=VERSION:
+        raise ValueError("Záloha není kompatibilní radarový draft.")
+    fields=raw.get("fields")
+    if not isinstance(fields,dict) or set(fields)-set(RADAR_FIELDS+OTHER_FIELDS):
+        raise ValueError("Záloha obsahuje nepodporované parametry.")
+    clean=capture(fields)
+    if clean!=fields:
+        raise ValueError("Záloha obsahuje neplatné hodnoty.")
+    return clean
+
+
 def read_draft(token):
     path=path_for(token)
     if not path.is_file():
