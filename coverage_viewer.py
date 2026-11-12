@@ -255,14 +255,26 @@ def _editor_layers(result,meta):
         selected=sorted(set(core.flight_levels_for(mode)).union(selected))
     # Cache expensive polygon generation in the user session. The snapshot
     # token is immutable; the selected flight levels are the only variable.
-    signature=(str(st.query_params.get("snapshot","")),tuple(selected))
+    signature=(str(st.query_params.get("snapshot","")),tuple(selected),
+               (meta.get("source_ui") or {}).get("par_level_reference","AMSL"))
     previous=st.session_state.get("_viewer_editor_layer_cache")
     if previous and previous[0]==signature:
         return previous[1]
+    reference=("AGL" if mode=="PAR-NG" and
+               (meta.get("source_ui") or {}).get("par_level_reference")=="AGL"
+               else "AMSL")
+    if result.get("antenna_pattern") is None and result["config"].csc_enabled:
+        st.warning("U starého projektu chybí původní anténní diagram: "
+                   "krytí jiných hladin nelze bezpečně dopočítat. "
+                   "Vygeneruj nový CDPROJ z EDITORU.")
+        return {}
     collections={}
     for ft in selected:
         try:
-            collections["RADAR / "+core.level_label(ft)]=coverage_geojson(result,ft).get("features",[])
+            label=(f"{ft:,} ft AGL" if reference=="AGL"
+                   else core.level_label(ft))
+            collections["RADAR / "+label]=coverage_geojson(
+                result,ft,reference=reference).get("features",[])
         except Exception as exc:
             st.warning(f"Vrstva {ft} ft není dostupná: {exc}")
     st.session_state["_viewer_editor_layer_cache"]=(signature,collections)
