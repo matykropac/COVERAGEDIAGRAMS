@@ -2555,7 +2555,7 @@ def _map_tool():
         return "Radar"
     return {
         "MAPA": "Prohlížení",
-        "RADAR": "Radar",
+        "RADAR": "Prohlížení",  # Site picking requires explicit request.
         "VALIDACE": "Validate",
         "POZICE": "Prohlížení",
         "PŘEKÁŽKY": "Polygon",
@@ -3025,8 +3025,13 @@ def render_workspace():
                 _render_los_validation(result)
             elif section=="RADAR":
                 st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
-                st.caption("Kliknutím do mapy určíš stanoviště. Souřadnice se okamžitě "
-                           "uloží do session a otevře se zpět konfigurátor.")
+                st.caption("Souřadnice stanoviště jsou uchované v session a konceptu. "
+                           "Mapu přepni do výběru pouze tlačítkem níže.")
+                if st.button("⌖ VYBRAT STANOVIŠTĚ Z MAPY",
+                             key="ws_radar_site_from_section",
+                             use_container_width=True):
+                    _begin_radar_site_pick()
+                    st.rerun()
                 st.markdown(f"**LAT** {config.lat:.6f}° &nbsp; **LON** {config.lon:.6f}°",
                             unsafe_allow_html=True)
                 st.markdown('<div class="cd-nav-title">VÝBĚR RADAROVÉHO SYSTÉMU</div>',
