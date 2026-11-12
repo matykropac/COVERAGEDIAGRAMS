@@ -917,7 +917,8 @@ def _radar_settings_body(ui_mode):
                          use_container_width=True):
                 _remember_radar_form()
                 st.session_state["_radar_active_step"]=step_name
-                st.rerun()
+                # Dialog is already a Streamlit fragment. Do NOT st.rerun()
+                # here: a full-app rerun would close the dialog.
     step=st.session_state.get("_radar_active_step","STANOVIŠTĚ")
     if step=="STANOVIŠTĚ":
         st.markdown('<div class="cd-radar-guide">Poloha a montážní výška radarové antény. '
