@@ -785,6 +785,8 @@ def render_viewer():
             snapshot=str(st.query_params.get("snapshot","")),
             three_d_url="?"+urlencode(params))
         return
+    if st.query_params.get("viewer3d") == "1":
+        st.session_state["viewer_mode"]="3D TERÉN / HYPSOMETRIE"
     # Explicit, high-contrast view controls: the previous segmented control
     # was visually lost under the global dark Streamlit theme.
     with st.container(key="viewer_mode_toolbar"):
@@ -799,6 +801,7 @@ def render_viewer():
                          use_container_width=True,
                          type="primary" if current_mode=="2D MAPA" else "secondary"):
                 st.session_state["viewer_mode"]="2D MAPA"
+                st.query_params.pop("viewer3d",None)
                 st.rerun()
         with terrain_col:
             if st.button("◈  3D TERÉN / HYPSOMETRIE",key="viewer_mode_3d_btn",
