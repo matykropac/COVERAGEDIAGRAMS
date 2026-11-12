@@ -745,6 +745,17 @@ def _begin_radar_site_pick():
     st.session_state["ws_section"]="RADAR"
 
 
+_RADAR_STEPS=("STANOVIŠTĚ","ANTÉNA","TERÉN / MODEL","CÍL / FL")
+
+
+def _on_radar_step_change():
+    """Persist the chosen page separately from Streamlit's temporary widget."""
+    selection=st.session_state.get("ws_radar_step")
+    if selection in _RADAR_STEPS:
+        st.session_state["_radar_active_step"]=selection
+    _remember_radar_form()
+
+
 def _radar_ui_mode():
     """ASR is currently a user-interface preset of the PSR model, not an
     independently validated transmitter / combined PSR-MSSR solver."""
@@ -866,10 +877,16 @@ def _radar_settings_body(ui_mode):
                     +(f"LON {lon:.4f}°" if site else "Zvol polohu v mapě")
                     +'</div></div>',unsafe_allow_html=True)
 
-    location_tab,antenna_tab,terrain_tab,flight_tab=st.tabs([
-        "01 · STANOVIŠTĚ","02 · ANTÉNA","03 · TERÉN / MODEL","04 · CÍL / FL"
-    ])
-    with location_tab:
+    # Streamlit tab selection resets to the first tab when a dialog is
+    # unmounted/remounted. An explicit controlled page is persistent instead.
+    step=st.session_state.get("_radar_active_step","STANOVIŠTĚ")
+    if step not in _RADAR_STEPS:step="STANOVIŠTĚ"
+    st.radio("KROK KONFIGURACE",_RADAR_STEPS,
+             index=_RADAR_STEPS.index(step),
+             key="ws_radar_step",on_change=_on_radar_step_change,
+             horizontal=True)
+    step=st.session_state["ws_radar_step"]
+    if step=="STANOVIŠTĚ":
         st.markdown('<div class="cd-radar-guide">Poloha a montážní výška radarové antény. '
                     'Výšky antény jsou vztažené k terénu v místě instalace (AGL).</div>',
                     unsafe_allow_html=True)
@@ -905,10 +922,10 @@ def _radar_settings_body(ui_mode):
             _begin_radar_site_pick()
             st.rerun()
         st.number_input("Výška antény [m AGL]",min_value=.1,max_value=5000.,
-                        value=20.,key="ws_agl")
+                        value=20.,on_change=_remember_radar_form,key="ws_agl")
         st.caption("Změna souřadnic nebo výšky vyžaduje nové vyhodnocení krytí.")
 
-    with antenna_tab:
+    if step=="ANTÉNA":
         st.markdown('<div class="cd-radar-guide">Skutečný relativní elevační řez '
                     'anténního modelu použitého při výpočtu krytí. Pod grafem je '
                     'uveden původ dat a případná omezení kalibrace.</div>',
@@ -918,20 +935,21 @@ def _radar_settings_body(ui_mode):
         with control_a:
             if mode=="RL-2000":
                 st.selectbox("Dosah PSR [NM]",list(core.PSR_RANGES_NM),
-                             index=2,key="ws_psr_nm")
-                st.selectbox("Svazek",["COMBINED","LOW","HIGH"],key="ws_beam")
+                             index=2,on_change=_remember_radar_form,key="ws_psr_nm")
+                st.selectbox("Svazek",["COMBINED","LOW","HIGH"],on_change=_remember_radar_form,key="ws_beam")
             if mode=="PAR-NG":
                 bearing_col,aim_col=st.columns([2.1,1.1],gap="small",
                                               vertical_alignment="bottom")
                 with bearing_col:
                     st.number_input("Azimut osy [° TRUE]",0.,359.99,0.,
-                                    step=.1,format="%.2f",key="ws_bearing")
+                                    step=.1,format="%.2f",on_change=_remember_radar_form,key="ws_bearing")
                 with aim_col:
                     if st.button("⌖ V MAPĚ",key="ws_par_aim_map",
                                  help="Klikni do mapy pro určení osy PAR; "
                                       "sektor ±15° se vykreslí automaticky.",
                                  use_container_width=True):
                         _remember_radar_form()
+                        st.session_state["_radar_active_step"]="ANTÉNA"
                         st.session_state["ws_par_aiming"]=True
                         st.session_state["ws_section"]="MAPA"
                         st.rerun()
@@ -939,11 +957,11 @@ def _radar_settings_body(ui_mode):
                            "směr nastav číslem nebo kliknutím v mapě.")
             if mode=="SSR":
                 st.selectbox("SSR anténa",["Generic Gaussian","Measured SSR.txt"],
-                             key="ws_ssr_diagram")
+                             on_change=_remember_radar_form,key="ws_ssr_diagram")
         with control_b:
-            st.number_input("Min. elevace [°]",-5.,88.,-1.,key="ws_min")
-            st.number_input("Max. elevace [°]",-4.,89.,45.,key="ws_max")
-            st.number_input("Tilt antény [°]",-15.,15.,-1.,key="ws_tilt")
+            st.number_input("Min. elevace [°]",-5.,88.,-1.,on_change=_remember_radar_form,key="ws_min")
+            st.number_input("Max. elevace [°]",-4.,89.,45.,on_change=_remember_radar_form,key="ws_max")
+            st.number_input("Tilt antény [°]",-15.,15.,-1.,on_change=_remember_radar_form,key="ws_tilt")
         if mode=="PAR-NG":
             st.markdown("**VÝPOČETNÍ ANTÉNY PAR-NG**")
             st.radio("Anténa použitá pro výpočet krytí",
@@ -952,7 +970,7 @@ def _radar_settings_body(ui_mode):
                     "AZ":"HORIZONTAL · AZ",
                     "EL":"VERTICAL · EL",
                     "BOTH":"OBĚ · AZ + EL",
-                }[mode],key="ws_par_channels")
+                }[mode],on_change=_remember_radar_form,key="ws_par_channels")
             st.caption("AZ: úzký svazek skenuje zleva doprava (±15°). "
                        "EL: úzký svazek skenuje zdola nahoru (−1 až +14°). "
                        "OBĚ: průnik dosažitelného krytí obou kanálů. "
@@ -961,13 +979,13 @@ def _radar_settings_body(ui_mode):
             with az_step_col:
                 st.number_input("Krok poloh AZ svazku [°]",min_value=.05,
                     max_value=.9,value=.3,step=.05,format="%.2f",
-                    key="ws_par_az_beam_step",
+                    on_change=_remember_radar_form,key="ws_par_az_beam_step",
                     help="Simulační krok elektronicky povelovaných směrů; "
                          "skutečný režim sekvence Y8600 zatím není doložen.")
             with el_step_col:
                 st.number_input("Krok poloh EL svazku [°]",min_value=.05,
                     max_value=.65,value=.2,step=.05,format="%.2f",
-                    key="ws_par_el_beam_step",
+                    on_change=_remember_radar_form,key="ws_par_el_beam_step",
                     help="Simulační krok v elevaci; nenahrazuje měření skutečné skenovací sekvence.")
             st.caption("Směry svazků se kvantují do naprogramovaných poloh. "
                        "V každém výpočetním bodě se vyhodnotí odchylka od "
@@ -982,7 +1000,7 @@ def _radar_settings_body(ui_mode):
         # Streamlit tabs instantiate ALL their contents on each parameter edit:
         # eager plotting here previously caused jitter even in the site tab.
         preview=st.toggle("ZOBRAZIT ANTÉNNÍ DIAGRAMY / AESA NÁHLED",
-                          value=False,key="ws_radar_preview_enabled",
+                          value=False,on_change=_remember_radar_form,key="ws_radar_preview_enabled",
                           help="Náročné grafy zůstanou vypnuté během zadávání "
                                "souřadnic a RF parametrů; pro kontrolu je "
                                "kdykoliv zapneš.")
@@ -1007,7 +1025,7 @@ def _radar_settings_body(ui_mode):
                     view=st.segmented_control("Pohled diagramu",
                         ["Provozní sektor ±20°","Celá anténa ±180°"],
                         default="Provozní sektor ±20°",
-                        key="ws_par_3d_view",width="stretch")
+                        on_change=_remember_radar_form,key="ws_par_3d_view",width="stretch")
                     fig3d=par_3d_figure(
                         diagram_pattern,near_field=view=="Provozní sektor ±20°")
                     st.plotly_chart(fig3d,use_container_width=True,
@@ -1075,28 +1093,28 @@ def _radar_settings_body(ui_mode):
                            "Bez druhé kalibrované charakteristiky nelze "
                            "zaručit fyzikálně správný společný detekční model.")
 
-    with terrain_tab:
+    if step=="TERÉN / MODEL":
         st.markdown('<div class="cd-radar-guide">Terénní zdroj a numerická mřížka '
                     'přímo určují rozlišení výsledného výpočtu.</div>',
                     unsafe_allow_html=True)
-        st.selectbox("Zdroj terénu",["OpenTopography","DEM soubor"],key="ws_source")
+        st.selectbox("Zdroj terénu",["OpenTopography","DEM soubor"],on_change=_remember_radar_form,key="ws_source")
         if st.session_state["ws_source"]=="DEM soubor":
             st.file_uploader("GeoTIFF / DTED / HGT",
                              type=["tif","tiff","dt0","dt1","dt2","hgt"],key="ws_dem")
         else:
-            st.selectbox("DEM dataset",list(core.DATASETS),key="ws_dataset")
+            st.selectbox("DEM dataset",list(core.DATASETS),on_change=_remember_radar_form,key="ws_dataset")
         a,b=st.columns(2,gap="small")
         with a:
             st.select_slider("Radiální krok [m]",
                              options=[1,2,5,10,15,20,25,50,75,100,150,250,500,1000,2000],
-                             value=500,key="ws_step",
+                             value=500,on_change=_remember_radar_form,key="ws_step",
                              help="Ultra detail 1 m vyžaduje odpovídající kvalitní DEM. Jemnější krok sám nezvyšuje rozlišení zdrojových výšek.")
         with b:
             st.select_slider("Azimutální krok [°]",
                              options=[.01,.02,.025,.05,.075,.1,.125,.15,.2,.25,.5,1.,2.,2.5,5.],
-                             value=1.,key="ws_azstep",
+                             value=1.,on_change=_remember_radar_form,key="ws_azstep",
                              help="Ultra detail 0,01°; boční rozestup paprsků závisí na vzdálenosti a úhlu.")
-        st.number_input("k-factor",.5,3.,4/3,format="%.4f",key="ws_k")
+        st.number_input("k-factor",.5,3.,4/3,format="%.4f",on_change=_remember_radar_form,key="ws_k")
         try:
             current=_cfg()
             az,d=core.axes(current)
@@ -1114,15 +1132,15 @@ def _radar_settings_body(ui_mode):
         except (TypeError,KeyError):
             st.caption("Výpočetní síť bude zkontrolována při spuštění výpočtu.")
 
-    with flight_tab:
+    if step=="CÍL / FL":
         st.markdown('<div class="cd-radar-guide">Referenční výška cíle a letové '
                     'hladiny pro výsledné mapy. AMSL = nad mořem, AGL = nad terénem.</div>',
                     unsafe_allow_html=True)
         a,b=st.columns(2,gap="small")
         with a:
-            st.number_input("Výška cíle [m]",-500.,30000.,1000.,key="ws_target")
+            st.number_input("Výška cíle [m]",-500.,30000.,1000.,on_change=_remember_radar_form,key="ws_target")
         with b:
-            st.selectbox("Reference cíle",["AMSL","AGL"],key="ws_reference")
+            st.selectbox("Reference cíle",["AMSL","AGL"],on_change=_remember_radar_form,key="ws_reference")
         mode=st.session_state.get("ws_radar","RL-2000")
         if mode=="PAR-NG":
             st.markdown("**LIBOVOLNÉ VÝŠKY · PAR-NG**")
@@ -1135,19 +1153,19 @@ def _radar_settings_body(ui_mode):
             st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
                          format_func=lambda mode:"AESA beam steering AZ / EL + úhlová ztráta"
                          if mode=="TRACKING" else "Pouze AZ: statický 3D diagram bez skenování",
-                         key="ws_par_scan_mode")
+                         on_change=_remember_radar_form,key="ws_par_scan_mode")
             st.number_input("Ztráta skenu [dB/°] · orientační",min_value=0.,max_value=5.,
-                            value=0.,step=.05,key="ws_par_scan_loss")
+                            value=0.,step=.05,on_change=_remember_radar_form,key="ws_par_scan_loss")
             st.select_slider(
                 "Útlum na okraji sektoru ±15° [dB] · simulační předpoklad",
                 options=[0.0,1.5,3.0,4.0,6.0,8.0,10.0],
-                value=6.0,key="ws_par_sector_edge_loss")
+                value=6.0,on_change=_remember_radar_form,key="ws_par_sector_edge_loss")
             st.caption("Kvadratický profil: L(α) = Lmax × (|α| / 15°)². "
                        "Výchozí −6 dB, porovnávací −3 dB. Nejde o naměřený "
                        "vyzařovací diagram ani ověřenou RF bilanci.")
             st.markdown("**REŽIM VÝPOČTU · AESA**")
             st.segmented_control("Úroveň detailu",["FAST","ENGINEERING"],
-                                 default="FAST",key="ws_par_quality",
+                                 default="FAST",on_change=_remember_radar_form,key="ws_par_quality",
                                  width="stretch")
             if st.session_state.get("ws_par_quality","FAST")=="FAST":
                 st.caption("FAST · předpočítaná úhlová LUT, stejný fyzikální "
@@ -1164,32 +1182,32 @@ def _radar_settings_body(ui_mode):
                 with p:
                     st.number_input("Atmosférické plyny [dB/km]",
                         min_value=0.,max_value=60.,step=.005,format="%.3f",
-                        value=0.,key="ws_par_gas_loss")
+                        value=0.,on_change=_remember_radar_form,key="ws_par_gas_loss")
                 with q:
                     st.number_input("Déšť [dB/km]",
                         min_value=0.,max_value=60.,step=.01,format="%.3f",
-                        value=0.,key="ws_par_rain_loss")
+                        value=0.,on_change=_remember_radar_form,key="ws_par_rain_loss")
                 st.number_input("Další ztráta RF systému [dB]",
                     min_value=0.,max_value=60.,step=.5,value=0.,
-                    key="ws_par_extra_loss")
+                    on_change=_remember_radar_form,key="ws_par_extra_loss")
                 st.caption("Koeficienty nejsou automaticky odvozené z "
                            "ITU-R ani z měření Y8600. Clutter a difrakce "
                            "nejsou součástí tohoto modelu.")
             st.selectbox("Detekční rozpočet",["RELATIVE","ALBERSHEIM"],
                          format_func=lambda mode:"Relativní obálka 40 km"
                          if mode=="RELATIVE" else "Ilustrační SNR / Pd / Pfa",
-                         key="ws_par_detection")
+                         on_change=_remember_radar_form,key="ws_par_detection")
             if st.session_state.get("ws_par_detection")=="ALBERSHEIM":
                 st.number_input("Referenční SNR na 40 km [dB] · předpoklad",
                                 min_value=-20.,max_value=60.,value=16.,step=.5,
-                                key="ws_par_snr")
+                                on_change=_remember_radar_form,key="ws_par_snr")
                 st.number_input("Požadované Pd",min_value=.01,max_value=.99,
-                                value=.8,step=.01,key="ws_par_pd")
+                                value=.8,step=.01,on_change=_remember_radar_form,key="ws_par_pd")
                 st.selectbox("Požadované Pfa",
                              options=[1e-3,1e-4,1e-5,1e-6,1e-7,1e-8],
-                             index=3,key="ws_par_pfa",format_func=lambda n:f"{n:.0e}")
+                             index=3,on_change=_remember_radar_form,key="ws_par_pfa",format_func=lambda n:f"{n:.0e}")
                 st.number_input("Počet ne-koherentních pulzů",min_value=1,
-                                max_value=1000,value=1,step=1,key="ws_par_pulses")
+                                max_value=1000,value=1,step=1,on_change=_remember_radar_form,key="ws_par_pulses")
             if (st.session_state.get("ws_par_scan_mode","TRACKING")=="FIXED_3D"
                     and st.session_state.get("ws_par_channels","BOTH")!="AZ"):
                 st.warning("FIXED_3D umí jen statický dostupný diagram. "
