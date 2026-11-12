@@ -406,7 +406,7 @@ def export_range_rings_kml(result):
     return ET.tostring(root, encoding='utf-8', xml_declaration=True)
 
 
-def export_kml(result, levels, environment_items=None):
+def export_kml(result, levels, environment_items=None, *, helper_features=None):
     """One KML file: separate polygon folders for target + every requested FL + obstacles."""
     from matplotlib.colors import to_hex
     root = ET.Element('{' + KML_NS + '}kml')
@@ -448,6 +448,15 @@ def export_kml(result, levels, environment_items=None):
             _kml_element(folder, 'name', 'Environmental layers / OSM or imported')
             for mark in source_doc.findall('{' + KML_NS + '}Placemark'):
                 folder.append(mark)
+    # Engineering overlays remain separate from calculated coverage polygons.
+    # Their source and bearing are preserved as ExtendedData in WGS84 KML.
+    if helper_features:
+        from position_export import kml_bytes as export_helpers_kml
+        other=ET.fromstring(export_helpers_kml(helper_features))
+        helpers_doc=other.find('{' + KML_NS + '}Document')
+        if helpers_doc is not None:
+            for folder in helpers_doc.findall('{' + KML_NS + '}Folder'):
+                doc.append(folder)
     # Embed the same rings in the standalone all-layers KML as a toggleable folder.
     rings_root = ET.fromstring(export_range_rings_kml(result))
     rings_folder = rings_root.find('{' + KML_NS + '}Document/{' + KML_NS + '}Folder')
