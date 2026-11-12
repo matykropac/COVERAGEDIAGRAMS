@@ -1016,14 +1016,14 @@ def radar_dialog():
         a,b=st.columns(2,gap="small")
         with a:
             st.select_slider("Radiální krok [m]",
-                             options=[5,10,15,20,25,50,75,100,150,250,500,1000,2000],
+                             options=[1,2,5,10,15,20,25,50,75,100,150,250,500,1000,2000],
                              value=500,key="ws_step",
-                             help="Expertní krok 5 m; skutečná přesnost závisí na DEM.")
+                             help="Ultra detail 1 m vyžaduje odpovídající kvalitní DEM. Jemnější krok sám nezvyšuje rozlišení zdrojových výšek.")
         with b:
             st.select_slider("Azimutální krok [°]",
-                             options=[.025,.05,.075,.1,.125,.15,.2,.25,.5,1.,2.,2.5,5.],
+                             options=[.01,.02,.025,.05,.075,.1,.125,.15,.2,.25,.5,1.,2.,2.5,5.],
                              value=1.,key="ws_azstep",
-                             help="Expertní krok 0,025°; rozestup paprsků roste se vzdáleností.")
+                             help="Ultra detail 0,01°; boční rozestup paprsků závisí na vzdálenosti a úhlu.")
         st.number_input("k-factor",.5,3.,4/3,format="%.4f",key="ws_k")
         try:
             current=_cfg()
