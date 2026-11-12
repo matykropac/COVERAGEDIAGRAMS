@@ -90,6 +90,49 @@ class DraftRecoveryTests(TestCase):
                 draft.import_draft(draft.export_draft(loaded))
                 ["_radar_mode_profiles"]["PAR"]["ws_bearing"],187.45)
 
+    def test_par_antenna_height_and_step_survive_dialog_unmount(self):
+        """User's PAR 31.7 m / bearing 173.4° survives closing map dialog."""
+        values={
+            "ws_radar":"PAR-NG","ws_radar_ui_mode":"PAR",
+            "ws_radar_site":[41.4182,19.7353],
+            "ws_lat":41.4182,"ws_lon":19.7353,
+            "ws_agl":31.7,"ws_bearing":173.4,
+            "ws_par_channels":"BOTH",
+            "ws_reference":"AMSL","ws_par_level_reference":"AMSL",
+            "_radar_active_step":"ANTÉNA",
+            "ws_site_lat_input":"41.418200",
+            "ws_site_lon_input":"19.735300",
+        }
+        with tempfile.TemporaryDirectory() as temp, patch.dict(
+                "os.environ",{"COVERAGEDIAGRAMS_DRAFT_DIR":temp}):
+            token=draft.new_token()
+            self.assertTrue(draft.save_draft(token,values))
+            loaded=draft.read_draft(token)["fields"]
+            for key in values:
+                self.assertEqual(loaded[key],values[key])
+            # A new target azimuth updates only the bearing, not height/site.
+            loaded["ws_bearing"]=191.25
+            self.assertTrue(draft.save_draft(token,loaded))
+            recovered=draft.read_draft(token)["fields"]
+            self.assertEqual(recovered["ws_agl"],31.7)
+            self.assertEqual(recovered["ws_radar_site"],[41.4182,19.7353])
+            self.assertEqual(recovered["_radar_active_step"],"ANTÉNA")
+            self.assertEqual(recovered["ws_bearing"],191.25)
+
+    def test_settings_callbacks_on_all_editable_radar_fields(self):
+        source=(Path(__file__).resolve().parents[1]/
+                "map_workspace.py").read_text(encoding="utf-8")
+        for widget in ("ws_agl","ws_bearing","ws_min","ws_max","ws_tilt",
+                       "ws_step","ws_azstep","ws_k","ws_target",
+                       "ws_par_scan_loss","ws_par_channels"):
+            with self.subTest(widget=widget):
+                self.assertIn('on_change=_remember_radar_form,key="'+widget+'"',source)
+        self.assertIn('st.session_state["_radar_active_step"]=step',source)
+        self.assertIn('st.session_state["_radar_active_step"]="ANTÉNA"',source)
+        self.assertIn('reference="AMSL"',source)
+        self.assertNotIn('st.selectbox("Reference cíle"',source)
+        self.assertNotIn('st.radio("Výška PAR nad terénem / mořem"',source)
+
     def test_workspace_autosaves_before_expensive_preview(self):
         source=(Path(__file__).resolve().parents[1]/
                 "map_workspace.py").read_text(encoding="utf-8")
