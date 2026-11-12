@@ -288,6 +288,7 @@ class ParScanPattern(AntennaPattern):
     gas_loss_db_per_km: float = 0.0  # 1-way assumed gas attenuation
     rain_loss_db_per_km: float = 0.0  # 1-way assumed rain attenuation
     additional_loss_db: float = 0.0  # 2-way system margin scenario
+    sector_edge_loss_db: float = 6.0  # quadratic scenario, 0 dB on axis, 6 dB at ±15°
 
     def validate_model(self):
         if self.scan_mode not in ('TRACKING', 'FIXED_3D'):
@@ -300,6 +301,8 @@ class ParScanPattern(AntennaPattern):
                       self.additional_loss_db):
             if not np.isfinite(value) or value < 0 or value > 60:
                 raise ValueError('PAR: útlumy musí být konečné hodnoty 0–60 dB.')
+        if not np.isfinite(self.sector_edge_loss_db) or not 0 <= self.sector_edge_loss_db <= 20:
+            raise ValueError('PAR: krajní sektorový útlum musí být 0–20 dB.')
         if not (np.isfinite(self.az_beam_step_deg) and 0.05<=self.az_beam_step_deg<=0.9):
             raise ValueError('PAR: neplatný krok směrování AZ (0,05–0,90°).')
         if not (np.isfinite(self.el_beam_step_deg) and 0.05<=self.el_beam_step_deg<=0.65):
