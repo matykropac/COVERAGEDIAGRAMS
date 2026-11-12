@@ -34,7 +34,7 @@ RADAR_FIELDS=(
     "ws_bearing","ws_beam","ws_ssr_diagram",
     "ws_site_lat_input","ws_site_lon_input","ws_radar_preview_enabled","ws_par_3d_view",
     "ws_min","ws_max","ws_tilt","ws_step","ws_azstep",
-    "ws_k","ws_target","ws_reference","ws_source","ws_dataset",
+    "ws_k","ws_target","ws_target_ft","ws_reference","ws_source","ws_dataset",
     "ws_par_channels","ws_par_az_beam_step","ws_par_el_beam_step",
     "ws_par_scan_mode","ws_par_scan_loss","ws_par_sector_edge_loss","ws_par_quality",
     "ws_par_gas_loss","ws_par_rain_loss","ws_par_extra_loss",
@@ -70,6 +70,8 @@ def path_for(token):
 
 def _clean(key,value):
     """Ignore unserializable values and constrain payload shape/size."""
+    if key=="ws_target_ft":
+        return value if type(value) is int and value in range(100,9001,100) else None
     if key=="ws_radar_site":
         if not isinstance(value,(list,tuple)) or len(value)!=2:
             return None
