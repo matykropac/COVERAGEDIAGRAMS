@@ -29,9 +29,9 @@ def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
         grid = {
             "az": np.round(result["az"], 6).tolist(),
             "distance": np.round(result["distance"], 3).tolist(),
-            "terrain": np.where(np.isfinite(result["terrain"]), result["terrain"], np.nan).tolist(),
-            "lower": result["lower"].tolist(),
-            "upper": result["upper"].tolist(),
+            "terrain": np.where(np.isfinite(result["terrain"]), result["terrain"], None).tolist(),
+            "lower": np.where(np.isfinite(result["lower"]), result["lower"], None).tolist(),
+            "upper": np.where(np.isfinite(result["upper"]), result["upper"], None).tolist(),
             "antenna": float(result["antenna"]),
             "k": float(cfg.k),
             "minElev": float(cfg.min_elev),
@@ -47,7 +47,7 @@ def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
             grid["status"][str(ft)] = np.where(
                 np.isfinite(values), np.asarray(np.nan_to_num(values), dtype=np.uint8), 2
             ).tolist()
-        raw = json.dumps(grid, ensure_ascii=False, allow_nan=True,
+        raw = json.dumps(grid, ensure_ascii=False, allow_nan=False,
                          separators=(",", ":")).encode("utf-8")
         diagnostics = base64.b64encode(gzip.compress(raw, compresslevel=5)).decode("ascii")
     encoded=base64.b64encode(json.dumps({
