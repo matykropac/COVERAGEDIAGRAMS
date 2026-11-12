@@ -54,6 +54,30 @@ section[data-testid="stSidebar"] [data-testid="stExpander"]{
   border-radius:8px!important;
   margin:4px 0!important;
 }
+/* Compact, stable radar selector: a single control, not four independent
+   button blocks that shuffle when a dialog is opened. */
+.st-key-ws_radar_mode_panel{
+  border:1px solid #396181!important;
+  border-radius:12px!important;
+  background:linear-gradient(150deg,#17334a,#0d263c)!important;
+  padding:12px 10px 9px!important;
+  margin:3px 0 8px!important;
+}
+.st-key-ws_radar_mode_panel [data-testid="stSegmentedControl"]{
+  width:100%!important;max-width:100%!important;
+}
+.st-key-ws_radar_mode_panel [data-testid="stSegmentedControl"] button{
+  min-width:0!important;flex:1 1 0!important;
+  white-space:nowrap!important;
+  min-height:39px!important;padding:7px 3px!important;
+  font:750 12px system-ui!important;letter-spacing:.025em;
+  border-radius:7px!important;
+}
+.st-key-ws_radar_mode_panel [data-testid="stCaptionContainer"] p{
+  color:#b9d9ef!important;font:10px/1.4 system-ui!important;
+}
+/* Do not stretch the map when an RF inventory expander opens. */
+.st-key-ws_radar_mode_panel [data-testid="stVerticalBlock"]{gap:5px!important}
 /* Streamlit alert and status live on top of the map rather than shifting it. */
 .st-key-cd_editor_status{
   position:fixed!important;top:22px;left:min(500px,calc(100vw - 330px));
