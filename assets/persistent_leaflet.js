@@ -678,9 +678,16 @@ function parAngleDifference(a,b){
 function parSnapBearing(s,raw){
   const bearing=((raw%360)+360)%360;
   const cfg=s.latest?.parSector||{};
-  const runway=parRunwayAzimuth(cfg);
-  if(!s.parMagnetOn||runway===null)return {bearing,snapped:false};
-  const references=[runway,(runway+180)%360,(runway+90)%360,(runway+270)%360];
+  if(!s.parMagnetOn)return {bearing,snapped:false};
+  const runways=(Array.isArray(cfg.referenceRunways)&&cfg.referenceRunways.length)
+    ? cfg.referenceRunways : (cfg.referenceRunway?[cfg.referenceRunway]:[]);
+  const references=[];
+  for(const runway of runways){
+    const az=Number(runway.heading_deg_true);
+    if(!Number.isFinite(az))continue;
+    for(const offset of [0,90,180,270])references.push((az+offset)%360);
+  }
+  if(!references.length)return {bearing,snapped:false};
   let best=bearing,error=Infinity;
   for(const ref of references){
     const diff=parAngleDifference(bearing,ref);
@@ -719,7 +726,7 @@ function updateParSector(s,data){
   const aiming=data.tool==="PAR_AIM";
   const sig=JSON.stringify([enabled,cfg.lat,cfg.lon,cfg.bearing,cfg.rangeKm,
       cfg.referenceRunway?.key,cfg.referenceRunway?.heading_deg_true,
-      cfg.referenceEnd,aiming]);
+      (cfg.referenceRunways||[]).map(r=>[r.key,r.label,r.heading_deg_true]),cfg.referenceEnd,aiming]);
   if(s.last.parSector===sig)return;
   s.last.parSector=sig;
   if(s.parAimFrame){cancelAnimationFrame(s.parAimFrame);s.parAimFrame=null;}
@@ -732,21 +739,26 @@ function updateParSector(s,data){
   if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(az)||
      !Number.isFinite(distance)||distance<=0)return;
   const site=[lat,lon];
-  const runway=parRunwayAzimuth(cfg);
-  if(runway!==null){
-    // Draw both complete reference axes through the radar; sources are
-    // indicative RWY TRUE heading, never asserted as verified AIP.
-    for(const [angle,color,label] of [
-      [runway,"#f08ae8","ROVNOBĚŽKA RWY"],
-      [(runway+90)%360,"#b3f0a4","KOLMICE NA RWY"]
+  const runways=(Array.isArray(cfg.referenceRunways)&&cfg.referenceRunways.length)
+    ? cfg.referenceRunways : (cfg.referenceRunway?[cfg.referenceRunway]:[]);
+  // Each RWY is an independently named pair of axes, even for parallel
+  // runways. Their source is indicative until certified threshold data exist.
+  for(let index=0;index<runways.length;index++){
+    const runway=runways[index];
+    const az=Number(runway.heading_deg_true);
+    if(!Number.isFinite(az))continue;
+    const label=String(runway.label||"RWY "+(index+1));
+    for(const [offset,color,name] of [
+      [0,"#f08ae8","ROVNOBĚŽKA"],[90,"#b3f0a4","KOLMICE"]
     ]){
-      const line=[
+      const angle=(az+offset)%360;
+      const coords=[
         parDestination(lat,lon,angle+180,distance),site,
         parDestination(lat,lon,angle,distance)
       ];
-      L.polyline(line,{color,weight:2.4,dashArray:"10 7",
-        opacity:.92,interactive:false})
-       .bindTooltip(label+" · "+angle.toFixed(2)+"° TRUE")
+      L.polyline(coords,{color,weight:2,dashArray:"10 7",
+        opacity:.76,interactive:false})
+       .bindTooltip(name+" RWY "+label+" · "+angle.toFixed(2)+"° TRUE")
        .addTo(s.groups.parSector);
     }
   }
