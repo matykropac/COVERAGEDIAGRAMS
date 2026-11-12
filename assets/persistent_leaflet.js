@@ -277,7 +277,8 @@ function selectTerrainPoint(s,latlng){
   }
   if(s.profilePanel)s.profilePanel.hidden=false;
   if(s.root)s.root.classList.add("cd-profile-active");
-  requestAnimationFrame(()=>s.map.invalidateSize({pan:false,animate:false}));
+  // ResizeObserver performs dimension-aware invalidation; unconditional
+  // invalidateSize on every Streamlit update caused visible tile jitter.
   drawTerrain(s);
 }
 function updateProfile(s,data){
@@ -556,9 +557,11 @@ function updateRadar(s,data) {
   if(!s.lastRadarSite||Math.abs(s.lastRadarSite[0]-lat)>1e-7||
                         Math.abs(s.lastRadarSite[1]-lon)>1e-7){
     s.lastRadarSite=site;
+    // Recenter only on an actual user-selected site change. A calculation
+    // or Streamlit rerun must never move the map to an old result location.
     const at=s.map.getCenter();
     if(Math.abs(at.lat-lat)>1e-6||Math.abs(at.lng-lon)>1e-6)
-      s.map.setView(site,s.map.getZoom(),{animate:false});
+      s.map.panTo(site,{animate:false});
   }
 }
 function updateEnvironment(s,data){
