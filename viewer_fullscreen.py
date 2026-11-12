@@ -59,6 +59,7 @@ def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
         "layers":layers,
         "styles":styles,
         "center":[float(center[0]),float(center[1])],
+        "radarKnown":diagnostic_result is not None,
         "snapshot":str(snapshot),
         "studioUrl":str(studio_url),
         "diagnostics":diagnostics,
@@ -223,6 +224,7 @@ const COLORS=["#3fa7fa","#21d7bf","#dc8aff","#ffb058","#fc647e","#a6d67b"];
 let layers=new Map(),map=null,base=null,rangeShape=null,openedEditor=null,vectorRenderer=null;
 let grid=null, inspectEnabled=false, selectedPoint=null, inspectionLine=null, inspectionMarker=null;
 let placingRadar=false, demController=null, demRequest=0, radarMarker=null;
+let radarKnown=Boolean(DATA.radarKnown);
 const demCache=new Map();
 let setting={base:"dark",labels:true,legend:true,range:false,nm:20};
 let layerSeq=0,chosenBase="dark",radarCenter=DATA.center||[50,15],legendControl=null;
@@ -633,6 +635,8 @@ function drawStandaloneProfile(ranges,terrain,targetAMSL,antennaAMSL,k){
 }
 async function showStandaloneInspection(){
  if(!selectedPoint)return;
+ if(!radarKnown){$("inspection-result").textContent="Nejprve nastav pozici radaru kliknutím do mapy.";
+   $("inspection-details").textContent="Bez polohy radaru nelze určit trasu ani LOS.";return;}
  const request=++demRequest;
  $("inspection").hidden=false;
  $("inspection-result").textContent="Načítám DEM pro trasu radar → bod…";
@@ -705,11 +709,20 @@ function setup(){
   inspectEnabled=!inspectEnabled;$("inspect").setAttribute("aria-pressed",String(inspectEnabled));
   $("inspect").classList.toggle("primary",inspectEnabled);
   map.getContainer().style.cursor=inspectEnabled?"crosshair":"";
-  if(inspectEnabled){$("inspection").hidden=false;$("inspection-result").textContent="Klikni do mapy; terén se načte automaticky, pokud chybí výpočet z EDITORU."}
+  if(inspectEnabled){
+    $("inspection").hidden=false;
+    if(!grid&&!radarKnown){
+      placingRadar=true;
+      $("inspection-result").textContent="Nejprve klikni do mapy na polohu radaru. Poté klikni na analyzovaný bod.";
+    }else{
+      $("inspection-result").textContent="Klikni do mapy; terén se načte automaticky, pokud chybí výpočet z EDITORU.";
+    }
+  }else{placingRadar=false}
  };
  map.on("click",e=>{
   if(placingRadar){
-    placingRadar=false;radarCenter=[e.latlng.lat,e.latlng.lng];
+    placingRadar=false;radarKnown=true;
+    radarCenter=[e.latlng.lat,e.latlng.lng];
     if(radarMarker)map.removeLayer(radarMarker);
     radarMarker=L.circleMarker(radarCenter,{radius:8,color:"#ffbd6d",weight:2,
                                          fillColor:"#16547c",fillOpacity:1}).addTo(map);
@@ -725,6 +738,7 @@ function setup(){
  });
  $("dem-set-radar").onclick=()=>{
   placingRadar=true;inspectEnabled=true;
+  $("inspection").hidden=false;
   $("inspect").classList.add("primary");
   $("inspection-result").textContent="Klikni do mapy na polohu radaru.";
  };
