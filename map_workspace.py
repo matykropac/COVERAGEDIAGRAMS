@@ -456,7 +456,7 @@ def _cfg():
         max_elev=float(st.session_state.get("ws_max", 45.0)),
         antenna_tilt_deg=float(st.session_state.get("ws_tilt", -1.0)),
         beam_mode=st.session_state.get("ws_beam", "COMBINED") if model == "RL-2000" else "COMBINED",
-        target_m=float(st.session_state.get("ws_target", 1000.0)),
+        target_m=float(st.session_state.get("ws_target_ft",3000))*core.FT_TO_M,
         reference="AMSL",
         csc_enabled=True,
     )
@@ -554,7 +554,9 @@ def _config_state_from_project(config):
         "ws_step":int(config.step_m),"ws_azstep":float(config.az_step),
         "ws_k":config.k,"ws_min":config.min_elev,"ws_max":config.max_elev,
         "ws_tilt":config.antenna_tilt_deg,"ws_beam":config.beam_mode,
-        "ws_target":config.target_m,"ws_reference":"AMSL",
+        "ws_target_ft":min(core.STANDARD_LEVELS_FT,
+            key=lambda ft:abs(ft-config.target_m/core.FT_TO_M)),
+        "ws_reference":"AMSL",
     }
     if config.radar_mode == "RL-2000":
         values["ws_psr_nm"] = min(core.PSR_RANGES_NM,key=lambda n:abs(core.radar_preset("RL-2000",n)-config.range_km))
@@ -1138,7 +1140,10 @@ def _radar_settings_body(ui_mode):
                     unsafe_allow_html=True)
         a,b=st.columns(2,gap="small")
         with a:
-            st.number_input("Výška cíle [m]",-500.,30000.,1000.,on_change=_remember_radar_form,key="ws_target")
+            st.selectbox("Výška cíle [ft AMSL]",core.STANDARD_LEVELS_FT,
+                         index=29,key="ws_target_ft",
+                         format_func=core.level_label,
+                         on_change=_remember_radar_form)
         with b:
             st.caption("Výšková reference cíle: **AMSL** · pevně nastavena.")
         mode=st.session_state.get("ws_radar","RL-2000")
