@@ -1601,7 +1601,16 @@ def layers_dialog():
                                  f"{time.perf_counter()-t0:.1f} s")
                         st.caption(reason)
                 if buildings or microsoft:
-                    st.session_state["ws_environment"]=loaded[:env.MAX_ENVIRONMENT_ITEMS]
+                    # Never replace the previous polygon catalog with an empty
+                    # result when all selected polygon providers have failed.
+                    polygon_sources=[x for x in ("OpenStreetMap / Overpass",
+                                              "Microsoft Building Footprints")
+                                     if (x.startswith("OpenStreetMap") and buildings)
+                                     or (x.startswith("Microsoft") and microsoft)]
+                    if any(completed.get(name) is not None for name in polygon_sources):
+                        st.session_state["ws_environment"]=loaded[:env.MAX_ENVIRONMENT_ITEMS]
+                    else:
+                        st.write("⚠️ Stávající OSM/MS polygony ponechány: žádný zdroj neodpověděl.")
                 st.session_state["ws_geodata_site"]=site
                 st.session_state["ws_geodata_errors"]=errors
                 # Loaded polygons and turbines become editable immediately.
