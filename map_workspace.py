@@ -2063,6 +2063,18 @@ def _draw_map():
     def signature(items):
         return hashlib.sha256(json.dumps(items,sort_keys=True,ensure_ascii=False,
                                           default=str).encode("utf-8")).hexdigest()[:20]
+    # WGS84 direct-geodesic circle; exact radial distance in meters.
+    range_circle=[]
+    if st.session_state.get("ws_range_enabled",False):
+        from pyproj import Geod
+        radius_m=float(st.session_state.get("ws_range_nm",20))*1852.0
+        bearings=np.linspace(0.,360.,181)
+        geod=Geod(ellps="WGS84")
+        lons,lats,_=geod.fwd(
+            np.full(bearings.shape,float(configured.lon)),
+            np.full(bearings.shape,float(configured.lat)),
+            bearings,np.full(bearings.shape,radius_m))
+        range_circle=[[float(lat),float(lon)] for lat,lon in zip(lats,lons)]
     payload={
         "center":[configured.lat,configured.lon],
         "zoom":8 if result else 9,
@@ -2080,6 +2092,7 @@ def _draw_map():
         "airspaces":[],
         "rangeEnabled":bool(st.session_state.get("ws_range_enabled",False)),
         "rangeNm":int(st.session_state.get("ws_range_nm",20)),
+        "rangeCircle":range_circle,
         "opacity":alpha,
         "coverageVersion":signature([active,reference,channel_view,alpha,
                                       result.get("completed_at") if result else None,
