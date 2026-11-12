@@ -838,7 +838,10 @@ def _select_radar_ui_mode(name):
         # Explicit saved profile wins over old widget keys, even when Streamlit
         # kept the same field name while changing a conditional tab.
         for key,value in profiles[name].items():
-            if key.startswith("ws_") and key not in ("ws_radar","ws_radar_ui_mode"):
+            # Site coordinates belong to the working session, not one radar
+            # type: switching PSR/SSR/ASR/PAR must never move the radar.
+            if key.startswith("ws_") and key not in (
+                    "ws_radar","ws_radar_ui_mode","ws_lat","ws_lon"):
                 st.session_state[key]=value
     st.session_state["_radar_mode_profiles"]=profiles
     _on_radar_level_mode_change()
