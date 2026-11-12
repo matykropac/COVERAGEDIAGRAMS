@@ -30,6 +30,15 @@ class OpenTopoResponseTests(unittest.TestCase):
             self.assertTrue(path.read_bytes().startswith(b"II*\x00"))
             self.assertFalse(Path(str(path)+".unpacked").exists())
 
+    def test_gzip_tiff_is_unpacked(self):
+        import gzip
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root)/"test.tif"
+            path.write_bytes(gzip.compress(b"II*\x00"+b"tiff-body"))
+            core._normalize_dem_payload(path,path.read_bytes()[:16],
+                                        "application/gzip",lambda _:None)
+            self.assertTrue(path.read_bytes().startswith(b"II*\x00"))
+
     def test_html_api_error_is_reported(self):
         with tempfile.TemporaryDirectory() as root:
             path=Path(root)/"test.tif"
