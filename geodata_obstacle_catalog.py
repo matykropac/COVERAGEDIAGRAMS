@@ -8,7 +8,7 @@ import hashlib
 import math
 
 from obstacles import square_corners, validate_obstacle
-from environment_layers import numeric_height
+from environment_layers import numeric_height, _simplify_ring
 
 MAX_ACTIVE = 1000
 
@@ -92,6 +92,16 @@ def synchronize(existing_obstacles, catalog, lat, lon, *, auto_enable=False):
         if not entry.get("enabled"):
             continue
         item=_to_obstacle(entry)
+        # OSM footprints frequently exceed the manual-editor 150-vertex cap.
+        # Preserve the full source ring in the visible catalog, but simplify
+        # only the solver copy, without dropping valid known-height buildings.
+        if len(item.get("coordinates",[]))>150:
+            reduced=_simplify_ring(item["coordinates"],150)
+            if reduced is None:
+                entry["enabled"]=False
+                errors+=1
+                continue
+            item["coordinates"]=reduced
         try:
             validate_obstacle(item,lat,lon)
         except (ValueError,KeyError,TypeError):
