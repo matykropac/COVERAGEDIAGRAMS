@@ -25,10 +25,10 @@ html,body,[data-testid="stApp"],[data-testid="stAppViewContainer"]{
 /* Sidebar becomes an overlay, instead of taking horizontal space away from Leaflet.
    Preserve Streamlit's own collapsed state and its accessible expand/collapse toggle. */
 section[data-testid="stSidebar"]{
-  position:fixed!important;left:30px!important;top:78px!important;
-  bottom:30px!important;height:calc(100dvh - 108px)!important;
-  width:min(510px,calc(100vw - 60px))!important;
-  min-width:0!important;max-width:min(510px,calc(100vw - 60px))!important;
+  position:fixed!important;left:38px!important;top:82px!important;
+  bottom:38px!important;height:calc(100dvh - 120px)!important;
+  width:min(440px,calc(100vw - 76px))!important;
+  min-width:0!important;max-width:min(440px,calc(100vw - 76px))!important;
   border:1px solid #42617a!important;border-radius:13px!important;
   box-shadow:0 18px 55px #000a!important;
   background:#0b2035f6!important;
@@ -56,7 +56,7 @@ section[data-testid="stSidebar"] [data-testid="stExpander"]{
 }
 /* Streamlit alert and status live on top of the map rather than shifting it. */
 .st-key-cd_editor_status{
-  position:fixed!important;top:22px;left:min(560px,calc(100vw - 330px));
+  position:fixed!important;top:22px;left:min(500px,calc(100vw - 330px));
   max-width:min(550px,calc(100vw - 36px));z-index:100002!important;
   padding:3px 9px!important;border:1px solid #345875!important;
   border-radius:10px!important;background:#0b2035e9!important;
