@@ -96,117 +96,17 @@ def _cached_airspaces(lat,lon,radius,api_key):
     return fetch_airspaces(lat,lon,radius,api_key)
 
 
-def _airspace_controls():
-    st.markdown('<div class="cd-nav-title">CTR / TMA · VEKTOROVÉ PROSTORY</div>',
+def _range_controls():
+    """Standalone geodesic distance reference, independent of coverage results."""
+    st.markdown('<div class="cd-nav-title">RANGE · VZDÁLENOST OD RADARU</div>',
                 unsafe_allow_html=True)
-    st.caption("Načítání je nezávislé na výpočtu radaru. Zdroj OpenAIP · "
-               "orientační podklady, ne oficiální AIP/NOTAM.")
-    st.slider("Poloměr od letiště / radaru [km]",10,200,80,10,
-              key="ws_airspace_radius")
-    if st.button("NAČÍST CTR / TMA",use_container_width=True,key="ws_airspace_fetch"):
-        try:
-            from aviation_basemap import configured_key
-            import os
-            key=os.environ.get("OPENAIP_DATA_API_KEY","").strip()
-            if not key:
-                try:
-                    key=str(st.secrets.get("OPENAIP_DATA_API_KEY","")).strip()
-                except (FileNotFoundError, KeyError, OSError):
-                    pass
-            if not key:
-                key=configured_key()
-            if not key:
-                raise ValueError(
-                    "Chybí OpenAIP API klíč. Nastav OPENAIP_DATA_API_KEY "
-                    "ve Streamlit Secrets pro vektorová data CTR/TMA."
-                )
-            runways=st.session_state.get("ws_airport_geometry") or []
-            if runways:
-                position=runways[0]["midpoint"]
-            else:
-                site=_cfg()
-                position=[site.lat,site.lon]
-            zones=_cached_airspaces(round(position[0],5),round(position[1],5),
-                                    st.session_state.get("ws_airspace_radius",80),key)
-            st.session_state["ws_airspaces"]=zones
-            st.session_state["ws_airspace_source_time"]=datetime.now(timezone.utc).isoformat()
-            st.session_state.pop("ws_snapshot_bytes",None)
-            if not zones:
-                st.warning("Pro zvolenou oblast nejsou ve zdroji dostupné CTR/TMA.")
-        except Exception as exc:
-            st.error(f"Načítání CTR/TMA selhalo; předchozí vrstva zůstala: {exc}")
-    upload=st.file_uploader("Nebo importovat GeoJSON CTR/TMA",type=["geojson","json"],
-                           key="ws_airspace_upload")
-    if upload is not None and st.button("IMPORTOVAT GEOJSON",use_container_width=True,
-                                        key="ws_airspace_import"):
-        try:
-            zones=import_geojson(upload.getvalue())
-            st.session_state["ws_airspaces"]=zones
-            st.session_state["ws_airspace_source_time"]=datetime.now(timezone.utc).isoformat()
-            st.session_state.pop("ws_snapshot_bytes",None)
-        except Exception as exc:
-            st.error(f"Neplatný import; dosavadní prostory zůstaly: {exc}")
-    zones=st.session_state.get("ws_airspaces") or []
-    if not zones:
-        return
-    st.caption(f"Uloženo {len(zones)} polygonů · "
-               f"{st.session_state.get('ws_airspace_source_time','bez času stažení')}")
-    a,b=st.columns(2,gap="small")
-    with a:
-        st.toggle("CTR",value=True,key="ws_airspace_ctr")
-    with b:
-        st.toggle("TMA",value=True,key="ws_airspace_tma")
-    st.toggle("Filtrovat podle letové výšky AMSL",value=False,
-              key="ws_airspace_altfilter",
-              help="Neznámá vertikální reference se nikdy automaticky neskryje.")
-    if st.session_state.get("ws_airspace_altfilter"):
-        st.number_input("Výška filtru [ft AMSL]",min_value=0,max_value=66000,
-                        value=3000,step=100,key="ws_airspace_filter_ft")
-    selected=visible_airspaces(
-        zones,st.session_state.get("ws_airspace_ctr",True),
-        st.session_state.get("ws_airspace_tma",True),
-        st.session_state.get("ws_airspace_filter_ft",3000)
-          if st.session_state.get("ws_airspace_altfilter",False) else None)
-    st.caption(f"Zobrazeno: {len(selected)} / {len(zones)}")
-    with st.expander("Seznam a správa prostorů",expanded=False):
-        st.dataframe([{"Název":x["name"],"Typ":x["kind"],"Třída":x["class"],
-                       "Od":x["lower"]["text"],"Do":x["upper"]["text"],
-                       "Viditelný":not x.get("hidden",False)}
-                      for x in zones],hide_index=True,use_container_width=True,
-                     height=220)
-        indexes=list(range(len(zones)))
-        active=st.session_state.get("ws_airspace_active",0)
-        if active not in indexes:
-            st.session_state["ws_airspace_active"]=0
-        st.selectbox("Vybraný prostor",indexes,key="ws_airspace_active",
-                     format_func=lambda i:zones[i]["kind"]+" · "+zones[i]["name"])
-        index=st.session_state["ws_airspace_active"]
-        selected_zone=zones[index]
-        action=("ZOBRAZIT" if selected_zone.get("hidden",False) else "SKRÝT")
-        if st.button(action+" VYBRANÝ PROSTOR",use_container_width=True,
-                     key="ws_airspace_toggle_one"):
-            updated=[dict(z) for z in zones]
-            updated[index]["hidden"]=not updated[index].get("hidden",False)
-            st.session_state["ws_airspaces"]=updated
-            st.session_state.pop("ws_snapshot_bytes",None)
-            st.session_state.pop("ws_airspace_export_bytes",None)
-            st.session_state["ws_airspace_source_time"]=datetime.now(timezone.utc).isoformat()
-            st.rerun()
-    if st.button("PŘIPRAVIT GEOJSON CTR/TMA",use_container_width=True,
-                 key="ws_airspace_prepare_export"):
-        import json
-        st.session_state["ws_airspace_export_bytes"]=json.dumps(
-            as_geojson(zones),ensure_ascii=False).encode("utf-8")
-        st.session_state["ws_airspace_export_time"]=st.session_state.get(
-            "ws_airspace_source_time","")
-    if (st.session_state.get("ws_airspace_export_bytes") and
-        st.session_state.get("ws_airspace_export_time")==
-        st.session_state.get("ws_airspace_source_time","")):
-        st.download_button("STÁHNOUT CTR/TMA · GeoJSON",
-            st.session_state["ws_airspace_export_bytes"],
-            file_name="COVERAGEDIAGRAMS_airspaces.geojson",
-            mime="application/geo+json",use_container_width=True,
-            key="ws_airspace_export")
+    st.toggle("RANGE · ZOBRAZIT KRUŽNICI",value=False,key="ws_range_enabled",
+              help="Referenční kružnice má střed na souřadnicích radaru.")
+    if st.session_state.get("ws_range_enabled",False):
+        radius=st.slider("Poloměr [NM]",min_value=1,max_value=260,
+                         value=20,step=1,key="ws_range_nm")
+        st.caption(f"{radius} NM = {radius*1.852:.2f} km · geodetická kružnice WGS84")
+
 
 
 def _position_nearby_controls():
@@ -2177,12 +2077,9 @@ def _draw_map():
         "airportGeometry":runway_geometry(st.session_state.get("ws_airport_geometry") or [])
            if st.session_state.get("ws_show_runways",True) else [],
         "airportCode":st.session_state.get("ws_airport_code",""),
-        "airspaces":visible_airspaces(
-             st.session_state.get("ws_airspaces") or [],
-             st.session_state.get("ws_airspace_ctr",True),
-             st.session_state.get("ws_airspace_tma",True),
-             st.session_state.get("ws_airspace_filter_ft",3000)
-              if st.session_state.get("ws_airspace_altfilter",False) else None),
+        "airspaces":[],
+        "rangeEnabled":bool(st.session_state.get("ws_range_enabled",False)),
+        "rangeNm":int(st.session_state.get("ws_range_nm",20)),
         "opacity":alpha,
         "coverageVersion":signature([active,reference,channel_view,alpha,
                                       result.get("completed_at") if result else None,
@@ -2192,14 +2089,7 @@ def _draw_map():
         "obstaclesVersion":signature(obstacle_data),
         "environment":environment_data,
         "environmentVersion":signature(environment_data),
-        "airspacesVersion":signature([
-            st.session_state.get("ws_airspace_source_time",""),
-            st.session_state.get("ws_airspace_ctr",True),
-            st.session_state.get("ws_airspace_tma",True),
-            st.session_state.get("ws_airspace_altfilter",False),
-            st.session_state.get("ws_airspace_filter_ft",3000),
-            [z["id"] for z in st.session_state.get("ws_airspaces") or []]
-        ]),
+        "airspacesVersion":"disabled",
         "profile":profile,
     }
     action=show_persistent_map(payload)
@@ -2925,11 +2815,11 @@ def render_workspace():
                             help="Přenosný snapshot včetně DEM, nezávislý na dočasné cache.")
  
             elif section=="POZICE":
-                st.markdown('<div class="cd-nav-title">POZICE / AIRPORT & AIRSPACE</div>',
+                st.markdown('<div class="cd-nav-title">POZICE / AIRPORT & RANGE</div>',
                             unsafe_allow_html=True)
                 st.caption("Práce s polohou a vektorovými vrstvami funguje bez radarového výpočtu.")
                 _airport_controls()
-                _airspace_controls()
+                _range_controls()
                 _position_nearby_controls()
 
             else:  # PŘEKÁŽKY
