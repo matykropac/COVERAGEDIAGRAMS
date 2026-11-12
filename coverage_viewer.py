@@ -769,7 +769,7 @@ def render_viewer():
     editor_result,editor_meta=_snapshot()
     # The main 2D workstation is one persistent, browser-controlled canvas.
     # Streamlit never receives checkbox/slider/pan events from this viewer.
-    if st.query_params.get("viewer3d") != "1":
+    if st.query_params.get("viewer3d") != "1" and st.query_params.get("studio") != "1":
         from viewer_fullscreen import render_fullscreen_viewer
         editor_meta=editor_meta or {}
         layers=_editor_layers(editor_result,editor_meta) if editor_result is not None else {}
@@ -781,9 +781,13 @@ def render_viewer():
         params={"viewer":"1","viewer3d":"1"}
         if st.query_params.get("snapshot"):
             params["snapshot"]=str(st.query_params["snapshot"])
+        print_params={"viewer":"1","studio":"1"}
+        if st.query_params.get("snapshot"):
+            print_params["snapshot"]=str(st.query_params["snapshot"])
         render_fullscreen_viewer(layers,styles,center,
             snapshot=str(st.query_params.get("snapshot","")),
-            three_d_url="?"+urlencode(params))
+            three_d_url="?"+urlencode(params),
+            studio_url="?"+urlencode(print_params))
         return
     if st.query_params.get("viewer3d") == "1":
         st.session_state["viewer_mode"]="3D TERÉN / HYPSOMETRIE"
