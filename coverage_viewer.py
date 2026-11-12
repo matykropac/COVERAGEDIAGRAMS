@@ -603,8 +603,7 @@ def _restore_viewer_workspace():
         st.session_state["viewer_imported_workspace_layers"]=layers
         st.session_state["viewer_styles"]=styles
         st.session_state["viewer_style_revision"]=st.session_state.get("viewer_style_revision",0)+1
-        allowed={"viewer_mode":("2D MAPA","3D TERÉN / HYPSOMETRIE"),
-                 "viewer_basemap":tuple(BASEMAPS)}
+        allowed={"viewer_basemap":tuple(BASEMAPS)}
         for key,choices in allowed.items():
             value=settings.get(key)
             if value in choices:
@@ -769,52 +768,24 @@ def render_viewer():
     editor_result,editor_meta=_snapshot()
     # The main 2D workstation is one persistent, browser-controlled canvas.
     # Streamlit never receives checkbox/slider/pan events from this viewer.
-    if st.query_params.get("viewer3d") != "1" and st.query_params.get("studio") != "1":
+    # Dedicated 2D VIEWER, with no hidden or alternate 3D route.
+    if st.query_params.get("studio") != "1":
         from viewer_fullscreen import render_fullscreen_viewer
         editor_meta=editor_meta or {}
         layers=_editor_layers(editor_result,editor_meta) if editor_result is not None else {}
         layers.update(st.session_state.get("viewer_imported_workspace_layers") or {})
         center=(editor_result["config"].lat,editor_result["config"].lon) if editor_result is not None else (50.,15.)
         styles=st.session_state.get("viewer_styles") or {}
-        # Preserve the one-time EDITOR -> VIEWER snapshot token on mode changes.
         from urllib.parse import urlencode
-        params={"viewer":"1","viewer3d":"1"}
-        if st.query_params.get("snapshot"):
-            params["snapshot"]=str(st.query_params["snapshot"])
         print_params={"viewer":"1","studio":"1"}
         if st.query_params.get("snapshot"):
             print_params["snapshot"]=str(st.query_params["snapshot"])
         render_fullscreen_viewer(layers,styles,center,
-            diagnostic_result=editor_result, diagnostic_levels=(editor_meta or {}).get("levels", []),
+            diagnostic_result=editor_result, diagnostic_levels=editor_meta.get("levels", []),
             snapshot=str(st.query_params.get("snapshot","")),
-            three_d_url="?"+urlencode(params),
             studio_url="?"+urlencode(print_params))
         return
-    if st.query_params.get("viewer3d") == "1":
-        st.session_state["viewer_mode"]="3D TERÉN / HYPSOMETRIE"
-    # Explicit, high-contrast view controls: the previous segmented control
-    # was visually lost under the global dark Streamlit theme.
-    with st.container(key="viewer_mode_toolbar"):
-        caption_col,map_col,terrain_col=st.columns([3.2,1.25,1.9],
-                                                    gap="small",
-                                                    vertical_alignment="center")
-        with caption_col:
-            st.markdown("**VIEWER · PROSTOROVÉ ZOBRAZENÍ**")
-        current_mode=st.session_state.get("viewer_mode","2D MAPA")
-        with map_col:
-            if st.button("▧  2D MAPA",key="viewer_mode_2d_btn",
-                         use_container_width=True,
-                         type="primary" if current_mode=="2D MAPA" else "secondary"):
-                st.session_state["viewer_mode"]="2D MAPA"
-                st.query_params.pop("viewer3d",None)
-                st.rerun()
-        with terrain_col:
-            if st.button("◈  3D TERÉN / HYPSOMETRIE",key="viewer_mode_3d_btn",
-                         use_container_width=True,
-                         type="primary" if current_mode=="3D TERÉN / HYPSOMETRIE" else "secondary"):
-                st.session_state["viewer_mode"]="3D TERÉN / HYPSOMETRIE"
-                st.rerun()
-    mode=st.session_state.get("viewer_mode","2D MAPA")
+    mode="2D MAPA"
     editor_meta=editor_meta or {}
     if editor_result is not None:
         st.caption("● EDITOR LINK · výpočty a výškový model převzaty bez přepočtu")
@@ -864,16 +835,11 @@ def render_viewer():
             _viewer_export_panel(layers,styles,title,mode,basemap,
                                  show_legend,show_north)
     with canvas:
-        if mode=="3D TERÉN / HYPSOMETRIE":
-            _three_dimensional(layers,visible,editor_result,center,styles,title)
-        else:
-            m=_get_2d_map(layers,styles,visible,basemap,title,
-                          show_legend,show_north,center)
-            # Stable component key and unchanged Folium object on unrelated
-            # widget events. No browser-to-Streamlit map event feedback loop.
-            st_folium(m,height=780,use_container_width=True,key="viewer_2d_map",
-                      returned_objects=[])
-            st.download_button("⇩ MAPA · INTERAKTIVNÍ HTML",
+        m=_get_2d_map(layers,styles,visible,basemap,title,
+                      show_legend,show_north,center)
+        st_folium(m,height=780,use_container_width=True,key="viewer_2d_map",
+                  returned_objects=[])
+        st.download_button("⇩ MAPA · INTERAKTIVNÍ HTML",
                 _cached_map_html(m),
                 file_name="COVERAGEDIAGRAMS_map_viewer.html",mime="text/html",
                 use_container_width=True,key="viewer_map_html")
