@@ -767,6 +767,46 @@ def project_load_dialog():
             st.error(f"Projekt nelze načíst: {exc}")
 
 
+def _draft_begin():
+    """Restore a per-browser autosaved draft before creating Streamlit widgets."""
+    from workspace_autosave import new_token,is_valid_token,read_draft
+    if st.session_state.get("_workspace_draft_ready"):
+        return
+    token=st.query_params.get("draft")
+    if not is_valid_token(token):
+        token=new_token()
+        st.query_params["draft"]=token
+    st.session_state["_workspace_draft_token"]=token
+    try:
+        saved=read_draft(token)
+        if saved is not None:
+            for key,value in saved["fields"].items():
+                # A saved CDPROJ opened in this same session should be
+                # authoritative. Restore only on an otherwise new session.
+                if key not in st.session_state:
+                    st.session_state[key]=value
+            st.session_state["_workspace_draft_restored_at"]=saved["saved_at"]
+    except (OSError,ValueError,TypeError) as exc:
+        st.session_state["_workspace_draft_error"]=str(exc)
+    st.session_state["_workspace_draft_ready"]=True
+
+
+def _draft_checkpoint():
+    """Atomic checkpoint; called on RADAR dialog reruns and workspace reruns."""
+    from workspace_autosave import save_draft
+    token=st.session_state.get("_workspace_draft_token")
+    if not token:
+        return
+    try:
+        changed=save_draft(token,st.session_state)
+        if changed:
+            st.session_state["_workspace_draft_last_update"]=(
+                datetime.now().strftime("%H:%M:%S"))
+        st.session_state.pop("_workspace_draft_error",None)
+    except (OSError,ValueError,TypeError) as exc:
+        st.session_state["_workspace_draft_error"]=str(exc)
+
+
 @st.dialog("RADAR / ENGINEERING CONFIGURATION",width="large")
 def radar_dialog():
     """Guided engineering setup with original keys and numeric boundaries intact."""
@@ -790,8 +830,11 @@ def radar_dialog():
         border-radius:0 6px 6px 0;margin:6px 0 12px}
     </style>
     """,unsafe_allow_html=True)
+    _draft_begin()
     st.caption("Čtyři přehledné kroky · všechny původní radarové parametry, "
                "omezení a ukládání do CDPROJ zůstávají zachované.")
+    st.caption("◉ AUTO-DRAFT · průběžně ukládám nastavení radaru a výšky. "
+               "Koncept se obnoví po návratu přes stejný odkaz.")
     radar=st.session_state.get("ws_radar","RL-2000")
     lat=st.session_state.get("ws_lat",50.034)
     lon=st.session_state.get("ws_lon",15.781)
@@ -1087,8 +1130,13 @@ def radar_dialog():
                            "Pro elektronický sken EL či OBĚ přepni na TRACKING.")
             st.caption("Parametry PAR skenu a SNR jsou modelové, nikoliv změřená specifikace.")
     st.divider()
+    _draft_checkpoint()
+    if st.session_state.get("_workspace_draft_error"):
+        st.warning("Automatické uložení není dostupné: "
+                   +st.session_state["_workspace_draft_error"])
     if st.button("▶ VYPOČÍTAT RADAROVÉ KRYTÍ",type="primary",
                  use_container_width=True,key="ws_calculate"):
+        _draft_checkpoint()
         _calculate_coverage()
 
 
@@ -2264,6 +2312,10 @@ def _select_comparison_levels(select_all):
 
 def render_workspace():
     """Persistent ATM workstation map with contextual engineering tools."""
+    _draft_begin()
+    # The most recently submitted Streamlit values are already available in
+    # session_state at script start. Persist before conditional widgets vanish.
+    _draft_checkpoint()
     pending=st.session_state.pop("_pending_cdproj_display",None)
     if isinstance(pending,dict):
         for field,widget in (("opacity","ws_map_opacity"),
@@ -2340,6 +2392,14 @@ def render_workspace():
 
     result=st.session_state.get("result")
     config=_cfg()
+    if st.session_state.get("_workspace_draft_restored_at"):
+        st.caption("◉ AUTO-DRAFT · rozpracované nastavení obnoveno "
+                   "z posledního uložení. Vypočtený DEM/krytí je nutné "
+                   "načíst samostatně z CDPROJ.")
+        st.session_state.pop("_workspace_draft_restored_at",None)
+    if st.session_state.get("_workspace_draft_error"):
+        st.warning("Pracovní koncept nelze ukládat: "
+                   +st.session_state["_workspace_draft_error"])
     with st.sidebar:
         rail, gutter, panel = st.columns([1.85,.42,4.65],gap="small")
         with rail:
