@@ -790,7 +790,21 @@ def radar_dialog():
                              index=2,key="ws_psr_nm")
                 st.selectbox("Svazek",["COMBINED","LOW","HIGH"],key="ws_beam")
             if mode=="PAR-NG":
-                st.number_input("Azimut osy [°]",0.,359.99,0.,key="ws_bearing")
+                bearing_col,aim_col=st.columns([2.1,1.1],gap="small",
+                                              vertical_alignment="bottom")
+                with bearing_col:
+                    st.number_input("Azimut osy [° TRUE]",0.,359.99,0.,
+                                    step=.1,format="%.2f",key="ws_bearing")
+                with aim_col:
+                    if st.button("⌖ V MAPĚ",key="ws_par_aim_map",
+                                 help="Klikni do mapy pro určení osy PAR; "
+                                      "sektor ±15° se vykreslí automaticky.",
+                                 use_container_width=True):
+                        st.session_state["ws_par_aiming"]=True
+                        st.session_state["ws_section"]="MAPA"
+                        st.rerun()
+                st.caption("Osa PAR ±15° je vždy vykreslena v mapě; "
+                           "směr nastav číslem nebo kliknutím v mapě.")
             if mode=="SSR":
                 st.selectbox("SSR anténa",["Generic Gaussian","Measured SSR.txt"],
                              key="ws_ssr_diagram")
@@ -2052,7 +2066,7 @@ def _draw_map():
          "max_zoom":provider["max_zoom"]}
         for name,provider in core.BASEMAP_PROVIDERS.items()
     ]
-    key=configured_key() if st.session_state.get("ws_openaip",True) else None
+    key=configured_key()
     openaip={"enabled":bool(key),
              "url":("https://api.tiles.openaip.net/api/data/openaip/"
                     "{z}/{x}/{y}.png?apiKey="+quote(key,safe="")) if key else ""}
@@ -2102,7 +2116,11 @@ def _draw_map():
         "openaip":openaip,
         "theme":st.session_state.get("ws_daynight","NIGHT"),
         "tool":_map_tool(),
-        "live":bool(st.session_state.get("ws_live_adsb",False)),
+        "parSector":{"enabled":configured.radar_mode=="PAR-NG",
+                     "bearing":float(configured.bearing_deg),
+                     "rangeKm":float(configured.range_km),
+                     "lat":float(configured.lat),"lon":float(configured.lon)},
+        "live":False,
         "coverage":coverage,
         "airportGeometry":runway_geometry(st.session_state.get("ws_airport_geometry") or [])
            if st.session_state.get("ws_show_runways",True) else [],
@@ -2149,6 +2167,17 @@ def _draw_map():
                     st.rerun()
                 except (ValueError,TypeError,KeyError) as exc:
                     st.warning("Výběr LOS bodu selhal: "+str(exc))
+            elif action.get("type")=="par_aim" and payload["tool"]=="PAR_AIM":
+                try:
+                    az=float(action["bearing"])
+                    if not np.isfinite(az):
+                        raise ValueError("Neplatný azimut.")
+                    st.session_state["ws_bearing"]=round(az%360,2)
+                    st.session_state["ws_par_aiming"]=False
+                    st.session_state["ws_next_section"]="MAPA"
+                    st.rerun()
+                except (ValueError,TypeError,KeyError) as exc:
+                    st.warning("PAR nelze nasměrovat: "+str(exc))
             elif action.get("type")=="radar" and payload["tool"]=="Radar":
                 try:
                     lat,lon=coordinates_from_map_click({
@@ -2322,6 +2351,8 @@ def _render_los_validation(result):
 
 def _map_tool():
     """Map editing follows the active workspace section automatically."""
+    if st.session_state.get("ws_par_aiming") and st.session_state.get("ws_radar")=="PAR-NG":
+        return "PAR_AIM"
     return {
         "MAPA": "Prohlížení",
         "RADAR": "Radar",
@@ -2338,8 +2369,7 @@ def _restore_sidebar_preferences():
     values to independent session-state keys before leaving the MAPA section.
     """
     keys=("ws_show_coverage","ws_display_mode","ws_map_level",
-          "ws_comparison","ws_map_opacity","ws_openaip",
-          "ws_live_adsb","ws_show_wind")
+          "ws_comparison","ws_map_opacity","ws_show_wind")
     for key in keys:
         saved="_persist_"+key
         if key in st.session_state:
@@ -2397,6 +2427,8 @@ def render_workspace():
 
     _restore_sidebar_preferences()
     st.session_state["ws_daynight"]="NIGHT"  # Fixed workstation palette.
+    st.session_state["ws_live_adsb"]=False
+    st.session_state["ws_openaip"]=True
 
     next_section=st.session_state.pop("ws_next_section",None)
     if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE","TERÉN","EXPORT","VALIDACE"):
@@ -2592,27 +2624,19 @@ def render_workspace():
                     with st.expander("Průhlednost krytí",expanded=False):
                         st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity",
                                   label_visibility="collapsed")
-                st.markdown('<div class="cd-nav-title">LETECKÁ MAPA A PROVOZ</div>',unsafe_allow_html=True)
-                from aviation_basemap import configured_key,test_tiles_connection
-                key_available=bool(configured_key())
-                enabled=st.toggle("OpenAIP · letecká mapa",value=True,key="ws_openaip")
-                if enabled and not key_available:
-                    st.warning("AIP není připojena: chybí OPENAIP_API_KEY nebo "
-                               "OPENAIP_DATA_API_KEY v nastavení Streamlitu.")
-                if st.button("OVĚŘIT OPENAIP · API / DLAŽDICE",
-                             key="ws_aip_test",use_container_width=True):
-                    with st.spinner("Kontroluji odpověď mapového serveru…"):
-                        st.session_state["ws_aip_test_result"]=test_tiles_connection()
-                diag=st.session_state.get("ws_aip_test_result")
-                if diag is not None:
-                    ok,message=diag
-                    if ok:
-                        st.success(message)
-                    else:
-                        st.error(message)
-                st.caption("Test ověřuje skutečnou odpověď serveru, nikoliv jen "
-                           "přítomnost API klíče. Klíč se nevypisuje.")
-                st.toggle("ADS-B LIVE",value=False,key="ws_live_adsb")
+                if st.session_state.get("ws_par_aiming") and config.radar_mode=="PAR-NG":
+                    st.info("⌖ PAR SMĚROVÁNÍ · Klikni do mapy na požadovaný "
+                            "směr osy od radaru. Zobrazí se sektor ±15°.")
+                    if st.button("ZRUŠIT SMĚROVÁNÍ PAR",key="ws_par_aim_cancel",
+                                 use_container_width=True):
+                        st.session_state["ws_par_aiming"]=False
+                        st.rerun()
+                # OpenAIP is always on when a key is configured. No UI toggle,
+                # no ADS-B live polling or menu entry.
+                from aviation_basemap import configured_key
+                if not configured_key():
+                    st.caption("OpenAIP: podklady se automaticky zapnou po "
+                               "nastavení API klíče.")
                 st.markdown('<div class="cd-nav-title">EXPORTNÍ CENTRUM</div>',
                             unsafe_allow_html=True)
                 if result is not None:
@@ -2928,7 +2952,7 @@ def render_workspace():
             st.success("Krytí vypočteno. Letové hladiny přepínáš v sekci MAPA.")
 
     if st.session_state.get("ws_legacy_map",False):
-        if st.session_state.get("ws_live_adsb",False) and section=="MAPA":
+        if False and section=="MAPA":  # ADS-B live disabled; retained legacy renderer
             _live_map_frame()
         else:
             _draw_map_folium()
