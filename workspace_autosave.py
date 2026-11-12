@@ -119,13 +119,15 @@ def read_draft(token):
 
 def save_draft(token,state):
     path=path_for(token)
-    fields=capture(state)
+    previous=read_draft(token)
+    # Streamlit discards widget values temporarily hidden by conditional
+    # rendering. Keep their LAST VALID values until the user changes them,
+    # rather than treating a widget disappearing as an intentional reset.
+    fields={**(previous["fields"] if previous else {}),**capture(state)}
     serialized=json.dumps(fields,ensure_ascii=False,sort_keys=True,
                           separators=(",",":"),allow_nan=False).encode("utf-8")
     digest=hashlib.sha256(serialized).hexdigest()
-    # On every Streamlit rerun the draft is checked; do no disk I/O when
-    # the values are identical. One atomic file write per actual edit.
-    previous=read_draft(token)
+    # No disk write on identical reruns. One atomic write per actual edit.
     if previous is not None:
         prior=json.dumps(previous["fields"],ensure_ascii=False,sort_keys=True,
                          separators=(",",":"),allow_nan=False).encode("utf-8")
