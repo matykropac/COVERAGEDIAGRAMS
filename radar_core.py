@@ -35,6 +35,8 @@ def radar_preset(mode, psr_nm=100):
 
 
 
+MAX_GRID_SAMPLES = 3_000_000  # High-detail expert grid; bounded to protect memory.
+
 @dataclass(frozen=True)
 class Config:
     lat: float = 50.034
@@ -64,10 +66,10 @@ class Config:
             raise ValueError('Prototyp podporuje zeměpisnou šířku −80 až 80°.')
         if not (0 < self.antenna_agl <= 5000 and 1 <= self.range_km <= 500):
             raise ValueError('Výška antény musí být > 0 až 5000 m; dosah 1 až 500 km.')
-        if not (25 <= self.step_m <= 2000 and self.step_m <= self.range_km * 1000):
-            raise ValueError('Radiální krok musí být 25 až 2000 m a nejvýše dosah.')
-        if not (0.25 <= self.az_step <= 5 and 0.5 <= self.k <= 3):
-            raise ValueError('Krok azimutu 0,25 až 5°; faktor k 0,5 až 3.')
+        if not (5 <= self.step_m <= 2000 and self.step_m <= self.range_km * 1000):
+            raise ValueError('Radiální krok musí být 5 až 2000 m a nejvýše dosah.')
+        if not (0.025 <= self.az_step <= 5 and 0.5 <= self.k <= 3):
+            raise ValueError('Krok azimutu 0,025 až 5°; faktor k 0,5 až 3.')
         if not (-5 <= self.min_elev < self.max_elev <= 89):
             raise ValueError('Elevace musí splnit −5° ≤ minimum < maximum ≤ 89°.')
         if self.reference not in ('AMSL', 'AGL') or not (-500 <= self.target_m <= 30000):
@@ -88,9 +90,16 @@ class Config:
             raise ValueError('PAR-NG používá dosah i referenční šikmý dosah 40 km.')
         if self.radar_mode == 'SSR' and (self.range_km != SSR_RANGE_KM or self.csc_range_km != SSR_RANGE_KM):
             raise ValueError('SSR používá pevný dosah 256 NM (474,112 km).')
-        angular_count = (np.ceil(40 / self.az_step) + 1 if self.radar_mode == 'PAR-NG' else np.ceil(360 / self.az_step))
-        if angular_count * np.ceil(self.range_km * 1000 / self.step_m) > 2_000_000:
-            raise ValueError('Příliš jemná síť: zvol větší krok (limit 2 miliony bodů).')
+        # Exact same dimensions as axes() below; do not reject a valid PAR
+        # mesh using the old 40° estimate for a 30° scan sector.
+        angular_count = (np.ceil(30 / self.az_step) + 1
+                         if self.radar_mode == 'PAR-NG'
+                         else np.ceil(360 / self.az_step))
+        samples=int(angular_count)*int(np.ceil(self.range_km * 1000 / self.step_m))
+        if samples > MAX_GRID_SAMPLES:
+            raise ValueError(
+                f'Výpočetní síť má {samples:,} bodů; technický limit je '
+                f'{MAX_GRID_SAMPLES:,}. Zvyš krok nebo zmenši rozsah.')
 
 
 def axes(c):
