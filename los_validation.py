@@ -96,8 +96,17 @@ def verify_radial_point(result, azimuth_index, radial_index, height_m,
         final=float(status_at_height(single,float(height_m),reference)[0,0])
     except (ValueError,TypeError,KeyError,IndexError):
         final=float("nan")
+    # The independent profile intentionally uses the DEM only. Manually
+    # configured obstacles alter the main solver horizon but are not part of
+    # this independent terrain raster. Their influence must not be misreported
+    # as a mathematical solver error.
+    configured_obstacles=bool(result.get("obstacles"))
+    status=("OBSTACLES_NOT_CHECKED" if configured_obstacles
+            else ("MATCH" if bool(main_geom)==bool(independent_geometry)
+                  else "MISMATCH"))
     return {
-        "status":"MATCH" if bool(main_geom)==bool(independent_geometry) else "MISMATCH",
+        "status":status,
+        "obstacles_excluded":configured_obstacles,
         "independent_los":bool(independent_los),
         "independent_geometry":bool(independent_geometry),
         "main_geometry":bool(main_geom),
@@ -117,5 +126,5 @@ def verify_radial_point(result, azimuth_index, radial_index, height_m,
         "antenna_amsl_m":float(result["antenna"]),
         "sample_step_m":float(c.step_m),
         "method":"independent spherical chord/radial intersection",
-        "limitations":"Same sampled DEM as solver; no RF validation, sub-grid terrain or obstacles not rasterized in the DEM",
+        "limitations":"Same sampled DEM as solver; manual obstacles excluded from independent LOS, no RF validation or sub-grid terrain",
     }
