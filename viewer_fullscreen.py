@@ -134,13 +134,41 @@ background:#122d46;border:1px solid #2c4b64;border-radius:9px}
 .layer.off{opacity:.56}.layer .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 .layer small{display:block;font-size:10px;color:#97b5c9}
 .layer button{padding:5px 6px;font-size:13px}
-.layer-editor{grid-column:1/-1;background:#092038;border:1px solid #2d5473;border-radius:8px;padding:9px}
-.layer-editor .field{margin:5px 0}
-.layer-editor input[type=color]{height:31px;width:45px;background:none;border:0}
-.layer-editor input[type=range]{width:120px}
-.layer-editor select{max-width:140px}
 .layer .name{cursor:pointer}
-.layer:has(.layer-editor){border-color:#5bc3e8;background:#163954}
+.layer.is-editing{border-color:#63cffa;background:#19425d}
+.layer-properties{position:absolute;inset:0;z-index:7;display:flex;flex-direction:column;
+ background:#0c2238;border-radius:14px;overflow:hidden}
+.layer-properties[hidden]{display:none!important}
+.layer-props-head{display:flex;align-items:center;gap:9px;padding:16px 16px 13px;
+ background:#122f49;border-bottom:1px solid #355975}
+.layer-props-head .layer-props-title{flex:1;min-width:0}
+.layer-props-head .layer-props-title strong{display:block;font:750 13px system-ui;color:#f5faff}
+.layer-props-head .layer-props-title span{display:block;font:11px system-ui;color:#a9cadb;
+ overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.layer-props-head button{padding:7px 10px}
+.layer-props-body{flex:1;min-height:0;overflow:auto;padding:16px;display:flex;
+ flex-direction:column;gap:15px;overscroll-behavior:contain}
+.layer-props-section{border-radius:11px;border:1px solid #34536d;background:#102c46;
+ padding:13px 13px 14px}
+.layer-props-section>strong{display:block;margin-bottom:11px;color:#8fdaf6;
+ font:750 11px system-ui;letter-spacing:.07em}
+.layer-props-control{margin:0 0 15px}
+.layer-props-control:last-child{margin-bottom:0}
+.layer-props-control label{display:flex;align-items:center;justify-content:space-between;
+ gap:12px;margin-bottom:7px;color:#d8e7f2;font:12px system-ui}
+.layer-props-value{color:#101f2d;background:#d6edfc;border-radius:5px;
+ padding:3px 6px;min-width:42px;text-align:center;font:750 11px system-ui}
+.layer-props-control input[type=range]{width:100%;display:block;accent-color:#54caf9;
+ cursor:pointer;margin:8px 0 3px}
+.layer-props-control input[type=color]{width:100%;height:37px;border-radius:7px;
+ padding:3px;border:1px solid #54758e;background:#fff;cursor:pointer}
+.layer-props-control select{width:100%;max-width:none!important}
+.layer-props-note{font-size:11px;color:#a4c8df;line-height:1.5}
+.layer-props-actions{padding:13px 16px;display:grid;grid-template-columns:1fr 1fr;
+ gap:8px;border-top:1px solid #355975;background:#10283f}
+.layer-props-actions button{white-space:normal;padding:10px 6px}
+.layer-props-actions .danger{color:#ffb4be;border-color:#9e5766;background:#532d3f}
+.panel{overflow:hidden}
 .note{border:1px solid #325772;background:#0b2942;border-radius:9px;padding:9px 10px;margin:10px 0;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .note.error{border-color:#b65a61;color:#ffb2b8}
 .inspection{position:absolute;right:16px;top:72px;z-index:1150;width:min(540px,calc(100vw - 32px));
@@ -276,7 +304,7 @@ function addLayer(name,features,style,rerender=true){
  layers.set(unique,{name:unique,features:good,style:initialStyle(style,layerSeq++),geo:null,attached:false});
  if(rerender){refreshList();syncAll();fitAll();updateExtentPreset()}
 }
-function resetLayers(){for(const o of layers.values())if(o.geo)map.removeLayer(o.geo);layers.clear();openedEditor=null}
+function resetLayers(){closeLayerProperties();for(const o of layers.values())if(o.geo)map.removeLayer(o.geo);layers.clear();openedEditor=null}
 function styleOf(o){return {
  color:o.style.color,weight:o.style.width,opacity:o.style.strokeOpacity,
  fillColor:o.style.color,fillOpacity:o.style.opacity,
@@ -309,56 +337,118 @@ function renderLayerRow(o,filter){
  row.title="Dvojklik otevře grafické vlastnosti vrstvy";
  row.addEventListener("dblclick",e=>{
    if(e.target.closest("button,input,.layer-editor"))return;
-   e.preventDefault();openedEditor=o.name;refreshList();
+   e.preventDefault();openLayerProperties(o.name);
  });
  const check=document.createElement("input");check.type="checkbox";check.checked=o.style.show;check.setAttribute("aria-label","Zobrazit "+o.name);
  check.addEventListener("change",()=>{o.style.show=check.checked;syncOne(o);refreshLegend();updateCount();row.classList.toggle("off",!check.checked)});
  const desc=document.createElement("div");desc.innerHTML='<div class="name" title="'+escapeHTML(o.name)+'">'+escapeHTML(o.name)+'</div><small>'+o.features.length.toLocaleString("cs")+" objektů"+(matched&&!nameMatch?" · shoda "+matched.length:"")+"</small>";
  const edit=document.createElement("button");edit.textContent="⚙";edit.setAttribute("aria-label","Vlastnosti "+o.name);edit.title="Upravit grafické vlastnosti";
- edit.addEventListener("click",()=>{openedEditor=openedEditor===o.name?null:o.name;refreshList()});
+ edit.addEventListener("click",()=>openLayerProperties(o.name));
  row.append(check,desc,edit);
- if(openedEditor===o.name){
-  const ed=document.createElement("div");ed.className="layer-editor";
-  const fields=[
-   ["Barva","color","color",o.style.color],
-   ["Průhlednost výplně","opacity","range",Math.round(o.style.opacity*100)],
-   ["Průhlednost obrysu","strokeOpacity","range",Math.round(o.style.strokeOpacity*100)],
-   ["Tloušťka linie [px]","width","range",o.style.width],
-   ["Velikost bodu [px]","radius","range",o.style.radius],
-   ["Typ čáry","dash","select",o.style.dash]
-  ];
-  for(const [label,key,type,value] of fields){
-   const div=document.createElement("div");div.className="field";
-   const lbl=document.createElement("label");lbl.textContent=label;
-   const input=document.createElement(type==="select"?"select":"input");
-   if(type!=="select")input.type=type;
-   input.value=value;
-   if(key==="opacity"||key==="strokeOpacity"){input.min=0;input.max=100;input.step=5}
-   if(key==="width"){input.min=.5;input.max=12;input.step=.5}
-   if(key==="radius"){input.min=1;input.max=16;input.step=1}
-   if(key==="dash"){
-     for(const [v,t] of [["solid","Plná"],["dash","Čárkovaná"],["dot","Tečkovaná"]]){
-       const opt=document.createElement("option");opt.value=v;opt.textContent=t;input.append(opt)
-     }
-     input.value=value;
-   }
-   const apply=()=>{
-     o.style[key]=key==="color"||key==="dash"?input.value:
-       key==="opacity"||key==="strokeOpacity"?Number(input.value)/100:Number(input.value);
-     if(o.geo)o.geo.setStyle(styleOf(o));
-     refreshLegend();
-   };
-   input.addEventListener("input",apply);input.addEventListener("change",apply);
-   div.append(lbl,input);ed.append(div);
-  }
-  const hint=document.createElement("div");hint.className="muted";
-  hint.textContent="Změny se projeví okamžitě, bez nového načtení mapy. Uložení CDVIEW zachová grafické vlastnosti.";
-  ed.append(hint);
-  const del=document.createElement("button");del.textContent="Odstranit vrstvu";del.addEventListener("click",()=>{
-    if(o.geo)map.removeLayer(o.geo);layers.delete(o.name);openedEditor=null;refreshList();refreshLegend()});
-  ed.append(del);row.append(ed);
- }
  return row;
+}
+function closeLayerProperties(){
+ openedEditor=null;
+ const el=$("layer-properties");
+ if(el){el.hidden=true;el.replaceChildren();}
+ for(const node of $("layer-list").querySelectorAll(".is-editing"))node.classList.remove("is-editing");
+}
+function openLayerProperties(name){
+ const o=layers.get(name);
+ if(!o)return;
+ openedEditor=name;
+ const host=$("panel");
+ if(!host.classList.contains("hidden")){}else{
+   host.classList.remove("hidden");
+   $("panel-toggle").setAttribute("aria-expanded","true");
+ }
+ let drawer=$("layer-properties");
+ if(!drawer){
+   drawer=document.createElement("div");
+   drawer.id="layer-properties";
+   drawer.className="layer-properties";
+   drawer.setAttribute("role","region");
+   drawer.setAttribute("aria-label","Grafické vlastnosti vrstvy");
+   host.append(drawer);
+ }
+ drawer.hidden=false;
+ drawer.replaceChildren();
+ for(const node of $("layer-list").querySelectorAll(".layer"))node.classList.remove("is-editing");
+ const title=document.createElement("div");title.className="layer-props-title";
+ const h=document.createElement("strong");h.textContent="GRAFICKÉ VLASTNOSTI";
+ const sub=document.createElement("span");sub.textContent=o.name+" · "+o.features.length.toLocaleString("cs")+" objektů";
+ title.append(h,sub);
+ const heading=document.createElement("div");heading.className="layer-props-head";
+ const back=document.createElement("button");back.textContent="← ZPĚT";back.type="button";
+ back.addEventListener("click",closeLayerProperties);
+ heading.append(back,title);drawer.append(heading);
+ const body=document.createElement("div");body.className="layer-props-body";drawer.append(body);
+ function section(name){
+   const box=document.createElement("section");box.className="layer-props-section";
+   const caption=document.createElement("strong");caption.textContent=name;box.append(caption);
+   body.append(box);return box;
+ }
+ const visual=section("VÝPLŇ A OBRAZ");
+ const contour=section("OBRYS A BODY");
+ const apply=()=>{
+   if(o.geo)o.geo.setStyle(styleOf(o));
+   refreshLegend();
+ };
+ function control(parent,label,key,type,min,max,step,format){
+   const wrap=document.createElement("div");wrap.className="layer-props-control";
+   const lab=document.createElement("label");lab.textContent=label;
+   const id="layerprop-"+key;
+   lab.htmlFor=id;
+   const shown=document.createElement("span");shown.className="layer-props-value";
+   if(type==="range")lab.append(shown);
+   let el=document.createElement(type==="select"?"select":"input");
+   el.id=id;if(type!=="select")el.type=type;
+   if(type==="range"){el.min=min;el.max=max;el.step=step;}
+   if(type==="select"){
+     for(const [value,text] of [["solid","Plná"],["dash","Čárkovaná"],["dot","Tečkovaná"]]){
+       const option=document.createElement("option");option.value=value;option.textContent=text;el.append(option);
+     }
+   }
+   const view=()=>type==="range"
+     ?(format==="percent"?Math.round(Number(o.style[key])*100)+" %":
+       Number(o.style[key]).toFixed(key==="width"?1:0)+" px")
+     :String(o.style[key]);
+   el.value=type==="range"&&format==="percent"
+     ?Math.round(o.style[key]*100):o.style[key];
+   shown.textContent=view();
+   const change=()=>{
+     o.style[key]=type==="color"||type==="select"?el.value:
+       format==="percent"?Number(el.value)/100:Number(el.value);
+     shown.textContent=view();
+     apply();
+   };
+   el.addEventListener("input",change);el.addEventListener("change",change);
+   wrap.append(lab,el);parent.append(wrap);return el;
+ }
+ control(visual,"Barva vrstvy","color","color");
+ control(visual,"Průhlednost výplně","opacity","range",0,100,5,"percent");
+ control(contour,"Průhlednost obrysu","strokeOpacity","range",0,100,5,"percent");
+ control(contour,"Šířka obrysu","width","range",.5,12,.5,"px");
+ control(contour,"Velikost bodu","radius","range",1,16,1,"px");
+ control(contour,"Styl obrysu","dash","select");
+ const note=document.createElement("p");note.className="layer-props-note";
+ note.textContent="Změny se promítnou do mapy ihned, bez jejího restartu. Uložením projektu CDVIEW se zachovají i tyto vlastnosti.";
+ body.append(note);
+ const actions=document.createElement("div");actions.className="layer-props-actions";
+ const reset=document.createElement("button");reset.type="button";reset.textContent="↺ VÝCHOZÍ STYL";
+ reset.addEventListener("click",()=>{
+   const priorShow=o.style.show;
+   o.style=initialStyle(null,0);o.style.show=priorShow;
+   apply();openLayerProperties(o.name);
+ });
+ const remove=document.createElement("button");remove.type="button";
+ remove.className="danger";remove.textContent="ODSTRANIT VRSTVU";
+ remove.addEventListener("click",()=>{
+   if(o.geo)map.removeLayer(o.geo);
+   layers.delete(o.name);closeLayerProperties();
+   refreshList();refreshLegend();updateCount();updateExtentPreset();
+ });
+ actions.append(reset,remove);drawer.append(actions);
 }
 function refreshList(){
  const list=$("layer-list");list.replaceChildren();const filter=$("search").value.trim();
