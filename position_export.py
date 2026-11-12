@@ -117,10 +117,67 @@ def _environment_features(items):
                        enabled_as_obstacle=bool(item.get("enabled",False)))
 
 
+def _geodesic_point(lat,lon,bearing,distance_m):
+    from pyproj import Geod
+    lo,la,_=Geod(ellps="WGS84").fwd(
+        float(lon),float(lat),float(bearing),float(distance_m))
+    return [float(la),float(lo)]
+
+
+def par_helper_features(*,site_lat,site_lon,bearing_deg,range_km=40.,
+                        runway=None,runway_end=0,include_range=True):
+    """Visible PAR engineering guides in WGS84; also exported unchanged to KML.
+
+    Runway direction is indicative OurAirports TRUE heading, not verified AIP.
+    The local geodesic at the radar is parallel in bearing to the reference RWY;
+    it is not claimed to be the exact offset of the finite RWY geodesic.
+    """
+    lat=float(site_lat);lon=float(site_lon);az=float(bearing_deg)%360
+    distance=float(range_km)*1000
+    _check_point(lat,lon)
+    if not (math.isfinite(distance) and 100<=distance<=500000):
+        raise ValueError("Neplatný dosah pro pomocné geometrie PAR.")
+    site=[lat,lon]
+    features=[_feature("PAR_REFERENCE","PAR · stanoviště radaru",
+                       {"type":"Point","coordinates":_check_point(lat,lon)},
+                       bearing_true_deg=az)]
+    def ray(name,bearing,layer="PAR_SCAN_GEOMETRY",color=None):
+        end=_geodesic_point(lat,lon,bearing,distance)
+        features.append(_feature(layer,name,_line([site,end]),
+                                 bearing_true_deg=round(bearing%360,6),
+                                 range_km=distance/1000))
+    ray("PAR · osa",az)
+    ray("PAR · levá hranice −15°",az-15)
+    ray("PAR · pravá hranice +15°",az+15)
+    arc=[_geodesic_point(lat,lon,az+v*.5,distance)
+         for v in range(-30,31)]
+    features.append(_feature("PAR_SCAN_GEOMETRY","PAR · vnější oblouk ±15°",
+                             _line(arc),range_km=distance/1000))
+    if runway:
+        heading=float(runway["heading_deg_true"])
+        if int(runway_end)==1:heading=(heading+180)%360
+        parallel=[_geodesic_point(lat,lon,heading+180,distance),
+                  site,_geodesic_point(lat,lon,heading,distance)]
+        features.append(_feature("PAR_RUNWAY_REFERENCE",
+             "PAR · rovnoběžka RWY "+str(runway.get("label","")),_line(parallel),
+             bearing_true_deg=round(heading,6),
+             source=str(runway.get("source","OurAirports")),
+             verified_aip=bool(runway.get("verified_aip",False))))
+    if include_range:
+        for nm in range(20,261,20):
+            # Existing RANGE circles used by the application, sampled 2°.
+            ring=[_geodesic_point(lat,lon,degree,nm*1852)
+                  for degree in range(0,361,2)]
+            features.append(_feature("RADAR_RANGE_RINGS",f"RANGE · {nm} NM",
+                                     _line(ring),radius_nm=nm))
+    return features
+
+
 def make_layer_features(*,runways=(),airspaces=(),obstacles=(),environment=(),
                         site_lat=None,site_lon=None,
                         include_runways=True,include_airspaces=True,
-                        include_obstacles=True,include_environment=True):
+                        include_obstacles=True,include_environment=True,
+                        par=None,include_par_helpers=True):
     """Always returns only selected layers; never accesses a radar result."""
     features=[]
     if include_runways:
@@ -133,6 +190,11 @@ def make_layer_features(*,runways=(),airspaces=(),obstacles=(),environment=(),
         features.extend(_obstacle_features(obstacles,site_lat,site_lon))
     if include_environment:
         features.extend(_environment_features(environment))
+    if include_par_helpers and par and par.get("enabled"):
+        features.extend(par_helper_features(
+            site_lat=par["lat"],site_lon=par["lon"],
+            bearing_deg=par["bearing"],range_km=par.get("range_km",40),
+            runway=par.get("runway"),runway_end=par.get("runway_end",0)))
     if len(features)>MAX_EXPORT_FEATURES:
         raise ValueError(f"Export překročil limit {MAX_EXPORT_FEATURES} prvků. Omez vrstvy.")
     return features
