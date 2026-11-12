@@ -30,7 +30,7 @@ TOKEN_RE=re.compile(r"^[a-zA-Z0-9_-]{24,64}$")
 MAX_BYTES=65536
 
 RADAR_FIELDS=(
-    "ws_radar","ws_lat","ws_lon","ws_agl","ws_psr_nm",
+    "ws_radar","ws_lat","ws_lon","ws_radar_site","ws_agl","ws_psr_nm",
     "ws_bearing","ws_beam","ws_ssr_diagram",
     "ws_min","ws_max","ws_tilt","ws_step","ws_azstep",
     "ws_k","ws_target","ws_reference","ws_source","ws_dataset",
@@ -69,6 +69,13 @@ def path_for(token):
 
 def _clean(key,value):
     """Ignore unserializable values and constrain payload shape/size."""
+    if key=="ws_radar_site":
+        if not isinstance(value,(list,tuple)) or len(value)!=2:
+            return None
+        if any(type(v) not in (float,int) or not math.isfinite(v) for v in value):
+            return None
+        lat,lon=map(float,value)
+        return [lat,lon] if -80<=lat<=80 and -180<=lon<=180 else None
     if key=="_radar_mode_profiles":
         if not isinstance(value,dict) or set(value)-{"PSR","SSR","ASR","PAR"}:
             return None
