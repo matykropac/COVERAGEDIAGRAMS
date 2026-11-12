@@ -306,7 +306,7 @@ def _airport_project_metadata():
         "airspaces":st.session_state.get("ws_airspaces") or [],
         "airspace_source_time":st.session_state.get("ws_airspace_source_time",""),
         "par_model":_par_model_metadata(),
-        "par_level_reference":st.session_state.get("ws_par_level_reference","AGL"),
+        "par_level_reference":"AMSL",
         "radar_ui_mode":_radar_ui_mode(),
     }
 
@@ -457,7 +457,7 @@ def _cfg():
         antenna_tilt_deg=float(st.session_state.get("ws_tilt", -1.0)),
         beam_mode=st.session_state.get("ws_beam", "COMBINED") if model == "RL-2000" else "COMBINED",
         target_m=float(st.session_state.get("ws_target", 1000.0)),
-        reference=st.session_state.get("ws_reference", "AMSL"),
+        reference="AMSL",
         csc_enabled=True,
     )
 
@@ -531,10 +531,7 @@ def _restore_par_model_metadata(meta):
     # silently inherit a different project's session state.
     st.session_state.update({widget:getattr(pattern,name)
                              for name,widget in allowed.items()})
-    ref=(meta.get("source_ui") or {}).get("par_level_reference","AGL")
-    if ref not in ("AMSL","AGL"):
-        raise ValueError("Neplatná výšková reference PAR v projektu.")
-    st.session_state["ws_par_level_reference"]=ref
+    st.session_state["ws_par_level_reference"]="AMSL"
 
 
 def _pattern(config):
@@ -557,7 +554,7 @@ def _config_state_from_project(config):
         "ws_step":int(config.step_m),"ws_azstep":float(config.az_step),
         "ws_k":config.k,"ws_min":config.min_elev,"ws_max":config.max_elev,
         "ws_tilt":config.antenna_tilt_deg,"ws_beam":config.beam_mode,
-        "ws_target":config.target_m,"ws_reference":config.reference,
+        "ws_target":config.target_m,"ws_reference":"AMSL",
     }
     if config.radar_mode == "RL-2000":
         values["ws_psr_nm"] = min(core.PSR_RANGES_NM,key=lambda n:abs(core.radar_preset("RL-2000",n)-config.range_km))
@@ -1140,7 +1137,7 @@ def _radar_settings_body(ui_mode):
         with a:
             st.number_input("Výška cíle [m]",-500.,30000.,1000.,on_change=_remember_radar_form,key="ws_target")
         with b:
-            st.selectbox("Reference cíle",["AMSL","AGL"],on_change=_remember_radar_form,key="ws_reference")
+            st.caption("Výšková reference cíle: **AMSL** · pevně nastavena.")
         mode=st.session_state.get("ws_radar","RL-2000")
         if mode=="PAR-NG":
             st.markdown("**LIBOVOLNÉ VÝŠKY · PAR-NG**")
@@ -2015,8 +2012,7 @@ def _draw_map_folium():
             if level is not None and not core.valid_flight_level(c.radar_mode,level):
                 continue
             geo=coverage_geojson(result,level,
-                reference=st.session_state.get("ws_par_level_reference","AGL")
-                if c.radar_mode=="PAR-NG" else "AMSL")
+                reference="AMSL")
             if geo.get("features"):
                 color="#247ad3" if level is None else to_hex(core.level_color(level))
                 layer=folium.FeatureGroup(name="Krytí cíle" if level is None else core.level_label(level))
@@ -2134,8 +2130,7 @@ def _draw_map():
             active=[wanted if wanted in available else available[0]]
 
     coverage=[]
-    reference=(st.session_state.get("ws_par_level_reference","AGL")
-               if c.radar_mode=="PAR-NG" else "AMSL")
+    reference="AMSL"
     channel_view=(st.session_state.get("ws_par_diagnostic_layer","VÝSLEDEK")
                   if c.radar_mode=="PAR-NG" else "VÝSLEDEK")
     for level in active:
@@ -2586,6 +2581,8 @@ def render_workspace():
     _restore_radar_form()
     st.session_state["ws_levels"]=list(core.STANDARD_LEVELS_FT)
     st.session_state["_par_saved_levels"]=list(core.STANDARD_LEVELS_FT)
+    st.session_state["ws_reference"]="AMSL"
+    st.session_state["ws_par_level_reference"]="AMSL"
     # The most recently submitted Streamlit values are already available in
     # session_state at script start. Persist before conditional widgets vanish.
     _draft_checkpoint()
@@ -2726,9 +2723,7 @@ def render_workspace():
                         st.caption("PAR: 90 hladin · 100–9000 ft / 100 ft.")
                         # Form callbacks may have updated selection before this render.
                         selected=_chosen_levels("PAR-NG")
-                        st.radio("Výška PAR nad terénem / mořem",("AGL","AMSL"),
-                                 horizontal=True,key="ws_par_level_reference",
-                                 help="AGL = nad místním terénem. AMSL = nad hladinou moře.")
+                        st.caption("PAR hladiny: **ft AMSL** · pevná reference.")
                         st.selectbox("PAR · VRSTVA KRYTÍ",
                             ["VÝSLEDEK","AZ","EL","BOTH","LIMIT"],
                             format_func=lambda value:{
@@ -2768,7 +2763,7 @@ def render_workspace():
                             with level_choice:
                                 st.selectbox("Aktivní výška [ft]",selected,
                                              key="ws_map_level",format_func=lambda ft:
-                                             f"{ft:,} ft {st.session_state.get('ws_par_level_reference','AGL') if result['config'].radar_mode=='PAR-NG' else 'AMSL'}")
+                                             f"{ft:,} ft AMSL")
                             with next_button:
                                 st.button("▶",key="ws_level_next",help="Vyšší letová hladina",
                                           use_container_width=True,on_click=_step_flight_level,
@@ -2890,7 +2885,7 @@ def render_workspace():
                         if levels:
                             level=st.selectbox("Diagnostická hladina [ft]",
                                 levels,key="ws_par_diagnostic_export_level")
-                            reference=st.session_state.get("ws_par_level_reference","AMSL")
+                            reference="AMSL"
                             if st.button("PŘIPRAVIT DIAGNOSTICKÝ ZIP",
                                          key="ws_par_diag_prepare",
                                          use_container_width=True):
@@ -3077,7 +3072,7 @@ def render_workspace():
                                 tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
                                 st.session_state.get("ws_airspace_source_time",""),
                                 tuple(sorted(_par_model_metadata().items())),
-                                st.session_state.get("ws_par_level_reference","AGL"),
+                                "AMSL",
                             )
                         except Exception as exc:
                             st.error(f"Projekt nelze uložit: {exc}")
@@ -3089,7 +3084,7 @@ def render_workspace():
                         tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
                         st.session_state.get("ws_airspace_source_time",""),
                         tuple(sorted(_par_model_metadata().items())),
-                        st.session_state.get("ws_par_level_reference","AGL"),
+                        "AMSL",
                     )
                     if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
                         st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
