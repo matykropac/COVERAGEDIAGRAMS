@@ -2,14 +2,54 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import json
+
+import numpy as np
+import radar_core as core
 import streamlit as st
 import streamlit.components.v1 as components
 
 
-def render_fullscreen_viewer(layers, styles, center, *, snapshot="", three_d_url="", studio_url=""):
+def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
+                             diagnostic_levels=(), snapshot="", three_d_url="", studio_url=""):
     """Only mount one map. UI edits, import and filtering never rerun Streamlit."""
     # Base64 avoids closing the embedded script or injecting HTML from imported data.
+    # Native grid: no second DEM sampler, no speculative covered points.
+    # Compression avoids sending megabytes of repetitive JSON through the iframe.
+    diagnostics = None
+    if diagnostic_result is not None:
+        result = diagnostic_result
+        cfg = result["config"]
+        levels = [int(ft) for ft in diagnostic_levels
+                  if core.valid_flight_level(cfg.radar_mode, ft)]
+        if not levels:
+            levels = [int(ft) for ft in core.flight_levels_for(cfg.radar_mode)[:3]]
+        levels = list(dict.fromkeys(levels))[:80]
+        grid = {
+            "az": np.round(result["az"], 6).tolist(),
+            "distance": np.round(result["distance"], 3).tolist(),
+            "terrain": np.where(np.isfinite(result["terrain"]), result["terrain"], np.nan).tolist(),
+            "lower": result["lower"].tolist(),
+            "upper": result["upper"].tolist(),
+            "antenna": float(result["antenna"]),
+            "k": float(cfg.k),
+            "minElev": float(cfg.min_elev),
+            "maxElev": float(cfg.max_elev),
+            "bearing": float(cfg.bearing_deg),
+            "radarMode": str(cfg.radar_mode),
+            "levels": levels,
+            "status": {},
+        }
+        for ft in levels:
+            values = core.status_at_height(result, ft * core.FT_TO_M)
+            # 2: unknown, 0: blocked, 1: covered.
+            grid["status"][str(ft)] = np.where(
+                np.isfinite(values), np.asarray(np.nan_to_num(values), dtype=np.uint8), 2
+            ).tolist()
+        raw = json.dumps(grid, ensure_ascii=False, allow_nan=True,
+                         separators=(",", ":")).encode("utf-8")
+        diagnostics = base64.b64encode(gzip.compress(raw, compresslevel=5)).decode("ascii")
     encoded=base64.b64encode(json.dumps({
         "layers":layers,
         "styles":styles,
@@ -17,6 +57,7 @@ def render_fullscreen_viewer(layers, styles, center, *, snapshot="", three_d_url
         "snapshot":str(snapshot),
         "threeDUrl":str(three_d_url),
         "studioUrl":str(studio_url),
+        "diagnostics":diagnostics,
     },ensure_ascii=False,allow_nan=False).encode("utf-8")).decode("ascii")
     page=_HTML.replace("__VIEWER_PAYLOAD__",encoded)
     st.markdown("""<style>
@@ -91,6 +132,13 @@ background:#122d46;border:1px solid #2c4b64;border-radius:9px}
 .layer-editor input[type=color]{height:31px;width:45px;background:none;border:0}
 .note{border:1px solid #325772;background:#0b2942;border-radius:9px;padding:9px 10px;margin:10px 0;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .note.error{border-color:#b65a61;color:#ffb2b8}
+.inspection{position:absolute;right:16px;top:72px;z-index:1150;width:min(540px,calc(100vw - 32px));
+ max-height:calc(100dvh - 135px);overflow:auto;padding:12px 15px;background:#0b2035f7;
+ border:1px solid #4a7d9a;border-radius:12px;box-shadow:0 15px 40px #0009}
+.inspection header{display:flex;align-items:center;justify-content:space-between;color:#85d9ff;font-size:12px;letter-spacing:.05em}
+.inspection header button{padding:4px 10px}.inspection svg{display:block;width:100%;background:#07182a;border-radius:7px;margin:10px 0}
+.inspection #inspection-details{font-size:12px;white-space:pre-line}
+@media(max-width:680px){.inspection{top:63px;right:8px;width:calc(100vw - 16px);max-height:50dvh}}
 .status{position:absolute;bottom:22px;right:16px;z-index:1000;
 background:#0a2136e8;border:1px solid #315873;padding:7px 11px;border-radius:9px;
 font-size:11px;pointer-events:none;max-width:50vw}
@@ -106,6 +154,7 @@ font-size:11px;pointer-events:none;max-width:50vw}
   <button id="panel-toggle" class="primary" aria-expanded="true">☷ Nastavení</button>
   <button id="quick-open" class="ghost">＋ Soubor</button>
   <button id="fit" class="ghost">◎ Přiblížit data</button>
+  <button id="inspect" class="ghost" aria-pressed="false">⌖ BOD / PROFIL</button>
   <button id="go3d" class="ghost" hidden>◈ 3D okno</button>
   <button id="print-studio" class="ghost">⇩ Export studio</button>
 </div>
@@ -140,6 +189,13 @@ font-size:11px;pointer-events:none;max-width:50vw}
    <p class="muted">GeoJSON obsahuje právě zobrazené objekty. CDVIEW uchovává všechny vrstvy, nastavení, jejich barvy a viditelnost.</p>
  </section>
 </div>
+<aside id="inspection" class="inspection" hidden>
+  <header><strong>⌖ ANALÝZA BODU / LINE OF SIGHT</strong><button id="inspection-close" aria-label="Zavřít analýzu">×</button></header>
+  <div class="field"><label for="inspection-level">Výška cíle [ft AMSL]</label><select id="inspection-level"></select></div>
+  <div id="inspection-result" class="note">Klikni na libovolný bod v mapě.</div>
+  <svg id="inspection-profile" viewBox="0 0 520 184" role="img" aria-label="Terénní profil a spojnice přímé viditelnosti"></svg>
+  <div id="inspection-details" class="muted"></div>
+</aside>
 <div id="status" class="status">Načítám mapu…</div>
 <div id="drop">PUSŤ SOUBORY DO MAPY</div><input id="file" type="file" accept=".kml,.kmz,.json,.geojson,.cdview" multiple>
 <script>
@@ -154,6 +210,7 @@ const BASES={
 };
 const COLORS=["#3fa7fa","#21d7bf","#dc8aff","#ffb058","#fc647e","#a6d67b"];
 let layers=new Map(),map=null,base=null,rangeShape=null,openedEditor=null,vectorRenderer=null;
+let grid=null, inspectEnabled=false, selectedPoint=null, inspectionLine=null, inspectionMarker=null;
 let setting={base:"dark",labels:true,legend:true,range:false,nm:20};
 let layerSeq=0,chosenBase="dark",radarCenter=DATA.center||[50,15],legendControl=null;
 const escapeHTML=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -388,6 +445,106 @@ function saveGeo(){
  const fs=[];for(const o of layers.values())if(o.style.show)fs.push(...o.features);
  download("COVERAGEDIAGRAMS_visible.geojson",new Blob([JSON.stringify({type:"FeatureCollection",features:fs})],{type:"application/geo+json"}))
 }
+async function loadDiagnostics(){
+ if(!DATA.diagnostics){$("inspect").title="Nejprve otevři VIEWER z vypočteného projektu EDITORU";return}
+ try{
+  const bytes=Uint8Array.from(atob(DATA.diagnostics),c=>c.charCodeAt(0));
+  const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  grid=JSON.parse(await new Response(stream).text());
+  const select=$("inspection-level");
+  for(const ft of grid.levels){const option=document.createElement("option");option.value=ft;option.textContent=ft.toLocaleString("cs")+" ft";select.add(option)}
+  select.onchange=showInspection;
+  $("inspect").title="Výběr bodu s diagnostikou výpočtu krytí";
+ }catch(e){notify("Diagnostická síť se nepodařila otevřít: "+e.message,true)}
+}
+function radialAt(lat,lon){
+ // WGS84 geodesic inverse (spherical initial estimate only to choose the nearest
+ // native polar grid cell; the displayed point snaps to the WGS84 native sample).
+ const p1=radarCenter[0]*Math.PI/180,p2=lat*Math.PI/180;
+ const dl=(lon-radarCenter[1])*Math.PI/180,dp=p2-p1;
+ const a=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+ const distance=6371008.8*2*Math.atan2(Math.sqrt(a),Math.sqrt(Math.max(0,1-a)));
+ const bearing=(Math.atan2(Math.sin(dl)*Math.cos(p2),Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl))*180/Math.PI+360)%360;
+ return {distance,bearing};
+}
+function showInspection(){
+ if(!grid||!selectedPoint)return;
+ const {distance,bearing}=radialAt(selectedPoint.lat,selectedPoint.lng);
+ const delta=((bearing-grid.bearing+540)%360)-180;
+ const inside=grid.radarMode!=="PAR-NG"||Math.abs(delta)<=15+1e-8;
+ const select=(arr,x)=>arr.reduce((best,v,i)=>Math.abs(v-x)<Math.abs(arr[best]-x)?i:best,0);
+ const i=select(grid.az,grid.radarMode==="PAR-NG"?grid.bearing+delta:bearing);
+ const j=select(grid.distance,distance);
+ if(!inside||distance>grid.distance.at(-1)||distance<0){
+  $("inspection-result").textContent="MIMO VÝPOČETNÍ DOMÉNU · bod leží mimo sektor nebo dosah radaru.";
+  $("inspection-profile").replaceChildren();$("inspection-details").textContent="Zvolený azimut: "+bearing.toFixed(2)+"° · vzdálenost: "+(distance/1000).toFixed(2)+" km";
+  return;
+ }
+ const d=grid.distance[j],ft=Number($("inspection-level").value),target=ft*.3048;
+ const samples=grid.terrain[i].slice(0,j+1),ranges=grid.distance.slice(0,j+1);
+ const status=grid.status[String(ft)][i][j],ground=grid.terrain[i][j];
+ const horizon=grid.lower[i][j],ceiling=grid.upper[i][j];
+ const angle=Math.atan2((6371008.8*grid.k+target)*Math.cos(d/(6371008.8*grid.k))-(6371008.8*grid.k+grid.antenna),
+   (6371008.8*grid.k+target)*Math.sin(d/(6371008.8*grid.k)))*180/Math.PI;
+ let maxAngle=-Infinity,blocker=-1;
+ for(let n=0;n<samples.length;n++){
+  const z=samples[n],x=ranges[n];if(!Number.isFinite(z))continue;
+  const q=Math.atan2((6371008.8*grid.k+z)*Math.cos(x/(6371008.8*grid.k))-(6371008.8*grid.k+grid.antenna),
+   (6371008.8*grid.k+z)*Math.sin(x/(6371008.8*grid.k)))*180/Math.PI;
+  if(q>maxAngle){maxAngle=q;blocker=n}
+ }
+ let causes=[];
+ if(status===2)causes.push("Neúplná data DEM na trase – neznámé krytí");
+ else if(status===0){
+  if(target<ground)causes.push("Cíl pod úrovní místního terénu");
+  if(target<horizon-1e-5)causes.push("Terénní stín / překážka");
+  if(angle<grid.minElev-1e-5||angle>grid.maxElev+1e-5)causes.push("Mimo elevační rozsah");
+  if(!causes.length)causes.push("Dosahový limit anténního diagramu / RF bilance / zadaná překážka");
+ }
+ const textStatus=status===2?"NEZNÁMÉ":status===1?"KRYTÝ":"NEKRYTÝ";
+ const native=wgs84Destination(radarCenter[0],radarCenter[1],grid.az[i],d);
+ if(inspectionLine)map.removeLayer(inspectionLine);
+ if(inspectionMarker)map.removeLayer(inspectionMarker);
+ inspectionLine=L.polyline([radarCenter,native],{color:"#fcbd67",weight:3,dashArray:"6,5",interactive:false}).addTo(map);
+ inspectionMarker=L.circleMarker(native,{radius:7,color:"#fff",fillColor:status===1?"#1acb92":status===0?"#fa646d":"#e5ad54",fillOpacity:1,weight:2}).addTo(map);
+ $("inspection").hidden=false;
+ $("inspection-result").textContent=textStatus+" · "+ft+" ft AMSL"+(causes.length?"\n"+causes.join(" · "):"");
+ $("inspection-details").textContent=
+  "Kliknutý bod: "+selectedPoint.lat.toFixed(6)+"°, "+selectedPoint.lng.toFixed(6)+"°\n"+
+  "Výpočetní vzorek: "+native[0].toFixed(6)+"°, "+native[1].toFixed(6)+"°\n"+
+  "Azimut: "+(grid.az[i]%360+360)%360+"° · horizontální vzdálenost: "+(d/1000).toFixed(3)+" km\n"+
+  "Výška antény: "+grid.antenna.toFixed(1)+" m AMSL · cíl: "+target.toFixed(1)+" m AMSL\n"+
+  "Terén v cíli: "+(Number.isFinite(ground)?ground.toFixed(1):"N/A")+" m AMSL\n"+
+  "Minimální potřebná výška pro LOS: "+(Number.isFinite(horizon)?horizon.toFixed(1):"N/A")+" m AMSL\n"+
+  "Maximální geometrická výška: "+(Number.isFinite(ceiling)?ceiling.toFixed(1):"N/A")+" m AMSL\n"+
+  "Elevace cíle: "+angle.toFixed(3)+"° · překážkový horizont: "+(Number.isFinite(maxAngle)?maxAngle.toFixed(3):"N/A")+"°\n"+
+  "Limitní terén: "+(blocker>=0?(ranges[blocker]/1000).toFixed(3)+" km / "+samples[blocker].toFixed(1)+" m AMSL":"N/A")+"\n"+
+  "Model Země: R = 6371008,8 m × k "+grid.k+" · krok azimutu a vzdálenosti je diskrétní.\n"+
+  "Závěr pochází přímo z masky krytí EDITORU; profil z původních vzorků DEM.";
+ drawProfile(ranges,samples,d,target);
+}
+function drawProfile(ranges,terrain,d,target){
+ const svg=$("inspection-profile");svg.replaceChildren();
+ const finite=terrain.filter(Number.isFinite);
+ if(!finite.length)return;
+ const min=Math.min(...finite,grid.antenna,target)-40,max=Math.max(...finite,grid.antenna,target)+40;
+ const x=v=>26+v/d*475,y=v=>166-(v-min)/(max-min)*144;
+ function poly(points,color,width,dash=""){const e=document.createElementNS("http://www.w3.org/2000/svg","polyline");
+ e.setAttribute("points",points.map(p=>p.map(v=>v.toFixed(1)).join(",")).join(" "));e.setAttribute("fill","none");e.setAttribute("stroke",color);e.setAttribute("stroke-width",width);
+ if(dash)e.setAttribute("stroke-dasharray",dash);svg.append(e)}
+ let segment=[];
+ terrain.forEach((z,i)=>{if(Number.isFinite(z))segment.push([x(ranges[i]),y(z)]);
+ else if(segment.length){poly(segment,"#63d9b0",2);segment=[]}});
+ if(segment.length)poly(segment,"#63d9b0",2);
+ const re=6371008.8*grid.k;
+ const angle=Math.atan2((re+target)*Math.cos(d/re)-(re+grid.antenna),(re+target)*Math.sin(d/re));
+ // Exact same effective-Earth apparent angle and inverse height-at-angle as radar_core.
+ const ray=ranges.map(v=>[x(v),y((re+grid.antenna)*Math.cos(angle)/Math.cos(v/re+angle)-re)]);
+ poly([[x(0),y(grid.antenna)],...ray],"#ffbc63",2,"5,4");
+ const txt=document.createElementNS("http://www.w3.org/2000/svg","text");
+ txt.setAttribute("x",30);txt.setAttribute("y",14);txt.setAttribute("fill","#cde6f6");txt.setAttribute("font-size","11");
+ txt.textContent="DEM (zelená) · LOS paprsek (oranžová) · "+(d/1000).toFixed(2)+" km";svg.append(txt)
+}
 function setup(){
  if(!window.L){status("Leaflet se nepodařilo načíst. Zkontroluj připojení nebo blokování CDN.");return}
  map=L.map("map",{center:radarCenter,zoom:7,preferCanvas:true,zoomControl:false,
@@ -397,6 +554,16 @@ function setup(){
  selectBase("dark");
  for(const [name,features] of Object.entries(DATA.layers||{}))addLayer(name,features,DATA.styles?.[name],false);
  refreshList();syncAll();fitAll();$("range-center").textContent="Radar: "+radarCenter.map(x=>Number(x).toFixed(6)+"°").join(" / ");
+ loadDiagnostics();
+ $("inspect").onclick=()=>{
+  if(!grid){notify("Pro analýzu otevři VIEWER z vypočteného projektu EDITORU.",true);return}
+  inspectEnabled=!inspectEnabled;$("inspect").setAttribute("aria-pressed",String(inspectEnabled));
+  $("inspect").classList.toggle("primary",inspectEnabled);
+  map.getContainer().style.cursor=inspectEnabled?"crosshair":"";
+  if(inspectEnabled){$("inspection").hidden=false;$("inspection-result").textContent="Klikni do mapy pro výběr bodu."}
+ };
+ map.on("click",e=>{if(inspectEnabled&&grid){selectedPoint=e.latlng;showInspection()}});
+ $("inspection-close").onclick=()=>{$("inspection").hidden=true;inspectEnabled=false;$("inspect").classList.remove("primary");$("inspect").setAttribute("aria-pressed","false");map.getContainer().style.cursor=""};
  $("go3d").hidden=!DATA.threeDUrl;
  $("go3d").onclick=()=>window.open(DATA.threeDUrl,"_blank","noopener");
  $("print-studio").onclick=()=>window.open(DATA.studioUrl,"_blank","noopener");
