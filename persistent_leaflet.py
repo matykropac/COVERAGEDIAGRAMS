@@ -16,33 +16,28 @@ _HTML='''<div id="cd-persistent-map" role="application" aria-label="Radar covera
   <div class="cd-terrain-plot"><canvas id="cd-terrain-canvas" aria-label="Graf terénního profilu a spodní hranice radarového krytí"></canvas></div>
   <div class="cd-terrain-legend"><span><i class="cd-terrain-swatch"></i>Terén AMSL</span><span><i class="cd-lower-swatch"></i>Spodní hranice krytí</span><span><i class="cd-selected-swatch"></i>Vybraný bod</span></div>
 </section>
-<div id="cd-par-aim-control" hidden>
- <strong>⌖ SMĚROVÁNÍ PAR</strong>
- <span>Vyber směr kliknutím do mapy, nebo zadej TRUE azimut:</span>
- <div class="cd-par-aim-fields">
-  <input id="cd-par-azimuth" type="number" min="0" max="359.99" step="0.1" aria-label="Azimut osy PAR ve stupních">
-  <button id="cd-par-apply" type="button">NASTAVIT</button>
- </div>
- <small id="cd-par-aim-hint">Osa ±15° · sektor je trvale zobrazený</small>
-</div>
 <div id="cd-map-status" aria-live="polite"></div>'''
 _CSS="""
 #cd-persistent-map { width:100%;height:100dvh;min-height:0;
     border:0;border-radius:0;overflow:hidden;background:#e5edf5}
-#cd-par-aim-control{position:absolute;top:78px;right:16px;z-index:1100;
- width:min(292px,calc(100vw - 35px));padding:13px 14px;border-radius:12px;
- background:#0c2439f5;border:1px solid #5d87a3;color:#e7f6ff;
- box-shadow:0 14px 34px #0007;font:12px/1.45 system-ui}
-#cd-par-aim-control[hidden]{display:none!important}
-#cd-par-aim-control strong{display:block;color:#7bd8fa;letter-spacing:.08em;
- font-size:12px;margin-bottom:7px}
-#cd-par-aim-control span{display:block;margin-bottom:7px;color:#c8dbe8}
-#cd-par-aim-control small{display:block;color:#a4c9dd;margin-top:7px}
-.cd-par-aim-fields{display:flex;gap:8px}
-#cd-par-azimuth{min-width:0;width:118px;border:1px solid #52768c;border-radius:6px;
- background:#102e48;color:white;font:13px system-ui;padding:8px}
-#cd-par-apply{flex:1;padding:8px;border:1px solid #65cafa;border-radius:6px;
- background:#135f87;color:#fff;font:700 11px system-ui;cursor:pointer}
+/* Map-anchored PAR azimuth field: stays in the scan polygon while panning. */
+.cd-par-inside-icon{border:0!important;background:transparent!important}
+.cd-par-inside-label,.cd-par-inside-editor{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  white-space:nowrap;background:#08233bdc;border:1px solid #6cd8ff;
+  box-shadow:0 4px 17px #001629aa;border-radius:9px;color:#f4fbff;
+  font:700 12px/1.3 system-ui;text-align:center;pointer-events:auto
+}
+.cd-par-inside-label{padding:7px 11px;pointer-events:none}
+.cd-par-inside-label small{color:#83d9fb;margin-left:5px;font-size:10px}
+.cd-par-inside-editor{width:184px;padding:8px 10px;cursor:auto}
+.cd-par-inside-title{color:#8bdcf7;font-size:10px;letter-spacing:.07em;margin-bottom:7px}
+.cd-par-inside-row{display:flex;align-items:center;gap:6px}
+.cd-par-angle{width:125px;min-width:0;padding:7px;border-radius:6px;
+ border:1px solid #6b99b4;color:#fff;background:#122e46;font:12px system-ui}
+.cd-par-confirm{padding:7px 10px;border-radius:6px;background:#17648c;
+ border:1px solid #69cfff;color:#fff;cursor:pointer;font:700 13px system-ui}
+.cd-par-inside-editor small{display:block;margin-top:5px;color:#a9cddd;font:10px system-ui}
 #cd-map-status {position:absolute;right:22px;bottom:22px;z-index:900;
     padding:5px 9px;border-radius:5px;background:#fffdeb;color:#38516b;
     font:11px system-ui;box-shadow:0 1px 8px #17263824;display:none}
