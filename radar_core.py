@@ -151,9 +151,12 @@ def flight_levels_for(mode):
     return PAR_LOW_LEVELS_FT + FLIGHT_LEVELS_LIST if mode in ('PAR', 'PAR-NG') else FLIGHT_LEVELS_LIST
 
 
+# User-defined default PAR coverage levels (ft AMSL); editable without presets.
+PAR_DEFAULT_LEVELS_FT = tuple(range(2000, 6001, 100))
+
 PAR_CUSTOM_MIN_FT = 1
 PAR_CUSTOM_MAX_FT = 66000
-PAR_CUSTOM_MAX_COUNT = 100
+PAR_CUSTOM_MAX_COUNT = 500
 
 
 def valid_flight_level(mode, ft):
