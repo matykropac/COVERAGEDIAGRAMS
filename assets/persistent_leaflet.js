@@ -513,14 +513,29 @@ function updateObstacles(s,data) {
   }
 }
 function updateRadar(s,data) {
-  const sig=JSON.stringify(data.radar||null);
+  const radar=data.radar||null;
+  const sig=JSON.stringify(radar);
   if(s.last.radar===sig)return;
   s.last.radar=sig;
   s.groups.radar.clearLayers();
-  if(!data.radar)return;
-  const r=data.radar;
-  L.circleMarker([r.lat,r.lon],{radius:7,color:"#ffffff",weight:2,
-    fillColor:"#2372d4",fillOpacity:1}).bindTooltip(r.label||"Radar").addTo(s.groups.radar);
+  if(!radar)return;
+  const lat=Number(radar.lat),lon=Number(radar.lon);
+  if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180){
+    status(s,"Radar: chybné souřadnice stanoviště.");
+    return;
+  }
+  L.circleMarker([lat,lon],{radius:7,color:"#ffffff",weight:2,
+    fillColor:"#2372d4",fillOpacity:1}).bindTooltip(radar.label||"Radar").addTo(s.groups.radar);
+  // On loading a project or changing its site, reposition the actual map,
+  // not just its radar marker. Never recenter for an ordinary UI rerun.
+  const site=[lat,lon];
+  if(!s.lastRadarSite||Math.abs(s.lastRadarSite[0]-lat)>1e-7||
+                        Math.abs(s.lastRadarSite[1]-lon)>1e-7){
+    s.lastRadarSite=site;
+    const at=s.map.getCenter();
+    if(Math.abs(at.lat-lat)>1e-6||Math.abs(at.lng-lon)>1e-6)
+      s.map.setView(site,s.map.getZoom(),{animate:false});
+  }
 }
 function updateEnvironment(s,data){
   const sig=data.environmentVersion||"empty";
