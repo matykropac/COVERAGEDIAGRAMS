@@ -66,10 +66,10 @@ class Config:
             raise ValueError('Prototyp podporuje zeměpisnou šířku −80 až 80°.')
         if not (0 < self.antenna_agl <= 5000 and 1 <= self.range_km <= 500):
             raise ValueError('Výška antény musí být > 0 až 5000 m; dosah 1 až 500 km.')
-        if not (5 <= self.step_m <= 2000 and self.step_m <= self.range_km * 1000):
-            raise ValueError('Radiální krok musí být 5 až 2000 m a nejvýše dosah.')
-        if not (0.025 <= self.az_step <= 5 and 0.5 <= self.k <= 3):
-            raise ValueError('Krok azimutu 0,025 až 5°; faktor k 0,5 až 3.')
+        if not (1 <= self.step_m <= 2000 and self.step_m <= self.range_km * 1000):
+            raise ValueError('Radiální krok musí být 1 až 2000 m a nejvýše dosah.')
+        if not (0.01 <= self.az_step <= 5 and 0.5 <= self.k <= 3):
+            raise ValueError('Krok azimutu 0,01 až 5°; faktor k 0,5 až 3.')
         if not (-5 <= self.min_elev < self.max_elev <= 89):
             raise ValueError('Elevace musí splnit −5° ≤ minimum < maximum ≤ 89°.')
         if self.reference not in ('AMSL', 'AGL') or not (-500 <= self.target_m <= 30000):
