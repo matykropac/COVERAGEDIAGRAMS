@@ -795,6 +795,31 @@ def _select_radar_ui_mode(name):
     _draft_checkpoint()
 
 
+def _on_main_radar_selection():
+    """Keep one stable four-option radar selector and trigger its dialog."""
+    requested=st.session_state.get("ws_radar_selector")
+    if requested not in ("PSR","SSR","ASR","PAR"):
+        return
+    if requested!=_radar_ui_mode() or "ws_radar_ui_mode" not in st.session_state:
+        _select_radar_ui_mode(requested)
+    st.session_state["ws_open_selected_radar_dialog"]=True
+
+
+def _render_frequency_inventory(mode,*,in_dialog=False):
+    """Document the actual carrier usage, never infer a missing RF model."""
+    from radar_frequency_info import frequency_report
+    info=frequency_report(mode)
+    title=("RF FREKVENCE · VÝPOČET vs. DOKUMENTACE" if in_dialog
+           else "RF FREKVENCE / PARAMETRY MODELU")
+    with st.expander(title,expanded=False):
+        st.markdown(f"**{info['headline']}**")
+        st.caption(info["method"])
+        for name,frequency,details in info["rows"]:
+            st.markdown(f"**{name}** · {frequency}")
+            st.caption(details)
+        st.info(info["note"])
+
+
 def radar_dialog():
     """Open one of four dedicated radar engineering dialogs."""
     name=_radar_ui_mode()
@@ -854,6 +879,7 @@ def _radar_settings_body(ui_mode):
                 "kalibrovaný ASR ani kombinovaný PSR/MSSR model.")
     st.caption("◉ AUTO-DRAFT · průběžně ukládám nastavení radaru a výšky. "
                "Koncept se obnoví po návratu přes stejný odkaz.")
+    _render_frequency_inventory(ui_mode,in_dialog=True)
     radar=ui_mode
     site=_current_radar_site()
     lat,lon=site if site else (None,None)
@@ -3006,19 +3032,27 @@ def render_workspace():
             elif section=="RADAR":
                 st.markdown('<div class="cd-nav-title">1 / ZVOL RADAROVÝ SYSTÉM</div>',
                             unsafe_allow_html=True)
-                radar_choices=(("PSR","SSR"),("ASR","PAR"))
-                for row_index,options in enumerate(radar_choices):
-                    cols=st.columns(2,gap="small")
-                    for i,name in enumerate(options):
-                        with cols[i]:
-                            if st.button(name,key=f"ws_radar_mode_{name}",
-                                         type="primary" if _radar_ui_mode()==name else "secondary",
-                                         use_container_width=True,
-                                         help="Otevřít samostatné nastavení "+name):
-                                _select_radar_ui_mode(name)
-                                radar_dialog()
-                st.caption("Vyber systém jedním kliknutím. Parametry jednotlivých "
-                           "režimů zůstanou v rozpracovaném konceptu.")
+                # One fixed-size, button-like segmented control instead of
+                # four independent Streamlit button containers that jitter.
+                with st.container(key="ws_radar_mode_panel"):
+                    if "ws_radar_selector" not in st.session_state:
+                        st.session_state["ws_radar_selector"]=st.session_state.get(
+                            "ws_radar_ui_mode")
+                    st.segmented_control(
+                        "RADAROVÝ SYSTÉM",("PSR","SSR","ASR","PAR"),
+                        selection_mode="single",key="ws_radar_selector",
+                        on_change=_on_main_radar_selection,
+                        label_visibility="collapsed",width="stretch")
+                    selected=st.session_state.get("ws_radar_selector")
+                    if selected:
+                        st.caption(f"**{selected}** · zvolený systém. "
+                                   "Přepnutím se otevře jeho konfigurátor.")
+                    else:
+                        st.caption("Vyber PSR, SSR, ASR nebo PAR. Každý systém "
+                                   "má vlastní uložené parametry.")
+                    if st.session_state.pop("ws_open_selected_radar_dialog",False):
+                        radar_dialog()
+                _render_frequency_inventory(_radar_ui_mode())
                 st.markdown('<div class="cd-nav-title">2 / STANOVIŠTĚ RADARU</div>',
                             unsafe_allow_html=True)
                 site=_current_radar_site()
