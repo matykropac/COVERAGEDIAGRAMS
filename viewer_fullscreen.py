@@ -207,6 +207,11 @@ font-size:11px;pointer-events:none;max-width:50vw}
   <div id="inspection-result" class="note">Klikni na libovolný bod v mapě.</div>
   <svg id="inspection-profile" viewBox="0 0 520 184" role="img" aria-label="Terénní profil a spojnice přímé viditelnosti"></svg>
   <div id="inspection-details" class="muted"></div>
+  <div class="actions" id="profile-exports" hidden>
+    <button id="profile-csv" class="primary">⇩ PROFIL CSV</button>
+    <button id="profile-svg" class="ghost">⇩ GRAF SVG</button>
+    <button id="profile-geo" class="ghost">⇩ TRASA GEOJSON</button>
+  </div>
 </aside>
 <div id="status" class="status">Načítám mapu…</div>
 <div id="drop">PUSŤ SOUBORY DO MAPY</div><input id="file" type="file" accept=".kml,.kmz,.json,.geojson,.cdview" multiple>
@@ -223,6 +228,7 @@ const BASES={
 const COLORS=["#3fa7fa","#21d7bf","#dc8aff","#ffb058","#fc647e","#a6d67b"];
 let layers=new Map(),map=null,base=null,rangeShape=null,openedEditor=null,vectorRenderer=null;
 let grid=null, inspectEnabled=false, selectedPoint=null, inspectionLine=null, inspectionMarker=null;
+let lastProfile=null;
 let placingRadar=false, demController=null, demRequest=0, radarMarker=null;
 let radarKnown=Boolean(DATA.radarKnown);
 const demCache=new Map();
@@ -460,6 +466,90 @@ function saveGeo(){
  const fs=[];for(const o of layers.values())if(o.style.show)fs.push(...o.features);
  download("COVERAGEDIAGRAMS_visible.geojson",new Blob([JSON.stringify({type:"FeatureCollection",features:fs})],{type:"application/geo+json"}))
 }
+function clearProfileExports(){
+ lastProfile=null;
+ $("profile-exports").hidden=true;
+}
+function setProfileExports(profile){
+ lastProfile=profile;
+ $("profile-exports").hidden=false;
+}
+function profileRayHeight(x,profile){
+ const re=6371008.8*profile.k;
+ const d=profile.ranges.at(-1);
+ if(!Number.isFinite(d)||d<=0||!Number.isFinite(profile.targetAMSL)||!Number.isFinite(profile.antennaAMSL))return null;
+ const phi=Math.atan2((re+profile.targetAMSL)*Math.cos(d/re)-(re+profile.antennaAMSL),
+                      (re+profile.targetAMSL)*Math.sin(d/re));
+ const height=(re+profile.antennaAMSL)*Math.cos(phi)/Math.cos(x/re+phi)-re;
+ return Number.isFinite(height)?height:null;
+}
+function exportProfileCSV(){
+ if(!lastProfile)return;
+ const p=lastProfile;
+ const rows=[
+  ["# COVERAGEDIAGRAMS BOD / PROFIL"],
+  ["# Mode",p.mode],
+  ["# Result",p.verdict],
+  ["# DEM source",p.source],
+  ["# Radar latitude",p.radar[0]],
+  ["# Radar longitude",p.radar[1]],
+  ["# Target latitude",p.target[0]],
+  ["# Target longitude",p.target[1]],
+  ["# Target altitude (m AMSL)",p.targetAMSL],
+  ["# Antenna altitude (m AMSL)",p.antennaAMSL],
+  ["# Effective Earth factor k",p.k],
+  ["# Target flight level (ft)",p.flightLevel??""],
+  ["# Flight-level reference",p.reference??""],
+  ["# Notes","A standalone DEM profile only establishes approximate LOS, not RF detection."],
+  ["distance_m","latitude_deg","longitude_deg","terrain_m_amsl","ray_m_amsl","clearance_m"]
+ ];
+ p.ranges.forEach((d,i)=>{
+  const ll=wgs84Destination(p.radar[0],p.radar[1],p.bearing,d);
+  const terrain=p.terrain[i];
+  const ray=profileRayHeight(d,p);
+  rows.push([d,ll[0],ll[1],terrain??"",ray??"",
+             Number.isFinite(terrain)&&Number.isFinite(ray)?ray-terrain:""]);
+ });
+ const csv="\uFEFF"+rows.map(row=>row.map(value=>{
+   const v=String(value??"");
+   return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+ }).join(",")).join("\r\n");
+ download("COVERAGEDIAGRAMS_point_profile.csv",
+          new Blob([csv],{type:"text/csv;charset=utf-8"}));
+}
+function exportProfileSVG(){
+ if(!lastProfile)return;
+ const original=$("inspection-profile");
+ const clone=original.cloneNode(true);
+ clone.setAttribute("xmlns","http://www.w3.org/2000/svg");
+ clone.setAttribute("width","1040");
+ clone.setAttribute("height","368");
+ const xml=new XMLSerializer().serializeToString(clone);
+ download("COVERAGEDIAGRAMS_point_profile.svg",
+          new Blob([xml],{type:"image/svg+xml;charset=utf-8"}));
+}
+function exportProfileGeoJSON(){
+ if(!lastProfile)return;
+ const p=lastProfile;
+ const points=p.ranges.map((d,i)=>{
+   const ll=wgs84Destination(p.radar[0],p.radar[1],p.bearing,d);
+   return [ll[1],ll[0]];
+ });
+ const metadata={mode:p.mode,verdict:p.verdict,source:p.source,
+  antenna_m_amsl:p.antennaAMSL,target_m_amsl:p.targetAMSL,
+  reference:p.reference??"AMSL",flight_level_ft:p.flightLevel??null,
+  k:p.k,comment:"Geometry/DEM analysis; no independent claim of radar detection."};
+ const fc={type:"FeatureCollection",features:[
+  {type:"Feature",properties:{name:"Radar → target profile",...metadata},
+   geometry:{type:"LineString",coordinates:points}},
+  {type:"Feature",properties:{name:"Radar",height_m_amsl:p.antennaAMSL},
+   geometry:{type:"Point",coordinates:[p.radar[1],p.radar[0]]}},
+  {type:"Feature",properties:{name:"Target",height_m_amsl:p.targetAMSL},
+   geometry:{type:"Point",coordinates:[p.target[1],p.target[0]]}},
+ ]};
+ download("COVERAGEDIAGRAMS_point_profile.geojson",
+          new Blob([JSON.stringify(fc)],{type:"application/geo+json"}));
+}
 async function loadDiagnostics(){
  if(!DATA.diagnostics){$("inspect").title="Vyber bod a automaticky načti profil DEM";return}
  try{
@@ -485,6 +575,7 @@ function radialAt(lat,lon){
  return {distance,bearing};
 }
 function showInspection(){
+ clearProfileExports();
  if(!grid||!selectedPoint)return;
  const {distance,bearing}=radialAt(selectedPoint.lat,selectedPoint.lng);
  const delta=((bearing-grid.bearing+540)%360)-180;
@@ -543,6 +634,15 @@ function showInspection(){
   "Závěr pochází přímo z masky krytí EDITORU; profil z původních vzorků DEM.";
  if(Number.isFinite(target))drawProfile(ranges,samples,d,target);
  else $("inspection-profile").replaceChildren();
+ setProfileExports({
+  mode:"EDITOR_NATIVE",source:"Original EDITOR DEM / coverage grid",
+  verdict:textStatus,radar:[...radarCenter],
+  target:[native[0],native[1]],bearing:grid.az[i],
+  ranges:[...ranges],terrain:[...samples],
+  targetAMSL:Number.isFinite(target)?target:null,
+  antennaAMSL:grid.antenna,k:grid.k,
+  flightLevel:ft,reference:grid.reference
+ });
 }
 function drawProfile(ranges,terrain,d,target){
  const svg=$("inspection-profile");svg.replaceChildren();
@@ -634,6 +734,7 @@ function drawStandaloneProfile(ranges,terrain,targetAMSL,antennaAMSL,k){
  svg.append(caption);
 }
 async function showStandaloneInspection(){
+ clearProfileExports();
  if(!selectedPoint)return;
  if(!radarKnown){$("inspection-result").textContent="Nejprve nastav pozici radaru kliknutím do mapy.";
    $("inspection-details").textContent="Bez polohy radaru nelze určit trasu ani LOS.";return;}
@@ -686,6 +787,13 @@ async function showStandaloneInspection(){
     (blocker>=0?" v "+(ranges[blocker]/1000).toFixed(2)+" km":"")+
     "\nZakřivení: Rz × k = "+(re/1000).toFixed(1)+" km. Není zahrnuta Fresnelova zóna, objekty ani RCS/SNR.";
   drawStandaloneProfile(ranges,heights,target,antenna,k);
+  setProfileExports({
+   mode:"STANDALONE_DEM_LOS",source:profile.source,
+   verdict:visible?"LOS VOLNÁ":"LOS BLOKOVANÁ",
+   radar:[...radarCenter],target:[selectedPoint.lat,selectedPoint.lng],
+   bearing,ranges:[...ranges],terrain:[...heights],
+   targetAMSL:target,antennaAMSL:antenna,k,flightLevel:ft,reference:"AMSL"
+  });
   status("DEM načten: "+ranges.length+" bodů · "+(visible?"LOS volná":"LOS blokovaná"));
  }catch(error){
   if(request!==demRequest)return;
@@ -745,6 +853,9 @@ function setup(){
  for(const id of ["dem-antenna","dem-target","dem-k"]){
   $(id).addEventListener("change",()=>{if(selectedPoint&&!grid)showStandaloneInspection()});
  }
+ $("profile-csv").onclick=exportProfileCSV;
+ $("profile-svg").onclick=exportProfileSVG;
+ $("profile-geo").onclick=exportProfileGeoJSON;
  $("inspection-close").onclick=()=>{$("inspection").hidden=true;inspectEnabled=false;$("inspect").classList.remove("primary");$("inspect").setAttribute("aria-pressed","false");map.getContainer().style.cursor=""};
  $("print-studio").onclick=()=>window.open(DATA.studioUrl,"_blank","noopener");
  $("panel-toggle").onclick=()=>{const hidden=$("panel").classList.toggle("hidden");$("panel-toggle").setAttribute("aria-expanded",String(!hidden));map.invalidateSize()};
