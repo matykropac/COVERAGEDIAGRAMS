@@ -62,6 +62,18 @@ class IndependentLOSValidationTests(unittest.TestCase):
         unknown=verify_radial_point(result,0,15,120.)
         self.assertEqual(unknown["status"],"UNKNOWN")
 
+    def test_manual_obstacles_are_not_false_mathematical_errors(self):
+        c=core.Config(radar_mode="RL-2000",range_km=20.,
+                      step_m=1000.,az_step=5.,min_elev=-1.,
+                      max_elev=45.,csc_enabled=False)
+        az,d=core.axes(c)
+        result=core.solve(c,np.zeros((len(az),len(d))),0.)
+        result["obstacles"]=[{"kind":"point","lat":c.lat,"lon":c.lon,
+                             "height_m":500.}]
+        check=verify_radial_point(result,0,10,600.)
+        self.assertEqual(check["status"],"OBSTACLES_NOT_CHECKED")
+        self.assertTrue(check["obstacles_excluded"])
+
     def test_ui_integration_and_independent_algorithm(self):
         from pathlib import Path
         source=(Path(__file__).resolve().parents[1]/
