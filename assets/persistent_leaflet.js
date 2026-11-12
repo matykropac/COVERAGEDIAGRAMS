@@ -329,6 +329,28 @@ function init(s) {
       selectTerrainPoint(s,ev.latlng);
     }
   });
+  s.parAimBox=s.root.querySelector("#cd-par-aim-control");
+  s.parAzInput=s.root.querySelector("#cd-par-azimuth");
+  const parApply=s.root.querySelector("#cd-par-apply");
+  const submitPar=()=>{
+    const az=Number(s.parAzInput?.value);
+    if(!s.parAzInput?.value?.trim()||!Number.isFinite(az)||az<0||az>=360){
+      if(s.parAzInput){s.parAzInput.setCustomValidity("Zadej azimut 0 až 359,99°.");s.parAzInput.reportValidity();}
+      return;
+    }
+    s.parAzInput.setCustomValidity("");
+    s.trigger("action",{type:"par_aim",bearing:az,
+                           id:Date.now()+"-"+Math.random().toString(36).slice(2)});
+  };
+  if(parApply)parApply.addEventListener("click",submitPar);
+  if(s.parAzInput){
+    s.parAzInput.addEventListener("keydown",event=>{
+      if(event.key==="Enter"){event.stopPropagation();submitPar();}
+    });
+    // Avoid Leaflet handling keyboard events from the numeric input.
+    L.DomEvent.disableClickPropagation(s.parAimBox);
+    L.DomEvent.disableScrollPropagation(s.parAimBox);
+  }
   s.profilePanel=s.root.querySelector("#cd-terrain-panel");
   s.profileCanvas=s.root.querySelector("#cd-terrain-canvas");
   s.profileSummary=s.root.querySelector("#cd-terrain-summary");
@@ -570,6 +592,12 @@ function updateEnvironment(s,data){
   }
 }
 function updateMode(s,data) {
+  if(s.parAimBox)s.parAimBox.hidden=data.tool!=="PAR_AIM";
+  if(s.parAzInput&&data.tool==="PAR_AIM"&&
+     s.last.parAimBearing!==data.parSector?.bearing){
+    s.parAzInput.value=Number(data.parSector?.bearing||0).toFixed(2);
+    s.last.parAimBearing=data.parSector?.bearing;
+  }
   if(s.last.tool===data.tool)return;
   s.last.tool=data.tool;
   if(s.controls.draw){s.map.removeControl(s.controls.draw);s.controls.draw=null;}
