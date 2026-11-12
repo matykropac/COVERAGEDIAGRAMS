@@ -313,6 +313,9 @@ function init(s) {
     if(tool==="Radar"){
       s.trigger("action",{type:"radar",lat:ev.latlng.lat,lon:ev.latlng.lng,
                             id:Date.now()+"-"+Math.random().toString(36).slice(2)});
+    }else if(tool==="Validate"){
+      s.trigger("action",{type:"validate_los",lat:ev.latlng.lat,lon:ev.latlng.lng,
+                            id:Date.now()+"-"+Math.random().toString(36).slice(2)});
     }else if(tool==="Prohlížení"&&s.latest?.profile){
       selectTerrainPoint(s,ev.latlng);
     }
@@ -545,7 +548,7 @@ function updateMode(s,data) {
     });
     s.map.addControl(s.controls.draw);
   }
-  s.node.style.cursor=data.tool==="Radar"?"crosshair":"";
+  s.node.style.cursor=(data.tool==="Radar"||data.tool==="Validate")?"crosshair":"";
 }
 function refreshAircraft(s,items){
   const seen=new Set();
