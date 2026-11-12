@@ -511,10 +511,15 @@ function boundsFromHighestFlightLevel(){
   if(level===top)candidates.push({layer,points});
  }
  if(!candidates.length)return null;
- const all=candidates.flatMap(item=>item.points);
- const longitudes=all.map(v=>v[0]),latitudes=all.map(v=>v[1]);
- const west=Math.min(...longitudes),east=Math.max(...longitudes);
- const south=Math.min(...latitudes),north=Math.max(...latitudes);
+ let west=Infinity,east=-Infinity,south=Infinity,north=-Infinity;
+ for(const item of candidates){
+  for(const [lon,lat] of item.points){
+   if(lon<west)west=lon;
+   if(lon>east)east=lon;
+   if(lat<south)south=lat;
+   if(lat>north)north=lat;
+  }
+ }
  if(!(south<north&&west<east))return null;
  // A conventional bbox would span nearly the entire globe at the dateline.
  if(east-west>180)return {invalid:"Zvolená FL překračuje poledník ±180°. Jednoduchý W/E obdélník by byl chybný."};
