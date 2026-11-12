@@ -72,6 +72,82 @@ def _feature(kind, coords, tags, source_id):
                 coordinates=coords, height_m=height, height_quality=quality,
                 source="OpenStreetMap", source_id=str(source_id))
 
+
+def _overpass_relation_polygons(element):
+    """Assemble actual OSM multipolygon outer/inner member ways.
+
+    Overpass 'out geom' gives geometry per relation member, not element.geometry.
+    Polygonize disconnected outer ways; preserve holes by splitting polygons
+    into hole-free pieces for the existing one-ring obstacle data model.
+    """
+    from shapely.geometry import LineString, Polygon
+    from shapely.ops import polygonize, unary_union, triangulate
+
+    def rings(role):
+        segments=[]
+        for member in element.get("members") or []:
+            if member.get("type")!="way" or member.get("role")!=role:
+                continue
+            coords=[]
+            for pt in member.get("geometry") or []:
+                try:
+                    lat,lon=float(pt["lat"]),float(pt["lon"])
+                except (KeyError,TypeError,ValueError):
+                    continue
+                if math.isfinite(lat) and math.isfinite(lon) and -90<=lat<=90 and -180<=lon<=180:
+                    coords.append((lon,lat))
+            if len(coords)>=2:
+                segments.append(LineString(coords))
+        if not segments:
+            return []
+        return [poly for poly in polygonize(unary_union(segments)) if poly.is_valid and poly.area>0]
+
+    outers=rings("outer")
+    if not outers:
+        return []
+    inners=rings("inner")
+    # MultiPolygon may contain nested independent outers, not only one area.
+    area=unary_union(outers)
+    if inners:
+        area=area.difference(unary_union(inners))
+    geometries=list(area.geoms) if hasattr(area,"geoms") else [area]
+    output=[]
+    for poly in geometries:
+        if not isinstance(poly,Polygon) or poly.is_empty or not poly.is_valid:
+            continue
+        pieces=[poly] if not poly.interiors else [
+            tri.intersection(poly) for tri in triangulate(poly)]
+        for piece in pieces:
+            polys=list(piece.geoms) if hasattr(piece,"geoms") else [piece]
+            for p in polys:
+                if not isinstance(p,Polygon) or p.is_empty or p.area<=0 or p.interiors:
+                    continue
+                points=[[float(lat),float(lon)] for lon,lat in list(p.exterior.coords)[:-1]]
+                if len(points)>=3:
+                    output.append(points)
+                if len(output)>=300:
+                    return output
+    return output
+
+
+def _simplify_ring(coords, max_vertices=150):
+    """Reduce overly detailed OSM footprints without falsifying their extent."""
+    if len(coords)<=max_vertices:
+        return coords
+    from shapely.geometry import Polygon
+    shape=Polygon([(lon,lat) for lat,lon in coords])
+    if not shape.is_valid or shape.is_empty:
+        return None
+    minimum=max(shape.bounds[2]-shape.bounds[0],shape.bounds[3]-shape.bounds[1])
+    # Start sub-metre at midlatitudes, increase until the solver's 150-vertex cap.
+    for scale in (1e-6,3e-6,1e-5,3e-5,1e-4,3e-4,1e-3):
+        poly=shape.simplify(scale,preserve_topology=True)
+        if isinstance(poly,Polygon) and poly.is_valid and not poly.interiors:
+            ring=[[float(lat),float(lon)] for lon,lat in list(poly.exterior.coords)[:-1]]
+            if 3<=len(ring)<=max_vertices:
+                return ring
+    return None
+
 OVERPASS_ENDPOINTS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
@@ -116,9 +192,13 @@ def fetch_osm(lat, lon, radius_km):
     meters = int(radius_km * 1000)
     query = ('[out:json][timeout:35];('
              f'way(around:{meters},{lat:.6f},{lon:.6f})["building"];'
+             f'relation(around:{meters},{lat:.6f},{lon:.6f})["building"]["type"="multipolygon"];'
              f'way(around:{meters},{lat:.6f},{lon:.6f})["landuse"="forest"];'
+             f'relation(around:{meters},{lat:.6f},{lon:.6f})["landuse"="forest"]["type"="multipolygon"];'
              f'way(around:{meters},{lat:.6f},{lon:.6f})["natural"="wood"];'
+             f'relation(around:{meters},{lat:.6f},{lon:.6f})["natural"="wood"]["type"="multipolygon"];'
              f'way(around:{meters},{lat:.6f},{lon:.6f})["man_made"~"^(tower|mast|chimney)$"];'
+             f'relation(around:{meters},{lat:.6f},{lon:.6f})["man_made"~"^(tower|mast|chimney)$"]["type"="multipolygon"];'
              f'node(around:{meters},{lat:.6f},{lon:.6f})["man_made"~"^(tower|mast|chimney)$"];'
              ');out geom;')
     payload = urllib.parse.urlencode({"data": query}).encode()
@@ -129,6 +209,16 @@ def fetch_osm(lat, lon, radius_km):
         kind = _kind(tags)
         geometry = element.get("geometry") or []
         if not kind:
+            continue
+        if element.get("type") == "relation":
+            # Relation's geometry is in its members, never the top-level field.
+            for part,coords in enumerate(_overpass_relation_polygons(element)):
+                clean=_simplify_ring(coords,1200)
+                if clean is None:
+                    continue
+                item=_feature(kind,clean,tags,f"relation-{element.get('id','unknown')}-{part}")
+                if item:
+                    items.append(item)
             continue
         if element.get("type") == "node":
             if kind != "Tower" or "lat" not in element or "lon" not in element:
@@ -143,8 +233,11 @@ def fetch_osm(lat, lon, radius_km):
             if len(geometry) < 3:
                 continue
             coords = [[float(p["lat"]), float(p["lon"])] for p in geometry]
-        item = _feature(kind, coords[:-1] if coords[0] == coords[-1] else coords,
-                        tags, element.get("id", "unknown"))
+        clean=_simplify_ring(coords[:-1] if coords[0] == coords[-1] else coords,1200)
+        if clean is None:
+            continue
+        item = _feature(kind,clean,tags,
+                        f"{element.get('type','way')}-{element.get('id','unknown')}")
         if item:
             items.append(item)
     return items[:MAX_ENVIRONMENT_ITEMS]
