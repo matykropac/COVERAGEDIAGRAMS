@@ -958,6 +958,79 @@ def _opentopo_error_message(payload, content_type=''):
     return text
 
 
+def _validated_dem(path):
+    """Reject corrupt and non-georeferenced cached/downloaded DEM files."""
+    import rasterio
+    with rasterio.open(path) as ds:
+        if ds.driver != 'GTiff':
+            raise ValueError('soubor není GeoTIFF (GTiff)')
+        if ds.crs is None:
+            raise ValueError('GeoTIFF nemá CRS')
+        if ds.count < 1 or ds.width < 1 or ds.height < 1:
+            raise ValueError('GeoTIFF neobsahuje platné rastrové pásmo')
+        if not all(np.isfinite(ds.transform)[:6]):
+            raise ValueError('GeoTIFF má neplatnou georeferenci')
+    return True
+
+
+def _normalize_dem_payload(path, prefix, content_type, progress):
+    """Accept genuine TIFF or a ZIP containing a TIFF; reject other data.
+
+    The API may respond HTTP 200 with an archive or a non-TIFF error payload.
+    Never feed HTML, ZIP, PNG or JSON to Rasterio as a .tif file.
+    """
+    import zipfile
+    header=prefix[:8]
+    tiff=(header.startswith(b'II*\\x00') or header.startswith(b'MM\\x00*')
+          or header.startswith(b'II+\\x00') or header.startswith(b'MM\\x00+'))
+    if tiff:
+        return
+    if header.startswith(b'PK\\x03\\x04'):
+        progress('OpenTopography vrátilo ZIP; rozbaluji GeoTIFF…')
+        try:
+            with zipfile.ZipFile(path) as archive:
+                candidates=[z for z in archive.infolist()
+                            if not z.is_dir() and z.filename.lower().endswith(('.tif','.tiff'))]
+                if len(candidates)!=1:
+                    raise ValueError('ZIP musí obsahovat právě jeden GeoTIFF.')
+                member=candidates[0]
+                if member.file_size<=0 or member.file_size>2_000_000_000:
+                    raise ValueError('GeoTIFF v archivu má neplatnou velikost.')
+                temporary=str(path)+'.unpacked'
+                try:
+                    with archive.open(member) as src,open(temporary,'wb') as dest:
+                        while True:
+                            block=src.read(1024*1024)
+                            if not block:
+                                break
+                            dest.write(block)
+                    with open(temporary,'rb') as candidate:
+                        magic=candidate.read(4)
+                    if magic not in (b'II*\\x00',b'MM\\x00*',b'II+\\x00',b'MM\\x00+'):
+                        raise ValueError('ZIP obsahuje soubor .tif, který není GeoTIFF.')
+                    os.replace(temporary,path)
+                finally:
+                    if os.path.exists(temporary):
+                        os.unlink(temporary)
+        except zipfile.BadZipFile:
+            raise ValueError('OpenTopography vrátilo poškozený ZIP, nikoliv GeoTIFF.') from None
+        return
+    # Some HTTP 200 responses are an API error, even when Content-Type lies.
+    detail=_opentopo_error_message(prefix,content_type) if (
+        any(t in content_type for t in ('text/','json','xml','html'))
+        or header.lstrip()[:1] in (b'{',b'[',b'<')) else ''
+    if detail:
+        raise ValueError('OpenTopography místo GeoTIFFu vrátilo zprávu serveru: '+detail)
+    kind=('GZIP' if header.startswith(b'\\x1f\\x8b') else
+          'PNG' if header.startswith(b'\\x89PNG') else
+          'PDF' if header.startswith(b'%PDF') else
+          'neznámý binární formát')
+    raise ValueError(
+        f'OpenTopography odpovědělo HTTP 200, ale poslalo {kind} '
+        f'(Content-Type: {content_type or "neuveden"}), nikoli GeoTIFF. '
+        'Neplatná data se neuložila do DEM cache.')
+
+
 def download(c, key, dataset, progress=lambda *args: None, bbox=None, force=False):
     import rasterio
     if dataset not in DATASETS:
@@ -976,8 +1049,15 @@ def download(c, key, dataset, progress=lambda *args: None, bbox=None, force=Fals
     cache.mkdir(parents=True, exist_ok=True)
     dest = cache / (dataset + '_' + digest + '.tif')
     if dest.exists() and not force:
-        progress('Používám uložený výřez terénu.')
-        return dest
+        try:
+            _validated_dem(dest)
+            progress('Používám ověřený uložený výřez terénu.')
+            return dest
+        except (ValueError, OSError, rasterio.errors.RasterioIOError):
+            # Do not trust a preexisting .tif just because the name matches.
+            # Never delete a shared cache entry while another run may use it:
+            # overwrite only after the replacement has been validated.
+            progress('Neplatná DEM cache; stahuji nový ověřený GeoTIFF.')
     url = ENDPOINT + '?' + urllib.parse.urlencode(dict(params, API_Key=key.strip()))
     fd, tmp = tempfile.mkstemp(suffix='.tif', dir=cache)
     os.close(fd)
@@ -1006,42 +1086,14 @@ def download(c, key, dataset, progress=lambda *args: None, bbox=None, force=Fals
                 out.write(chunk)
                 progress(f'Stahuji terén: {total / 1048576:.1f} MB')
 
-        # TIFF / BigTIFF magic bytes. Když server vrátí JSON/HTML s HTTP 200,
-        # zobrazíme skutečnou zprávu namísto obecného "neplatný rastr".
         prefix = bytes(response_prefix)
-        tiff_magic = (
-            prefix.startswith(b'II*\x00') or prefix.startswith(b'MM\x00*') or
-            prefix.startswith(b'II+\x00') or prefix.startswith(b'MM\x00+')
-        )
-        textual_type = any(token in content_type for token in
-                           ('text/', 'json', 'xml', 'html', 'javascript'))
-
-        if not tiff_magic and (textual_type or prefix[:1] in (b'{', b'[', b'<')):
-            detail = _opentopo_error_message(prefix, content_type)
-            if detail:
-                raise ValueError(
-                    'OpenTopography místo GeoTIFFu vrátilo zprávu serveru:\n\n'
-                    + detail
-                )
-            raise ValueError(
-                f'OpenTopography místo GeoTIFFu vrátilo typ {content_type or "neznámý obsah"}.'
-            )
-
+        _normalize_dem_payload(tmp,prefix,content_type,progress)
         try:
-            with rasterio.open(tmp) as ds:
-                if not ds.crs:
-                    raise ValueError('rastr nemá CRS')
-                if ds.count < 1:
-                    raise ValueError('rastr nemá datové pásmo')
-                if ds.width < 1 or ds.height < 1:
-                    raise ValueError('rastr má nulový rozměr')
-        except Exception as exc:
-            detail = _opentopo_error_message(prefix, content_type)
-            suffix = f' Server: {detail}' if detail else ''
+            _validated_dem(tmp)
+        except (ValueError,OSError,rasterio.errors.RasterioIOError) as exc:
             raise ValueError(
-                'OpenTopography stáhlo soubor, ale Rasterio jej neumí otevřít jako '
-                f'platný georeferencovaný GeoTIFF ({exc}).'
-                + suffix
+                'Odpověď OpenTopography není platný georeferencovaný GeoTIFF: '
+                + str(exc) + '. Cache nebyla změněna.'
             ) from None
         os.replace(tmp, dest)
         return dest
