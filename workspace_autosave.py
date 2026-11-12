@@ -44,7 +44,8 @@ RADAR_FIELDS=(
 )
 # Only options/geometry that are safe to preserve as simple values; don't
 # inadvertently serialize large geodata, credentials or uploaded files.
-OTHER_FIELDS=("ws_section","ws_map_level","ws_display_mode","ws_radar_ui_mode")
+OTHER_FIELDS=("ws_section","ws_map_level","ws_display_mode","ws_radar_ui_mode",
+              "_radar_mode_profiles")
 
 def _root():
     configured=os.environ.get("COVERAGEDIAGRAMS_DRAFT_DIR","").strip()
@@ -68,6 +69,22 @@ def path_for(token):
 
 def _clean(key,value):
     """Ignore unserializable values and constrain payload shape/size."""
+    if key=="_radar_mode_profiles":
+        if not isinstance(value,dict) or set(value)-{"PSR","SSR","ASR","PAR"}:
+            return None
+        cleaned={}
+        for mode,fields in value.items():
+            if not isinstance(fields,dict) or len(fields)>len(RADAR_FIELDS):
+                return None
+            profile={}
+            for field,item in fields.items():
+                if field not in RADAR_FIELDS:
+                    return None
+                valid=_clean(field,item)
+                if valid is not None:
+                    profile[field]=valid
+            cleaned[mode]=profile
+        return cleaned
     if key in ("ws_levels","_par_saved_levels"):
         if not isinstance(value,(list,tuple)) or len(value)>500:
             return None
