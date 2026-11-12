@@ -151,7 +151,7 @@ const BASES={
  opentopo:["https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png","© OpenTopoMap, OpenStreetMap"]
 };
 const COLORS=["#3fa7fa","#21d7bf","#dc8aff","#ffb058","#fc647e","#a6d67b"];
-let layers=new Map(),map=null,base=null,rangeShape=null,openedEditor=null;
+let layers=new Map(),map=null,base=null,rangeShape=null,openedEditor=null,vectorRenderer=null;
 let setting={base:"dark",labels:true,legend:true,range:false,nm:20};
 let layerSeq=0,chosenBase="dark",radarCenter=DATA.center||[50,15],legendControl=null;
 const escapeHTML=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -175,7 +175,7 @@ function styleOf(o){return {color:o.style.color,weight:o.style.width,opacity:1,f
 function ensureGeo(o){
  if(o.geo)return;
  o.geo=L.geoJSON({type:"FeatureCollection",features:o.features},{
-  renderer:L.canvas({padding:.5}),
+  renderer:vectorRenderer,
   style:()=>styleOf(o),
   pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,...styleOf(o)}),
   onEachFeature:(f,l)=>{const p=f.properties||{};const name=p.name||p.Name||p.title;
@@ -363,6 +363,7 @@ function setup(){
  if(!window.L){status("Leaflet se nepodařilo načíst. Zkontroluj připojení nebo blokování CDN.");return}
  map=L.map("map",{center:radarCenter,zoom:7,preferCanvas:true,zoomControl:false,
    zoomAnimation:false,fadeAnimation:false,attributionControl:true});
+ vectorRenderer=L.canvas({padding:.5});
  L.control.zoom({position:"topright"}).addTo(map);L.control.scale({position:"bottomright",imperial:false}).addTo(map);
  selectBase("dark");
  for(const [name,features] of Object.entries(DATA.layers||{}))addLayer(name,features,DATA.styles?.[name],false);
