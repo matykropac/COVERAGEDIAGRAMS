@@ -2655,8 +2655,9 @@ def render_workspace():
                         st.slider("Průhlednost",0.,1.,.42,.05,key="ws_map_opacity",
                                   label_visibility="collapsed")
                 if st.session_state.get("ws_par_aiming") and config.radar_mode=="PAR-NG":
-                    st.info("⌖ PAR SMĚROVÁNÍ · Klikni do mapy na požadovaný "
-                            "směr osy od radaru. Zobrazí se sektor ±15°.")
+                    st.info("⌖ PAR SMĚROVÁNÍ · Pohybem kurzoru otáčíš oběma sektory "
+                            "±15°. Kliknutím směr potvrdíš. MAGNET přichytává "
+                            "k rovnoběžce nebo kolmici RWY (±8°).")
                     reference=(_par_helper_context() or {}).get("runway")
                     if reference:
                         end=int(st.session_state.get("ws_runway_end",0))
