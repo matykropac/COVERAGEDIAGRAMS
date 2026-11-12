@@ -6,7 +6,7 @@ from zipfile import ZipFile
 from xml.etree import ElementTree as ET
 
 from position_export import (
-    make_layer_features, kml_bytes, kmz_bytes, geojson_bytes,
+    make_layer_features, par_helper_features, kml_bytes, kmz_bytes, geojson_bytes,
 )
 
 
@@ -50,11 +50,29 @@ class PositionExportTests(unittest.TestCase):
 
     def test_export_without_calculated_radar_result(self):
         features=self._build()
-        self.assertEqual(len(features),7)
+        self.assertEqual(len(features),8)
         by_layer={f["properties"]["layer"] for f in features}
         self.assertEqual(by_layer,{
-            "RUNWAY_CENTERLINE","RUNWAY_THRESHOLDS","RUNWAY_MIDPOINT",
+            "RUNWAY_CENTERLINE","RUNWAY_EXTENDED_AXIS","RUNWAY_THRESHOLDS","RUNWAY_MIDPOINT",
             "CTR","OBSTACLES","GEODATA_FOREST"})
+
+    def test_par_axis_sector_and_runway_parallel_export_to_kml(self):
+        helpers=par_helper_features(
+            site_lat=-22.48,site_lon=17.48,bearing_deg=96.4,
+            range_km=40,runway=RUNWAY,runway_end=0)
+        labels={f["properties"]["name"] for f in helpers}
+        self.assertIn("PAR · osa",labels)
+        self.assertIn("PAR · levá hranice −15°",labels)
+        self.assertIn("PAR · pravá hranice +15°",labels)
+        self.assertIn("PAR · rovnoběžka RWY 08 / 26",labels)
+        self.assertIn("PAR · vnější oblouk ±15°",labels)
+        self.assertIn("RANGE · 260 NM",labels)
+        parallel=[f for f in helpers if f["properties"]["layer"]=="PAR_RUNWAY_REFERENCE"][0]
+        self.assertEqual(parallel["geometry"]["coordinates"][1],[17.48,-22.48])
+        xml=ET.fromstring(kml_bytes(helpers))
+        ns={"k":"http://www.opengis.net/kml/2.2"}
+        self.assertEqual(len(xml.findall(".//k:Placemark",ns)),len(helpers))
+        self.assertEqual(len(xml.findall(".//k:LineString",ns)),len(helpers)-1)
 
     def test_kml_kmz_and_geojson_preserve_geometry_and_attributes(self):
         features=self._build()
