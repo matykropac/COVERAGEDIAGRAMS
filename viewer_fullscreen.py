@@ -329,7 +329,9 @@ function renderLayerRow(o,filter){
   for(const [label,key,type,value] of fields){
    const div=document.createElement("div");div.className="field";
    const lbl=document.createElement("label");lbl.textContent=label;
-   const input=document.createElement("input");input.type=type;input.value=value;
+   const input=document.createElement(type==="select"?"select":"input");
+   if(type!=="select")input.type=type;
+   input.value=value;
    if(key==="opacity"||key==="strokeOpacity"){input.min=0;input.max=100;input.step=5}
    if(key==="width"){input.min=.5;input.max=12;input.step=.5}
    if(key==="radius"){input.min=1;input.max=16;input.step=1}
