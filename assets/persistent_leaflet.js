@@ -329,28 +329,6 @@ function init(s) {
       selectTerrainPoint(s,ev.latlng);
     }
   });
-  s.parAimBox=s.root.querySelector("#cd-par-aim-control");
-  s.parAzInput=s.root.querySelector("#cd-par-azimuth");
-  const parApply=s.root.querySelector("#cd-par-apply");
-  const submitPar=()=>{
-    const az=Number(s.parAzInput?.value);
-    if(!s.parAzInput?.value?.trim()||!Number.isFinite(az)||az<0||az>=360){
-      if(s.parAzInput){s.parAzInput.setCustomValidity("Zadej azimut 0 až 359,99°.");s.parAzInput.reportValidity();}
-      return;
-    }
-    s.parAzInput.setCustomValidity("");
-    s.trigger("action",{type:"par_aim",bearing:az,
-                           id:Date.now()+"-"+Math.random().toString(36).slice(2)});
-  };
-  if(parApply)parApply.addEventListener("click",submitPar);
-  if(s.parAzInput){
-    s.parAzInput.addEventListener("keydown",event=>{
-      if(event.key==="Enter"){event.stopPropagation();submitPar();}
-    });
-    // Avoid Leaflet handling keyboard events from the numeric input.
-    L.DomEvent.disableClickPropagation(s.parAimBox);
-    L.DomEvent.disableScrollPropagation(s.parAimBox);
-  }
   s.profilePanel=s.root.querySelector("#cd-terrain-panel");
   s.profileCanvas=s.root.querySelector("#cd-terrain-canvas");
   s.profileSummary=s.root.querySelector("#cd-terrain-summary");
@@ -592,12 +570,6 @@ function updateEnvironment(s,data){
   }
 }
 function updateMode(s,data) {
-  if(s.parAimBox)s.parAimBox.hidden=data.tool!=="PAR_AIM";
-  if(s.parAzInput&&data.tool==="PAR_AIM"&&
-     s.last.parAimBearing!==data.parSector?.bearing){
-    s.parAzInput.value=Number(data.parSector?.bearing||0).toFixed(2);
-    s.last.parAimBearing=data.parSector?.bearing;
-  }
   if(s.last.tool===data.tool)return;
   s.last.tool=data.tool;
   if(s.controls.draw){s.map.removeControl(s.controls.draw);s.controls.draw=null;}
@@ -681,7 +653,7 @@ function updateParSector(s,data){
   const enabled=cfg.enabled===true;
   const sig=JSON.stringify([enabled,cfg.lat,cfg.lon,cfg.bearing,cfg.rangeKm,
                             cfg.referenceRunway?.key,cfg.referenceRunway?.heading_deg_true,
-                            cfg.referenceEnd]);
+                            cfg.referenceEnd,data.tool==="PAR_AIM"]);
   if(s.last.parSector===sig)return;
   s.last.parSector=sig;
   s.groups.parSector.clearLayers();
@@ -723,6 +695,44 @@ function updateParSector(s,data){
     .bindTooltip("PAR OSA · "+az.toFixed(2)+"° TRUE").addTo(s.groups.parSector);
   L.circleMarker(axis,{radius:5,color:"#ffe5a0",weight:2,
     fillColor:"#f8cf67",fillOpacity:1,interactive:false}).addTo(s.groups.parSector);
+  // In-map control is anchored inside the wedge, not a detached screen panel.
+  // It moves with pan/zoom and never resizes/recreates Leaflet.
+  const aiming=data.tool==="PAR_AIM";
+  const inside=parDestination(lat,lon,az,distance*.52);
+  const markup=aiming
+    ? '<div class="cd-par-inside-editor"><div class="cd-par-inside-title">⌖ OSA PAR · ±15°</div>'+
+      '<div class="cd-par-inside-row"><input class="cd-par-angle" type="number" min="0" max="359.99" step="0.01" value="'+
+      az.toFixed(2)+'" aria-label="TRUE azimut PAR"><button type="button" class="cd-par-confirm">✓</button></div>'+
+      '<small>Klikni také do mapy pro směr</small></div>'
+    : '<div class="cd-par-inside-label">PAR · '+az.toFixed(2)+'° TRUE <small>±15°</small></div>';
+  const label=L.marker(inside,{
+    interactive:aiming,keyboard:false,
+    icon:L.divIcon({html:markup,className:"cd-par-inside-icon",iconSize:[0,0]})
+  }).addTo(s.groups.parSector);
+  if(aiming){
+    const root=label.getElement()?.querySelector(".cd-par-inside-editor");
+    const input=root?.querySelector(".cd-par-angle");
+    const button=root?.querySelector(".cd-par-confirm");
+    if(root&&input&&button){
+      L.DomEvent.disableClickPropagation(root);
+      L.DomEvent.disableScrollPropagation(root);
+      const submit=()=>{
+        const bearing=Number(input.value);
+        if(!input.value.trim()||!Number.isFinite(bearing)||bearing<0||bearing>=360){
+          input.setCustomValidity("Zadej azimut od 0 do 359,99°.");
+          input.reportValidity();return;
+        }
+        input.setCustomValidity("");
+        s.trigger("action",{type:"par_aim",bearing,
+                              id:Date.now()+"-"+Math.random().toString(36).slice(2)});
+      };
+      button.addEventListener("click",submit);
+      input.addEventListener("keydown",ev=>{
+        ev.stopPropagation();
+        if(ev.key==="Enter"){ev.preventDefault();submit();}
+      });
+    }
+  }
 }
 function updateRange(s,data){
   const nm=Number(data.rangeNm||20);
