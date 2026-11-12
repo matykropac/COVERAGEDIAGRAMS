@@ -76,6 +76,21 @@ class PositionExportTests(unittest.TestCase):
         self.assertEqual(len(xml.findall(".//k:Placemark",ns)),len(helpers))
         self.assertEqual(len(xml.findall(".//k:LineString",ns)),len(helpers)-1)
 
+    def test_two_runways_export_all_parallel_and_perpendicular_guides(self):
+        second=dict(RUNWAY,key="second",label="17 / 35",
+                    heading_deg_true=175.0)
+        guides=par_helper_features(
+            site_lat=-22.48,site_lon=17.48,bearing_deg=96.4,
+            range_km=40,runways=[RUNWAY,second],include_range=False)
+        refs=[f for f in guides if f["properties"]["layer"]=="PAR_RUNWAY_REFERENCE"]
+        self.assertEqual(len(refs),4)
+        names={f["properties"]["name"] for f in refs}
+        for label in ("08 / 26","17 / 35"):
+            self.assertIn("PAR · rovnoběžka RWY "+label,names)
+            self.assertIn("PAR · kolmice RWY "+label,names)
+        for item in refs:
+            self.assertEqual(item["geometry"]["coordinates"][1],[17.48,-22.48])
+
     def test_kml_kmz_and_geojson_preserve_geometry_and_attributes(self):
         features=self._build()
         kml=kml_bytes(features)
