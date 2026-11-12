@@ -38,6 +38,7 @@ def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
             "maxElev": float(cfg.max_elev),
             "bearing": float(cfg.bearing_deg),
             "radarMode": str(cfg.radar_mode),
+            "sectorEdgeLoss": float(getattr(result.get("antenna_pattern"), "sector_edge_loss_db", 6.0)),
             "levels": levels,
             "status": {},
         }
@@ -520,7 +521,7 @@ function showInspection(){
   "Elevace cíle: "+angle.toFixed(3)+"° · překážkový horizont: "+(Number.isFinite(maxAngle)?maxAngle.toFixed(3):"N/A")+"°\n"+
   "Limitní terén: "+(blocker>=0?(ranges[blocker]/1000).toFixed(3)+" km / "+samples[blocker].toFixed(1)+" m AMSL":"N/A")+"\n"+
   "Model Země: R = 6371008,8 m × k "+grid.k+" · krok azimutu a vzdálenosti je diskrétní.\n"+
-  (grid.radarMode==="PAR-NG"?"Sektorový útlum PAR: "+(1.5*Math.min(1,Math.abs(((grid.az[i]-grid.bearing+540)%360)-180)/15)).toFixed(3)+" dB (0 dB na ose, −1,5 dB na okrajích).\\n":"")+
+  (grid.radarMode==="PAR-NG"?"Sektorový útlum PAR: "+(grid.sectorEdgeLoss*(Math.min(1,Math.abs(((grid.az[i]-grid.bearing+540)%360)-180)/15)**2)).toFixed(3)+" dB (kvadraticky, −"+grid.sectorEdgeLoss.toFixed(1)+" dB na okrajích).\\n":"")+
   "Závěr pochází přímo z masky krytí EDITORU; profil z původních vzorků DEM.";
  drawProfile(ranges,samples,d,target);
 }
