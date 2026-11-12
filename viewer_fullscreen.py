@@ -188,6 +188,15 @@ font-size:11px;pointer-events:none;max-width:50vw}
    <div class="field"><label for="range-on">RANGE kružnice</label><input id="range-on" type="checkbox"></div>
    <div class="field"><label for="range">RANGE [NM]</label><input id="range" type="range" min="1" max="260" value="20"><strong id="range-text">20</strong></div>
    <div class="muted" id="range-center">Střed: radar</div>
+   <h3 style="margin-top:24px">OBLAST PRO STAŽENÍ DAT</h3>
+   <div class="note" id="extent-source">Hledám hranici nejvyšší vypočtené letové hladiny…</div>
+   <div class="actions"><button id="extent-auto" class="primary">◎ Podle nejvyšší FL</button><button id="extent-fit">Zobrazit oblast</button></div>
+   <div class="field"><label for="extent-south">Jih / LAT min</label><input id="extent-south" type="number" min="-90" max="90" step=".000001" placeholder="S"></div>
+   <div class="field"><label for="extent-north">Sever / LAT max</label><input id="extent-north" type="number" min="-90" max="90" step=".000001" placeholder="N"></div>
+   <div class="field"><label for="extent-west">Západ / LON min</label><input id="extent-west" type="number" min="-180" max="180" step=".000001" placeholder="W"></div>
+   <div class="field"><label for="extent-east">Východ / LON max</label><input id="extent-east" type="number" min="-180" max="180" step=".000001" placeholder="E"></div>
+   <div class="actions"><button id="extent-export" class="ghost wide">⇩ STÁHNOUT OBLAST · GEOJSON</button></div>
+   <p class="muted">Obdélník přesně zahrnuje vnější okraj polygonů krytí nejvyšší dostupné FL. Hodnoty lze upravit ručně. GeoJSON určuje geografickou oblast pro následné stažení DEM; neobsahuje samotný výškový rastr.</p>
    <h3 style="margin-top:24px">EXPORT</h3>
    <div class="actions"><button id="save-geo">GeoJSON</button><button id="save-project">Projekt CDVIEW</button></div>
    <p class="muted">GeoJSON obsahuje právě zobrazené objekty. CDVIEW uchovává všechny vrstvy, nastavení, jejich barvy a viditelnost.</p>
@@ -230,6 +239,7 @@ let layers=new Map(),map=null,base=null,rangeShape=null,openedEditor=null,vector
 let grid=null, inspectEnabled=false, selectedPoint=null, inspectionLine=null, inspectionMarker=null;
 let lastProfile=null;
 let placingRadar=false, demController=null, demRequest=0, radarMarker=null;
+let extentRectangle=null,extentLevel=null,extentSelectedFeatures=[],extentGeometry=null;
 let radarKnown=Boolean(DATA.radarKnown);
 const demCache=new Map();
 let setting={base:"dark",labels:true,legend:true,range:false,nm:20};
@@ -248,7 +258,7 @@ function addLayer(name,features,style,rerender=true){
  if(!good.length)return;
  let unique=String(name||"Layer");let index=2;while(layers.has(unique))unique=String(name||"Layer")+" ("+(index++)+")";
  layers.set(unique,{name:unique,features:good,style:initialStyle(style,layerSeq++),geo:null,attached:false});
- if(rerender){refreshList();syncAll();fitAll()}
+ if(rerender){refreshList();syncAll();fitAll();updateExtentPreset()}
 }
 function resetLayers(){for(const o of layers.values())if(o.geo)map.removeLayer(o.geo);layers.clear();openedEditor=null}
 function styleOf(o){return {color:o.style.color,weight:o.style.width,opacity:1,fillColor:o.style.color,fillOpacity:o.style.opacity}}
@@ -422,7 +432,7 @@ async function loadFile(file){
     if(++idx>300)throw Error("Příliš mnoho vrstev");addLayer(name,features,obj.styles[name],false)}
   setting.base=BASES[obj.settings?.viewer_basemap]?obj.settings.viewer_basemap:(
     Object.keys(BASES).includes(obj.settings?.base)?obj.settings.base:"dark");
-  selectBase(setting.base);refreshList();syncAll();fitAll();
+  selectBase(setting.base);refreshList();syncAll();fitAll();updateExtentPreset();
   return "Projekt načten: "+layers.size+" vrstev";
  }
  let xml=null;
@@ -442,7 +452,7 @@ async function loadFile(file){
   if(!Array.isArray(fs))throw Error("Nepodporovaný GeoJSON");
   addLayer(file.name,fs,null,false);
  }else throw Error("Nepodporovaný formát");
- refreshList();syncAll();fitAll();return "Načteno: "+file.name;
+ refreshList();syncAll();fitAll();updateExtentPreset();return "Načteno: "+file.name;
 }
 async function importFiles(files){
  let messages=[],errors=[];
@@ -461,6 +471,115 @@ async function saveCDView(){
  for(const o of layers.values()){data.layers[o.name]=o.features;data.styles[o.name]=o.style}
  const zip=new JSZip();zip.file("viewer.json",JSON.stringify(data));
  download("COVERAGEDIAGRAMS_viewer.cdview",await zip.generateAsync({type:"blob",compression:"DEFLATE"}));
+}
+function selectedCoverageLevel(layerName){
+ // Only radar coverage layers; unrelated imported/airport layer names are ignored.
+ const label=String(layerName);
+ if(!/^RADAR\s*\//i.test(label))return null;
+ const match=label.match(/(?:^|\/)\s*([\d\s,.]+)\s*ft\b/i);
+ if(!match)return null;
+ const ft=Number(match[1].replace(/[\s,.]/g,""));
+ return Number.isFinite(ft)&&ft>=0?ft:null;
+}
+function coverageCoordinatePairs(geometry,output){
+ if(!geometry)return;
+ if(geometry.type==="GeometryCollection"){
+  for(const child of geometry.geometries||[])coverageCoordinatePairs(child,output);
+  return;
+ }
+ if(!["Polygon","MultiPolygon"].includes(geometry.type))return;
+ const visit=value=>{
+  if(!Array.isArray(value))return;
+  if(value.length>=2&&typeof value[0]==="number"&&typeof value[1]==="number"){
+   if(Number.isFinite(value[0])&&Number.isFinite(value[1])&&
+      Math.abs(value[0])<=180&&Math.abs(value[1])<=90)output.push(value);
+   return;
+  }
+  for(const child of value)visit(child);
+ };
+ visit(geometry.coordinates);
+}
+function boundsFromHighestFlightLevel(){
+ let top=-Infinity;const candidates=[];
+ for(const layer of layers.values()){
+  const level=selectedCoverageLevel(layer.name);
+  if(level===null)continue;
+  const points=[];
+  for(const feature of layer.features)coverageCoordinatePairs(feature.geometry,points);
+  if(!points.length)continue;
+  if(level>top){top=level;candidates.length=0}
+  if(level===top)candidates.push({layer,points});
+ }
+ if(!candidates.length)return null;
+ const all=candidates.flatMap(item=>item.points);
+ const longitudes=all.map(v=>v[0]),latitudes=all.map(v=>v[1]);
+ const west=Math.min(...longitudes),east=Math.max(...longitudes);
+ const south=Math.min(...latitudes),north=Math.max(...latitudes);
+ if(!(south<north&&west<east))return null;
+ // A conventional bbox would span nearly the entire globe at the dateline.
+ if(east-west>180)return {invalid:"Zvolená FL překračuje poledník ±180°. Jednoduchý W/E obdélník by byl chybný."};
+ return {south,north,west,east,level:top,
+         features:candidates.flatMap(item=>item.layer.features.filter(f=>
+           f.geometry&&["Polygon","MultiPolygon"].includes(f.geometry.type)))};
+}
+function currentExtent(){
+ const values=["south","north","west","east"].map(key=>Number($("extent-"+key).value));
+ if(values.some((v,i)=>!$("extent-"+["south","north","west","east"][i]).value.trim()||!Number.isFinite(v)))return null;
+ const [south,north,west,east]=values;
+ if(!(south>=-90&&north<=90&&south<north&&west>=-180&&east<=180&&west<east))return null;
+ return {south,north,west,east};
+}
+function showExtentRectangle(){
+ if(extentRectangle){map.removeLayer(extentRectangle);extentRectangle=null}
+ const b=currentExtent();
+ if(!b)return;
+ extentRectangle=L.rectangle([[b.south,b.west],[b.north,b.east]],{
+  color:"#ffbf69",weight:2,dashArray:"7,5",fillOpacity:.05,interactive:false
+ }).addTo(map);
+}
+function updateExtentPreset(){
+ const found=boundsFromHighestFlightLevel();
+ if(!found||found.invalid){
+  extentLevel=null;extentSelectedFeatures=[];
+  $("extent-source").textContent=found?.invalid||
+    "Žádná vypočtená FL s polygonovým krytím není načtena. Zadej rozsah ručně.";
+  return;
+ }
+ extentLevel=found.level;
+ extentSelectedFeatures=found.features;
+ const spanLat=found.north-found.south,spanLon=found.east-found.west;
+ // Small margin ensures that the exported bbox fully encloses the outer edge
+ // after decimal rounding; avoid unbounded radius assumptions.
+ const padLat=Math.max(.0001,spanLat*.01);
+ const padLon=Math.max(.0001,spanLon*.01);
+ const bounds={
+  south:Math.max(-90,found.south-padLat),
+  north:Math.min(90,found.north+padLat),
+  west:Math.max(-180,found.west-padLon),
+  east:Math.min(180,found.east+padLon)
+ };
+ for(const key of ["south","north","west","east"])
+   $("extent-"+key).value=bounds[key].toFixed(6);
+ $("extent-source").textContent="Automatický rozsah: nejvyšší FL "+
+  found.level.toLocaleString("cs")+" ft · "+found.features.length+
+  " polygonů, 1 % bezpečnostní okraj. Můžeš změnit souřadnice.";
+ showExtentRectangle();
+}
+function downloadExtentGeoJSON(){
+ const b=currentExtent();
+ if(!b){notify("Oblast není platná. Zkontroluj S/N/W/E souřadnice.",true);return}
+ const ring=[[b.west,b.south],[b.east,b.south],[b.east,b.north],
+             [b.west,b.north],[b.west,b.south]];
+ const data={type:"FeatureCollection",features:[{
+  type:"Feature",
+  properties:{name:"DEM download extent",highest_flight_level_ft:extentLevel,
+   coordinate_reference_system:"EPSG:4326",
+   south:b.south,north:b.north,west:b.west,east:b.east,
+   note:"Bounding box includes outermost coverage polygon of highest available FL; not a DEM raster."},
+  geometry:{type:"Polygon",coordinates:[ring]}
+ }]};
+ download("COVERAGEDIAGRAMS_DEM_extent_FL"+(extentLevel??"manual")+".geojson",
+          new Blob([JSON.stringify(data)],{type:"application/geo+json"}));
 }
 function saveGeo(){
  const fs=[];for(const o of layers.values())if(o.style.show)fs.push(...o.features);
@@ -811,7 +930,7 @@ function setup(){
  L.control.zoom({position:"topright"}).addTo(map);L.control.scale({position:"bottomright",imperial:false}).addTo(map);
  selectBase("dark");
  for(const [name,features] of Object.entries(DATA.layers||{}))addLayer(name,features,DATA.styles?.[name],false);
- refreshList();syncAll();fitAll();$("range-center").textContent="Radar: "+radarCenter.map(x=>Number(x).toFixed(6)+"°").join(" / ");
+ refreshList();syncAll();fitAll();updateExtentPreset();$("range-center").textContent="Radar: "+radarCenter.map(x=>Number(x).toFixed(6)+"°").join(" / ");
  loadDiagnostics();
  $("inspect").onclick=()=>{
   inspectEnabled=!inspectEnabled;$("inspect").setAttribute("aria-pressed",String(inspectEnabled));
@@ -871,7 +990,7 @@ function setup(){
  $("all").onclick=()=>{for(const o of layers.values())o.style.show=true;refreshList();syncAll()};
  $("none").onclick=()=>{for(const o of layers.values())o.style.show=false;refreshList();syncAll()};
  $("invert").onclick=()=>{for(const o of layers.values())o.style.show=!o.style.show;refreshList();syncAll()};
- $("clear").onclick=()=>{if(!confirm("Odstranit všechny načtené vrstvy?"))return;resetLayers();refreshList();refreshLegend();notify("Vrstvy odstraněny")};
+ $("clear").onclick=()=>{if(!confirm("Odstranit všechny načtené vrstvy?"))return;resetLayers();refreshList();refreshLegend();updateExtentPreset();notify("Vrstvy odstraněny")};
  $("base").onchange=e=>selectBase(e.target.value);
  $("labels").onchange=e=>{setting.labels=e.target.checked;for(const o of layers.values())if(o.geo)o.geo.eachLayer(l=>{
    if(l.getTooltip())l.getTooltip().options.opacity=setting.labels?1:0
@@ -879,6 +998,11 @@ function setup(){
  $("legend").onchange=e=>{setting.legend=e.target.checked;refreshLegend()};
  $("range-on").onchange=e=>{setting.range=e.target.checked;updateRange()};
  $("range").oninput=updateRange;
+ $("extent-auto").onclick=updateExtentPreset;
+ $("extent-fit").onclick=()=>{showExtentRectangle();const b=currentExtent();if(b)map.fitBounds([[b.south,b.west],[b.north,b.east]],{padding:[45,45]});};
+ $("extent-export").onclick=downloadExtentGeoJSON;
+ for(const key of ["south","north","west","east"])
+   $("extent-"+key).addEventListener("change",()=>{extentLevel=null;showExtentRectangle()});
  $("save-geo").onclick=saveGeo;$("save-project").onclick=()=>saveCDView().catch(e=>notify(e.message,true));
  let dragDepth=0;
  document.addEventListener("dragenter",e=>{e.preventDefault();dragDepth++;$("drop").classList.add("on")});
