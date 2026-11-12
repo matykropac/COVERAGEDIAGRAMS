@@ -109,11 +109,12 @@ def evaluate(pattern, elevation_rad, azimuth_deg, slant_range_m, *,
     safe_distance = np.maximum(distance_km, 1e-6)
     range_margin = 40.*np.log10(reference_range_km/safe_distance)
     extra_loss_db = 2.*loss_one_way + pattern.additional_loss_db
-    # Smooth sector-edge attenuation: 0 dB on boresight, -1.5 dB at ±15°.
-    # Applied to the monostatic 40 log10(range) link margin in both channels.
-    # At the edge this shortens the ideal range by 10**(-1.5/40) ≈ 8.27%.
+    # Scenario-only symmetric quadratic sector taper (not measured antenna gain).
+    # Applied once to link margin for each separately evaluated channel.
     azimuth = np.asarray(azimuth_deg, dtype=float)
-    edge_loss_db = 1.5 * np.clip(np.abs(azimuth) / 15.0, 0.0, 1.0)
+    edge_loss_db = float(getattr(pattern, "sector_edge_loss_db", 6.0)) * (
+        np.clip(np.abs(azimuth) / 15.0, 0.0, 1.0) ** 2
+    )
     extra_loss_db = extra_loss_db + edge_loss_db
     with np.errstate(divide="ignore", invalid="ignore"):
         margin_az = (range_margin+
@@ -138,6 +139,7 @@ def evaluate(pattern, elevation_rad, azimuth_deg, slant_range_m, *,
                 selected=selected,
                 az_margin_db=margin_az, el_margin_db=margin_el,
                 limiting_margin_db=limiting,
+                sector_edge_loss_db=edge_loss_db,
                 limiting_channel=np.where(margin_az <= margin_el, 0, 1))
 
 
