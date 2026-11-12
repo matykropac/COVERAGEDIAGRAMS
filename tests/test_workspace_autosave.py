@@ -99,6 +99,7 @@ class DraftRecoveryTests(TestCase):
             "ws_agl":31.7,"ws_bearing":173.4,
             "ws_par_channels":"BOTH",
             "ws_reference":"AMSL","ws_par_level_reference":"AMSL",
+            "ws_target_ft":3100,
             "_radar_active_step":"ANTÉNA",
             "ws_site_lat_input":"41.418200",
             "ws_site_lon_input":"19.735300",
@@ -123,7 +124,7 @@ class DraftRecoveryTests(TestCase):
         source=(Path(__file__).resolve().parents[1]/
                 "map_workspace.py").read_text(encoding="utf-8")
         for widget in ("ws_agl","ws_bearing","ws_min","ws_max","ws_tilt",
-                       "ws_step","ws_azstep","ws_k","ws_target",
+                       "ws_step","ws_azstep","ws_k","ws_target_ft",
                        "ws_par_scan_loss","ws_par_channels"):
             with self.subTest(widget=widget):
                 self.assertIn('on_change=_remember_radar_form,key="'+widget+'"',source)
