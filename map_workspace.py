@@ -2981,17 +2981,7 @@ def render_workspace():
             elif section=="VALIDACE":
                 _render_los_validation(result)
             elif section=="RADAR":
-                st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
-                st.caption("Souřadnice stanoviště jsou uchované v session a konceptu. "
-                           "Mapu přepni do výběru pouze tlačítkem níže.")
-                if st.button("⌖ VYBRAT STANOVIŠTĚ Z MAPY",
-                             key="ws_radar_site_from_section",
-                             use_container_width=True):
-                    _begin_radar_site_pick()
-                    st.rerun()
-                st.markdown(f"**LAT** {config.lat:.6f}° &nbsp; **LON** {config.lon:.6f}°",
-                            unsafe_allow_html=True)
-                st.markdown('<div class="cd-nav-title">VÝBĚR RADAROVÉHO SYSTÉMU</div>',
+                st.markdown('<div class="cd-nav-title">1 / ZVOL RADAROVÝ SYSTÉM</div>',
                             unsafe_allow_html=True)
                 radar_choices=(("PSR","SSR"),("ASR","PAR"))
                 for row_index,options in enumerate(radar_choices):
@@ -3006,6 +2996,19 @@ def render_workspace():
                                 radar_dialog()
                 st.caption("Vyber systém jedním kliknutím. Parametry jednotlivých "
                            "režimů zůstanou v rozpracovaném konceptu.")
+                st.markdown('<div class="cd-nav-title">2 / STANOVIŠTĚ RADARU</div>',
+                            unsafe_allow_html=True)
+                site=_current_radar_site()
+                if site is None:
+                    st.warning("Stanoviště není určeno. Žádné výchozí souřadnice "
+                               "se nepoužijí pro radar ani výpočet.")
+                else:
+                    st.caption(f"LAT {site[0]:.6f}° · LON {site[1]:.6f}°")
+                if st.button("⌖ URČIT STANOVIŠTĚ Z MAPY",
+                             key="ws_radar_site_from_section",
+                             use_container_width=True):
+                    _begin_radar_site_pick()
+                    st.rerun()
                 if st.button("⚙ Upravit aktuální "+_radar_ui_mode(),
                              key="ws_command_radar",use_container_width=True):
                     radar_dialog()
