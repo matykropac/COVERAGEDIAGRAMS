@@ -25,10 +25,10 @@ html,body,[data-testid="stApp"],[data-testid="stAppViewContainer"]{
 /* Sidebar becomes an overlay, instead of taking horizontal space away from Leaflet.
    Preserve Streamlit's own collapsed state and its accessible expand/collapse toggle. */
 section[data-testid="stSidebar"]{
-  position:fixed!important;left:16px!important;top:62px!important;
-  bottom:16px!important;height:calc(100dvh - 78px)!important;
-  width:min(560px,calc(100vw - 32px))!important;
-  min-width:0!important;max-width:min(560px,calc(100vw - 32px))!important;
+  position:fixed!important;left:30px!important;top:78px!important;
+  bottom:30px!important;height:calc(100dvh - 108px)!important;
+  width:min(510px,calc(100vw - 60px))!important;
+  min-width:0!important;max-width:min(510px,calc(100vw - 60px))!important;
   border:1px solid #42617a!important;border-radius:13px!important;
   box-shadow:0 18px 55px #000a!important;
   background:#0b2035f6!important;
@@ -43,19 +43,20 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{
   height:100%!important;overflow-y:auto!important;
   overscroll-behavior:contain!important;
-  padding:12px 12px 22px!important;
+  padding:9px 10px 16px!important;
   scrollbar-width:thin!important;
 }
 /* Keep the tool rail compact but allow the contextual controls to use the width. */
 section[data-testid="stSidebar"] .st-key-cd_nav_rail [data-testid="stButton"]>button{
-  min-height:43px!important;
+  min-height:37px!important;height:37px!important;
 }
 section[data-testid="stSidebar"] [data-testid="stExpander"]{
   border-radius:8px!important;
+  margin:4px 0!important;
 }
 /* Streamlit alert and status live on top of the map rather than shifting it. */
 .st-key-cd_editor_status{
-  position:fixed!important;top:14px;left:min(590px,calc(100vw - 330px));
+  position:fixed!important;top:22px;left:min(560px,calc(100vw - 330px));
   max-width:min(550px,calc(100vw - 36px));z-index:100002!important;
   padding:3px 9px!important;border:1px solid #345875!important;
   border-radius:10px!important;background:#0b2035e9!important;
@@ -76,9 +77,9 @@ section[data-testid="stSidebar"] [data-testid="stExpander"]{
 [data-testid="stBottom"],[data-testid="stBottomBlockContainer"]{
   display:none!important}
 @media(max-width:700px){
- section[data-testid="stSidebar"]{top:56px!important;left:8px!important;
-   bottom:8px!important;height:calc(100dvh - 64px)!important;
-   width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important}
+ section[data-testid="stSidebar"]{top:68px!important;left:14px!important;
+   bottom:14px!important;height:calc(100dvh - 82px)!important;
+   width:calc(100vw - 28px)!important;max-width:calc(100vw - 28px)!important}
  .st-key-cd_editor_status{top:10px;left:58px;right:12px;max-width:none}
 }
 </style>
