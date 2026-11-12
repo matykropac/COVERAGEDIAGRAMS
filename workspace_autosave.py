@@ -32,6 +32,7 @@ MAX_BYTES=65536
 RADAR_FIELDS=(
     "ws_radar","ws_lat","ws_lon","ws_radar_site","ws_agl","ws_psr_nm",
     "ws_bearing","ws_beam","ws_ssr_diagram",
+    "ws_site_lat_input","ws_site_lon_input","ws_radar_preview_enabled","ws_par_3d_view",
     "ws_min","ws_max","ws_tilt","ws_step","ws_azstep",
     "ws_k","ws_target","ws_reference","ws_source","ws_dataset",
     "ws_par_channels","ws_par_az_beam_step","ws_par_el_beam_step",
@@ -45,7 +46,7 @@ RADAR_FIELDS=(
 # Only options/geometry that are safe to preserve as simple values; don't
 # inadvertently serialize large geodata, credentials or uploaded files.
 OTHER_FIELDS=("ws_section","ws_map_level","ws_display_mode","ws_radar_ui_mode",
-              "_radar_mode_profiles")
+              "_radar_active_step","_radar_mode_profiles")
 
 def _root():
     configured=os.environ.get("COVERAGEDIAGRAMS_DRAFT_DIR","").strip()
@@ -98,13 +99,17 @@ def _clean(key,value):
         if any(type(x) is not int or not 1<=x<=66000 for x in value):
             return None
         return list(value)
-    if key in ("_par_levels_active","_par_levels_initialized"):
+    if key in ("_par_levels_active","_par_levels_initialized","ws_radar_preview_enabled"):
         return value if type(value) is bool else None
+    if key in ("ws_site_lat_input","ws_site_lon_input"):
+        return value if isinstance(value,str) and len(value)<=32 else None
+    if key=="_radar_active_step":
+        return value if value in ("STANOVIŠTĚ","ANTÉNA","TERÉN / MODEL","CÍL / FL") else None
     if key in ("ws_radar","ws_reference","ws_source","ws_beam",
                "ws_ssr_diagram","ws_par_channels","ws_par_quality",
                "ws_par_detection","ws_par_scan_mode",
                "ws_par_level_reference","ws_display_mode","ws_section",
-               "ws_dataset","ws_radar_ui_mode"):
+               "ws_dataset","ws_radar_ui_mode","ws_par_3d_view"):
         return value if isinstance(value,str) and len(value)<=90 else None
     if key in ("ws_par_pulses","ws_psr_nm","ws_map_level"):
         return value if type(value) is int and abs(value)<100000 else None
