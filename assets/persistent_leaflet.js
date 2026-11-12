@@ -72,7 +72,7 @@ function refreshControl(s) {
   const overlay={
     "Radarové krytí":s.groups.coverage,
     "RWY / Airport geometry":s.groups.airport,
-    "CTR / TMA · OpenAIP":s.groups.airspaces,
+    "RANGE · NM":s.groups.range,
     "Překážky":s.groups.obstacles,
     "Radar":s.groups.radar,
     "Další geodata":s.groups.environment,
@@ -299,6 +299,7 @@ function init(s) {
     coverage:L.featureGroup().addTo(s.map),
     airport:L.featureGroup().addTo(s.map),
     airspaces:L.featureGroup().addTo(s.map),
+    range:L.featureGroup().addTo(s.map),
     obstacles:L.featureGroup().addTo(s.map),
     radar:L.featureGroup().addTo(s.map),
     environment:L.featureGroup().addTo(s.map),
@@ -601,6 +602,23 @@ function updateLive(s,data) {
   fetchAircraft(s);
   s.timer=setInterval(()=>fetchAircraft(s),15000);
 }
+function updateRange(s,data){
+  const nm=Number(data.rangeNm||20);
+  const enabled=!!data.rangeEnabled;
+  const points=Array.isArray(data.rangeCircle)?data.rangeCircle:[];
+  const radar=data.radar||{};
+  const signature=JSON.stringify([enabled,nm,radar.lat,radar.lon]);
+  if(s.last.range===signature)return;
+  s.last.range=signature;
+  s.groups.range.clearLayers();
+  if(!enabled||points.length<3)return;
+  const circle=L.polygon(points,{
+    color:"#14b8ff",weight:2,opacity:0.95,fill:false,
+    dashArray:"7 5",interactive:true
+  });
+  circle.bindTooltip("RANGE · "+nm+" NM ("+(nm*1.852).toFixed(2)+" km)",{sticky:true});
+  circle.addTo(s.groups.range);
+}
 function update(s){
   if(!s.ready)return;
   const data=s.latest||{};
@@ -610,6 +628,7 @@ function update(s){
   updateCoverage(s,data);
   updateAirport(s,data);
   updateAirspaces(s,data);
+  updateRange(s,data);
   updateObstacles(s,data);
   updateRadar(s,data);
   updateProfile(s,data);
