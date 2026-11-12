@@ -179,7 +179,6 @@ def _position_nearby_controls():
         layers_dialog()
 
 
-@st.dialog("MAPA / EXPORT VRSTEV",width="large")
 def _par_helper_context():
     """Current editable radar configuration, plus the selected RWY reference."""
     cfg=_cfg()
@@ -195,6 +194,7 @@ def _par_helper_context():
     }
 
 
+@st.dialog("MAPA / EXPORT VRSTEV",width="large")
 def position_layers_export_dialog():
     """Export map layers without requiring an existing computed coverage."""
     st.caption("Vyber vrstvy pro QGIS / Google Earth. Radarový výpočet není potřeba. "
