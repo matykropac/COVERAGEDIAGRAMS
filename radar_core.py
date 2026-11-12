@@ -1015,6 +1015,32 @@ def _normalize_dem_payload(path, prefix, content_type, progress):
         except zipfile.BadZipFile:
             raise ValueError('OpenTopography vrátilo poškozený ZIP, nikoliv GeoTIFF.') from None
         return
+    if header.startswith(b'\x1f\x8b'):
+        import gzip
+        progress('OpenTopography vrátilo GZIP; rozbaluji GeoTIFF…')
+        temporary=str(path)+'.unpacked'
+        try:
+            with gzip.open(path,'rb') as src,open(temporary,'wb') as dest:
+                count=0
+                while True:
+                    chunk=src.read(1024*1024)
+                    if not chunk:
+                        break
+                    count+=len(chunk)
+                    if count>2_000_000_000:
+                        raise ValueError('Rozbalený DEM překračuje 2 GB.')
+                    dest.write(chunk)
+            with open(temporary,'rb') as candidate:
+                magic=candidate.read(4)
+            if magic not in (b'II*\x00',b'MM\x00*',b'II+\x00',b'MM\x00+'):
+                raise ValueError('Rozbalený GZIP neobsahuje GeoTIFF.')
+            os.replace(temporary,path)
+        except (EOFError, gzip.BadGzipFile):
+            raise ValueError('OpenTopography vrátilo neúplný nebo poškozený GZIP.') from None
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        return
     # Some HTTP 200 responses are an API error, even when Content-Type lies.
     detail=_opentopo_error_message(prefix,content_type) if (
         any(t in content_type for t in ('text/','json','xml','html'))
