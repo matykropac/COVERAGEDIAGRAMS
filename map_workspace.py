@@ -629,6 +629,11 @@ def _config_state_from_project(config):
     if config.radar_mode == "RL-2000":
         values["ws_psr_nm"] = min(core.PSR_RANGES_NM,key=lambda n:abs(core.radar_preset("RL-2000",n)-config.range_km))
     st.session_state.update(values)
+    # CDPROJ owns the physical radar mode; never keep an ASR/SSR/PAR label
+    # from a previously edited, unrelated project.
+    st.session_state["ws_radar_ui_mode"]={
+        "RL-2000":"PSR","SSR":"SSR","PAR-NG":"PAR"
+    }.get(config.radar_mode,"PSR")
     shadow=dict(st.session_state.get("_radar_form_shadow") or {})
     shadow.update(values)
     st.session_state["_radar_form_shadow"]=shadow
