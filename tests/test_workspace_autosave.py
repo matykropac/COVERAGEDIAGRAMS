@@ -70,6 +70,26 @@ class DraftRecoveryTests(TestCase):
         })
         self.assertEqual(payload,{"ws_radar":"PAR-NG","ws_step":500})
 
+    def test_separate_radar_profiles_survive_draft_round_trip(self):
+        profiles={
+            "PSR":{"ws_radar":"RL-2000","ws_psr_nm":100,"ws_step":25},
+            "SSR":{"ws_radar":"SSR","ws_agl":27.0},
+            "ASR":{"ws_radar":"RL-2000","ws_psr_nm":60},
+            "PAR":{"ws_radar":"PAR-NG","ws_bearing":187.45,
+                   "ws_par_channels":"BOTH"}
+        }
+        with tempfile.TemporaryDirectory() as temp, patch.dict(
+                "os.environ",{"COVERAGEDIAGRAMS_DRAFT_DIR":temp}):
+            token=draft.new_token()
+            self.assertTrue(draft.save_draft(token,{
+                "ws_radar_ui_mode":"PAR","_radar_mode_profiles":profiles}))
+            loaded=draft.read_draft(token)["fields"]
+            self.assertEqual(loaded["ws_radar_ui_mode"],"PAR")
+            self.assertEqual(loaded["_radar_mode_profiles"],profiles)
+            self.assertEqual(
+                draft.import_draft(draft.export_draft(loaded))
+                ["_radar_mode_profiles"]["PAR"]["ws_bearing"],187.45)
+
     def test_workspace_autosaves_before_expensive_preview(self):
         source=(Path(__file__).resolve().parents[1]/
                 "map_workspace.py").read_text(encoding="utf-8")
@@ -78,7 +98,7 @@ class DraftRecoveryTests(TestCase):
         self.assertIn('st.query_params["draft"]=token',source)
         self.assertIn('key="ws_radar_preview_enabled"',source)
         self.assertIn('if preview:',source)
-        self.assertIn('    _draft_checkpoint()\n    if st.session_state.get("_workspace_draft_error"):',source)
+        self.assertIn('    _remember_radar_form()\n    if st.session_state.get("_workspace_draft_error"):',source)
 
 
 if __name__=="__main__":
