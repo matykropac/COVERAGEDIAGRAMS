@@ -14,7 +14,7 @@ class ParAltitudeTests(unittest.TestCase):
         terrain=np.full((len(az),len(dist)),650.)
         result=core.solve(config,terrain,650.,core.builtin_par_pattern())
         self.assertTrue(all(ft in core.flight_levels_for("PAR-NG")
-                        for ft in (50,100,150,200,250,300,350,400,450,500)))
+                        for ft in (100,200,300,400,500,600,700,800,900)))
         below=core.status_at_height(result,50*core.FT_TO_M,"AMSL")
         above=core.status_at_height(result,50*core.FT_TO_M,"AGL")
         self.assertEqual(np.count_nonzero(below==1),0)
