@@ -139,7 +139,7 @@ def _geodesic_point(lat,lon,bearing,distance_m):
 
 
 def par_helper_features(*,site_lat,site_lon,bearing_deg,range_km=40.,
-                        runway=None,runway_end=0,include_range=True):
+                        runway=None,runways=None,runway_end=0,include_range=True):
     """Visible PAR engineering guides in WGS84; also exported unchanged to KML.
 
     Runway direction is indicative OurAirports TRUE heading, not verified AIP.
@@ -172,24 +172,31 @@ def par_helper_features(*,site_lat,site_lon,bearing_deg,range_km=40.,
         features.append(_feature("PAR_SCAN_GEOMETRY",
                                  f"PAR · vnější oblouk ±15° {part}",
                                  _line(arc),range_km=distance/1000))
-    if runway:
-        heading=float(runway["heading_deg_true"])
-        if int(runway_end)==1:heading=(heading+180)%360
+    references=list(runways) if runways else ([runway] if runway else [])
+    for reference in references:
+        # Every loaded runway defines two orthogonal reference axes through
+        # the radar, independently of which runway is selected in the editor.
+        heading=float(reference["heading_deg_true"])
+        if not math.isfinite(heading):
+            continue
+        if runway is reference and int(runway_end)==1:
+            heading=(heading+180)%360
+        label=str(reference.get("label",""))
+        attribution={
+            "bearing_true_deg":round(heading%360,6),
+            "source":str(reference.get("source","OurAirports")),
+            "verified_aip":bool(reference.get("verified_aip",False)),
+        }
         parallel=[_geodesic_point(lat,lon,heading+180,distance),
                   site,_geodesic_point(lat,lon,heading,distance)]
         features.append(_feature("PAR_RUNWAY_REFERENCE",
-             "PAR · rovnoběžka RWY "+str(runway.get("label","")),_line(parallel),
-             bearing_true_deg=round(heading,6),
-             source=str(runway.get("source","OurAirports")),
-             verified_aip=bool(runway.get("verified_aip",False))))
+             "PAR · rovnoběžka RWY "+label,_line(parallel),**attribution))
         perpendicular=[
             _geodesic_point(lat,lon,heading-90,distance),site,
             _geodesic_point(lat,lon,heading+90,distance)]
         features.append(_feature("PAR_RUNWAY_REFERENCE",
-             "PAR · kolmice RWY "+str(runway.get("label","")),_line(perpendicular),
-             bearing_true_deg=round((heading+90)%360,6),
-             source=str(runway.get("source","OurAirports")),
-             verified_aip=bool(runway.get("verified_aip",False))))
+             "PAR · kolmice RWY "+label,_line(perpendicular),
+             **dict(attribution,bearing_true_deg=round((heading+90)%360,6))))
     if include_range:
         for nm in range(20,261,20):
             # Existing RANGE circles used by the application, sampled 2°.
@@ -221,7 +228,8 @@ def make_layer_features(*,runways=(),airspaces=(),obstacles=(),environment=(),
         features.extend(par_helper_features(
             site_lat=par["lat"],site_lon=par["lon"],
             bearing_deg=par["bearing"],range_km=par.get("range_km",40),
-            runway=par.get("runway"),runway_end=par.get("runway_end",0)))
+            runway=par.get("runway"),runways=par.get("runways"),
+            runway_end=par.get("runway_end",0)))
     if len(features)>MAX_EXPORT_FEATURES:
         raise ValueError(f"Export překročil limit {MAX_EXPORT_FEATURES} prvků. Omez vrstvy.")
     return features
