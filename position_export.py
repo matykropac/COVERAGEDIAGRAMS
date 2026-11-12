@@ -61,6 +61,20 @@ def _airport_features(runways):
                        width_m=runway.get("width_m"),
                        source=runway.get("source","OurAirports"),
                        verified_aip=bool(runway.get("verified_aip",False)))
+        # Runway approach extension is a distinct line in the map and must
+        # remain independently selectable in the KML folder tree.
+        if runway.get("heading_deg_true") is not None:
+            heading=float(runway["heading_deg_true"])
+            start=_geodesic_point(points[0][0],points[0][1],
+                                  heading+180,10*1852)
+            end=_geodesic_point(points[1][0],points[1][1],
+                                heading,10*1852)
+            yield _feature("RUNWAY_EXTENDED_AXIS",
+                           airport+" · RWY axis extension 10 NM",
+                           _line([start,*points,end]),
+                           heading_true_deg=heading,
+                           source=runway.get("source","OurAirports"),
+                           verified_aip=bool(runway.get("verified_aip",False)))
         for idx,point in enumerate(runway.get("thresholds",[])):
             yield _feature("RUNWAY_THRESHOLDS",f"RWY {ends[idx]['ident']} THR",
                            {"type":"Point","coordinates":_check_point(*point)},
