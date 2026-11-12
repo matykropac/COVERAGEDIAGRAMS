@@ -246,8 +246,11 @@ class GenericSSRPattern(AntennaPattern):
         gains = a['ground_peak_gain_dbi'] + a['aircraft_gain_dbi'] + self.gain_db(elevation_rad, tilt_deg)
         losses = a['losses_per_link_db'] + a['margin_per_link_db']
         def distance(power, threshold, frequency):
-            wavelength = 299792458.0 / (frequency * 1e6)
-            return wavelength / (4*np.pi) * 10**((power + gains - losses - threshold)/20) / 1000
+            from radar_equations import friis_max_range_m
+            return friis_max_range_m(
+                tx_dbm=power, tx_gain_dbi=gains,
+                rx_gain_dbi=0.0, rx_threshold_dbm=threshold,
+                frequency_hz=frequency * 1e6, loss_db=losses) / 1000.0
         return (distance(a['interrogator_power_dbm'], a['transponder_threshold_dbm'], a['uplink_mhz']),
                 distance(a['transponder_power_dbm'], a['ground_threshold_dbm'], a['downlink_mhz']))
 
