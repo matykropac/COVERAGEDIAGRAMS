@@ -273,9 +273,9 @@ function geometry(node){
  const multi=[...node.children].find(x=>x.localName==="MultiGeometry");
  if(multi){const geometries=[...multi.children].map(geometry).filter(Boolean);
    return geometries.length?{type:"GeometryCollection",geometries}:null}
- const point=find(node,"Point");if(point){const c=coords(point);return c.length?{type:"Point",coordinates:c[0]}:null}
- const line=find(node,"LineString");if(line){const c=coords(line);return c.length>1?{type:"LineString",coordinates:c}:null}
- const poly=find(node,"Polygon");if(poly){
+ const point=node.localName==="Point"?node:find(node,"Point");if(point){const c=coords(point);return c.length?{type:"Point",coordinates:c[0]}:null}
+ const line=node.localName==="LineString"?node:find(node,"LineString");if(line){const c=coords(line);return c.length>1?{type:"LineString",coordinates:c}:null}
+ const poly=node.localName==="Polygon"?node:find(node,"Polygon");if(poly){
    const outer=find(poly,"outerBoundaryIs");const rings=[];
    if(outer)rings.push(coords(outer));for(const inner of all(poly,"innerBoundaryIs"))rings.push(coords(inner));
    return rings[0]?.length>=3?{type:"Polygon",coordinates:rings}:null}
