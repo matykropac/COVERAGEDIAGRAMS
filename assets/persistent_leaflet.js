@@ -319,8 +319,9 @@ function init(s) {
     }else if(tool==="PAR_AIM"){
       const radar=s.latest?.radar;
       if(!radar||!Number.isFinite(Number(radar.lat))||!Number.isFinite(Number(radar.lon)))return;
-      const {az}=geodesic([Number(radar.lat),Number(radar.lon)],ev.latlng);
-      s.trigger("action",{type:"par_aim",bearing:az,
+      const raw=geodesic([Number(radar.lat),Number(radar.lon)],ev.latlng).az;
+      const bearing=parSnapBearing(s,raw).bearing;
+      s.trigger("action",{type:"par_aim",bearing,
                             id:Date.now()+"-"+Math.random().toString(36).slice(2)});
     }else if(tool==="Validate"){
       s.trigger("action",{type:"validate_los",lat:ev.latlng.lat,lon:ev.latlng.lng,
@@ -328,6 +329,22 @@ function init(s) {
     }else if(tool==="Prohlížení"&&s.latest?.profile){
       selectTerrainPoint(s,ev.latlng);
     }
+  });
+  // Pointer preview stays entirely client-side; Streamlit gets just the final click.
+  s.map.on("mousemove",event=>{
+    if(s.latest?.tool!=="PAR_AIM"||!s.parGuide||s.parPointerInsideControl)return;
+    const cfg=s.latest?.parSector;
+    if(!cfg?.enabled)return;
+    const raw=geodesic([Number(cfg.lat),Number(cfg.lon)],event.latlng).az;
+    s.parPendingBearing=raw;
+    if(s.parAimFrame)return;
+    s.parAimFrame=requestAnimationFrame(()=>{
+      s.parAimFrame=null;
+      if(s.latest?.tool!=="PAR_AIM"||!s.parGuide)return;
+      const candidate=parSnapBearing(s,s.parPendingBearing);
+      s.parPreviewBearing=candidate.bearing;
+      parRedraw(s,candidate.bearing,candidate.snapped);
+    });
   });
   s.profilePanel=s.root.querySelector("#cd-terrain-panel");
   s.profileCanvas=s.root.querySelector("#cd-terrain-canvas");
@@ -648,91 +665,167 @@ function parDestination(lat,lon,azDeg,distanceKm){
                      Math.cos(delta)-Math.sin(phi1)*Math.sin(phi2));
   return [phi2/rad,((lambda2/rad+540)%360)-180];
 }
+function parRunwayAzimuth(cfg){
+  const rw=cfg?.referenceRunway;
+  const raw=Number(rw?.heading_deg_true);
+  return rw && Number.isFinite(raw)
+    ? ((raw+(Number(cfg.referenceEnd)===1?180:0))%360+360)%360
+    : null;
+}
+function parAngleDifference(a,b){
+  return Math.abs(((a-b+540)%360)-180);
+}
+function parSnapBearing(s,raw){
+  const bearing=((raw%360)+360)%360;
+  const cfg=s.latest?.parSector||{};
+  const runway=parRunwayAzimuth(cfg);
+  if(!s.parMagnetOn||runway===null)return {bearing,snapped:false};
+  const references=[runway,(runway+180)%360,(runway+90)%360,(runway+270)%360];
+  let best=bearing,error=Infinity;
+  for(const ref of references){
+    const diff=parAngleDifference(bearing,ref);
+    if(diff<error){error=diff;best=ref;}
+  }
+  return error<=8?{bearing:best,snapped:true}:{bearing,snapped:false};
+}
+function parRay(lat,lon,az,distance){
+  return [lat===null?null:[lat,lon],parDestination(lat,lon,az,distance)];
+}
+function parRedraw(s,bearing,snapped=false){
+  const guide=s.parGuide;if(!guide)return;
+  const {lat,lon,distance}=guide;
+  const site=[lat,lon];
+  for(const sector of guide.sectors){
+    const center=bearing+sector.reverse;
+    const arc=[];
+    for(let step=-15;step<=15;step+=1)
+      arc.push(parDestination(lat,lon,center+step,distance));
+    sector.area.setLatLngs([site,...arc,site]);
+    sector.left.setLatLngs([site,arc[0]]);
+    sector.right.setLatLngs([site,arc[arc.length-1]]);
+    sector.axis.setLatLngs([site,parDestination(lat,lon,center,distance)]);
+  }
+  const inside=parDestination(lat,lon,bearing,distance*.50);
+  guide.marker.setLatLng(inside);
+  if(guide.heading)guide.heading.textContent=bearing.toFixed(2)+"° TRUE";
+  if(guide.magnetStatus)
+    guide.magnetStatus.textContent=snapped?"MAGNET · PŘICHYCENO":"MAGNET · "+(s.parMagnetOn?"ZAPNUT":"VYPNUT");
+  if(guide.label)guide.label.textContent="PAR · "+bearing.toFixed(2)+"° TRUE";
+  if(guide.input && document.activeElement!==guide.input)guide.input.value=bearing.toFixed(2);
+}
 function updateParSector(s,data){
   const cfg=data.parSector||{};
   const enabled=cfg.enabled===true;
+  const aiming=data.tool==="PAR_AIM";
   const sig=JSON.stringify([enabled,cfg.lat,cfg.lon,cfg.bearing,cfg.rangeKm,
-                            cfg.referenceRunway?.key,cfg.referenceRunway?.heading_deg_true,
-                            cfg.referenceEnd,data.tool==="PAR_AIM"]);
+      cfg.referenceRunway?.key,cfg.referenceRunway?.heading_deg_true,
+      cfg.referenceEnd,aiming]);
   if(s.last.parSector===sig)return;
   s.last.parSector=sig;
+  if(s.parAimFrame){cancelAnimationFrame(s.parAimFrame);s.parAimFrame=null;}
+  s.parGuide=null;
+  s.parPointerInsideControl=false;
   s.groups.parSector.clearLayers();
   if(!enabled)return;
   const lat=Number(cfg.lat),lon=Number(cfg.lon),az=Number(cfg.bearing);
   const distance=Number(cfg.rangeKm);
   if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(az)||
      !Number.isFinite(distance)||distance<=0)return;
-  const site=[lat,lon],axis=parDestination(lat,lon,az,distance);
-  // Draw a runway-parallel reference line through the radar whenever a
-  // runway has been loaded. The line is geodesic at the radar site and is
-  // indicative (OurAirports, not certified AIP).
-  const runway=cfg.referenceRunway;
-  if(runway&&Number.isFinite(Number(runway.heading_deg_true))){
-    const rwAz=(Number(runway.heading_deg_true)+
-                (Number(cfg.referenceEnd)===1?180:0))%360;
-    const from=parDestination(lat,lon,rwAz+180,distance);
-    const to=parDestination(lat,lon,rwAz,distance);
-    L.polyline([from,site,to],{
-      color:"#f08ae8",weight:3,dashArray:"11 6",opacity:.95,
-      interactive:false
-    }).bindTooltip("ROVNOBĚŽKA RWY "+String(runway.label||"")+
-                   " · "+rwAz.toFixed(2)+"° TRUE · orientační podklad").addTo(s.groups.parSector);
+  const site=[lat,lon];
+  const runway=parRunwayAzimuth(cfg);
+  if(runway!==null){
+    // Draw both complete reference axes through the radar; sources are
+    // indicative RWY TRUE heading, never asserted as verified AIP.
+    for(const [angle,color,label] of [
+      [runway,"#f08ae8","ROVNOBĚŽKA RWY"],
+      [(runway+90)%360,"#b3f0a4","KOLMICE NA RWY"]
+    ]){
+      const line=[
+        parDestination(lat,lon,angle+180,distance),site,
+        parDestination(lat,lon,angle,distance)
+      ];
+      L.polyline(line,{color,weight:2.4,dashArray:"10 7",
+        opacity:.92,interactive:false})
+       .bindTooltip(label+" · "+angle.toFixed(2)+"° TRUE")
+       .addTo(s.groups.parSector);
+    }
   }
-  const left=parDestination(lat,lon,az-15,distance);
-  const right=parDestination(lat,lon,az+15,distance);
-  // Full scan geometry: continuous outer boundary plus radial ±15° edges.
-  const arc=[];
-  for(let i=-15;i<=15;i+=.5)arc.push(parDestination(lat,lon,az+i,distance));
-  const wedge=L.polygon([site,...arc,site],{
-    color:"#2bbfe8",weight:1,opacity:.8,fillColor:"#23b0e9",
-    fillOpacity:.12,interactive:false
-  }).addTo(s.groups.parSector);
-  for(const [point,text] of [[left,"LEVÁ HRANICE −15°"],[right,"PRAVÁ HRANICE +15°"]]){
-    L.polyline([site,point],{color:"#4fd4ff",weight:2,dashArray:"6 5",
-      interactive:false}).bindTooltip(text).addTo(s.groups.parSector);
+  const sectors=[];
+  for(const reverse of [0,180]){
+    const area=L.polygon([],{color:"#2bbfe8",weight:1,opacity:.8,
+      fillColor:"#23b0e9",fillOpacity:.12,interactive:false})
+      .addTo(s.groups.parSector);
+    const left=L.polyline([],{color:"#4fd4ff",weight:2,
+      dashArray:"6 5",interactive:false}).addTo(s.groups.parSector);
+    const right=L.polyline([],{color:"#4fd4ff",weight:2,
+      dashArray:"6 5",interactive:false}).addTo(s.groups.parSector);
+    const axis=L.polyline([],{color:"#f8cf67",weight:3,
+      interactive:false}).addTo(s.groups.parSector);
+    sectors.push({reverse,area,left,right,axis});
   }
-  L.polyline([site,axis],{color:"#f8cf67",weight:3,interactive:false})
-    .bindTooltip("PAR OSA · "+az.toFixed(2)+"° TRUE").addTo(s.groups.parSector);
-  L.circleMarker(axis,{radius:5,color:"#ffe5a0",weight:2,
-    fillColor:"#f8cf67",fillOpacity:1,interactive:false}).addTo(s.groups.parSector);
-  // In-map control is anchored inside the wedge, not a detached screen panel.
-  // It moves with pan/zoom and never resizes/recreates Leaflet.
-  const aiming=data.tool==="PAR_AIM";
-  const inside=parDestination(lat,lon,az,distance*.52);
-  const markup=aiming
-    ? '<div class="cd-par-inside-editor"><div class="cd-par-inside-title">⌖ OSA PAR · ±15°</div>'+
-      '<div class="cd-par-inside-row"><input class="cd-par-angle" type="number" min="0" max="359.99" step="0.01" value="'+
+  const labelHTML=aiming
+   ? '<div class="cd-par-inside-editor"><div class="cd-par-inside-title">⌖ OSA PAR · OBOUSTRANNÝ SEKTOR</div>'+
+     '<div class="cd-par-heading"></div>'+
+     '<div class="cd-par-inside-row"><input class="cd-par-angle" type="number" min="0" max="359.99" step="0.01" value="'+
       az.toFixed(2)+'" aria-label="TRUE azimut PAR"><button type="button" class="cd-par-confirm">✓</button></div>'+
-      '<small>Klikni také do mapy pro směr</small></div>'
-    : '<div class="cd-par-inside-label">PAR · '+az.toFixed(2)+'° TRUE <small>±15°</small></div>';
-  const label=L.marker(inside,{
-    interactive:aiming,keyboard:false,
-    icon:L.divIcon({html:markup,className:"cd-par-inside-icon",iconSize:[0,0]})
+     '<label class="cd-par-magnet"><input class="cd-par-magnet-toggle" type="checkbox" checked> 🧲 MAGNET · 8°</label>'+
+     '<small class="cd-par-snap-status">MAGNET · ZAPNUT</small></div>'
+   : '<div class="cd-par-inside-label"><span class="cd-par-static-label">PAR · '+az.toFixed(2)+'° TRUE</span> <small>±15° × 2</small></div>';
+  const marker=L.marker(site,{interactive:aiming,keyboard:false,
+    icon:L.divIcon({html:labelHTML,className:"cd-par-inside-icon",iconSize:[0,0]})
   }).addTo(s.groups.parSector);
+  const root=marker.getElement();
+  const guide={lat,lon,distance,sectors,marker,
+    input:root?.querySelector(".cd-par-angle"),
+    heading:root?.querySelector(".cd-par-heading"),
+    magnetStatus:root?.querySelector(".cd-par-snap-status"),
+    label:root?.querySelector(".cd-par-static-label")};
+  s.parGuide=guide;
   if(aiming){
-    const root=label.getElement()?.querySelector(".cd-par-inside-editor");
-    const input=root?.querySelector(".cd-par-angle");
-    const button=root?.querySelector(".cd-par-confirm");
-    if(root&&input&&button){
-      L.DomEvent.disableClickPropagation(root);
-      L.DomEvent.disableScrollPropagation(root);
+    const editor=root?.querySelector(".cd-par-inside-editor");
+    const confirm=root?.querySelector(".cd-par-confirm");
+    const magnet=root?.querySelector(".cd-par-magnet-toggle");
+    if(editor&&guide.input&&confirm&&magnet){
+      if(s.parMagnetOn===undefined)s.parMagnetOn=true;
+      magnet.checked=s.parMagnetOn;
+      L.DomEvent.disableClickPropagation(editor);
+      L.DomEvent.disableScrollPropagation(editor);
+      editor.addEventListener("mouseenter",()=>{s.parPointerInsideControl=true;});
+      editor.addEventListener("mouseleave",()=>{s.parPointerInsideControl=false;});
+      magnet.addEventListener("change",()=>{
+        s.parMagnetOn=magnet.checked;
+        const raw=s.parPendingBearing??az;
+        const candidate=parSnapBearing(s,raw);
+        s.parPreviewBearing=candidate.bearing;
+        parRedraw(s,candidate.bearing,candidate.snapped);
+      });
       const submit=()=>{
-        const bearing=Number(input.value);
-        if(!input.value.trim()||!Number.isFinite(bearing)||bearing<0||bearing>=360){
-          input.setCustomValidity("Zadej azimut od 0 do 359,99°.");
-          input.reportValidity();return;
+        const number=Number(guide.input.value);
+        if(!guide.input.value.trim()||!Number.isFinite(number)||number<0||number>=360){
+          guide.input.setCustomValidity("Zadej azimut 0 až 359,99°.");
+          guide.input.reportValidity();return;
         }
-        input.setCustomValidity("");
-        s.trigger("action",{type:"par_aim",bearing,
-                              id:Date.now()+"-"+Math.random().toString(36).slice(2)});
+        guide.input.setCustomValidity("");
+        s.trigger("action",{type:"par_aim",bearing:number,
+          id:Date.now()+"-"+Math.random().toString(36).slice(2)});
       };
-      button.addEventListener("click",submit);
-      input.addEventListener("keydown",ev=>{
-        ev.stopPropagation();
-        if(ev.key==="Enter"){ev.preventDefault();submit();}
+      confirm.addEventListener("click",submit);
+      guide.input.addEventListener("keydown",event=>{
+        event.stopPropagation();
+        if(event.key==="Enter"){event.preventDefault();submit();}
+      });
+      // Numeric editing also updates the geometry live, but leaves the
+      // value exact; magnetic snapping is only for cursor-guided targeting.
+      guide.input.addEventListener("input",()=>{
+        const n=Number(guide.input.value);
+        if(guide.input.value.trim()&&Number.isFinite(n)&&n>=0&&n<360){
+          s.parPreviewBearing=n;
+          parRedraw(s,n,false);
+        }
       });
     }
   }
+  parRedraw(s,az,false);
 }
 function updateRange(s,data){
   const nm=Number(data.rangeNm||20);
