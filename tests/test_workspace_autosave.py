@@ -35,6 +35,17 @@ class DraftRecoveryTests(TestCase):
             self.assertEqual(len(list(Path(temp).glob("*.json"))),1)
             self.assertFalse(list(Path(temp).glob("*.tmp")))
 
+    def test_portable_backup_round_trip(self):
+        values={"ws_radar":"PAR-NG","ws_levels":[2000,2100,6000,6250],
+                "ws_par_channels":"BOTH","OPENAIP_API_KEY":"SECRET"}
+        data=draft.export_draft(values)
+        self.assertNotIn(b"SECRET",data)
+        restored=draft.import_draft(data)
+        self.assertEqual(restored["ws_levels"],[2000,2100,6000,6250])
+        self.assertEqual(restored["ws_par_channels"],"BOTH")
+        with self.assertRaises(ValueError):
+            draft.import_draft(b"not-json")
+
     def test_invalid_ids_and_tampered_json_are_rejected(self):
         for token in ("../etc/passwd","x","hello/world",None):
             with self.subTest(token=token),self.assertRaises(ValueError):
