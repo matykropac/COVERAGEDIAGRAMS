@@ -883,6 +883,7 @@ def _radar_settings_body(ui_mode):
              key="ws_radar_step",on_change=_on_radar_step_change,
              horizontal=True)
     step=st.session_state["ws_radar_step"]
+    st.session_state["_radar_active_step"]=step
     if step=="STANOVIŠTĚ":
         st.markdown('<div class="cd-radar-guide">Poloha a montážní výška radarové antény. '
                     'Výšky antény jsou vztažené k terénu v místě instalace (AGL).</div>',
@@ -898,9 +899,11 @@ def _radar_settings_body(ui_mode):
         a,b=st.columns(2,gap="small")
         with a:
             st.text_input("Latitude · WGS84",key="ws_site_lat_input",
+                          on_change=_remember_radar_form,
                           placeholder="Zadej LAT (bez výchozí hodnoty)")
         with b:
             st.text_input("Longitude · WGS84",key="ws_site_lon_input",
+                          on_change=_remember_radar_form,
                           placeholder="Zadej LON (bez výchozí hodnoty)")
         if st.button("✓ ULOŽIT ZADANÉ SOUŘADNICE",key="ws_manual_site_confirm",
                      use_container_width=True):
