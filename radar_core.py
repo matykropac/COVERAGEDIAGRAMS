@@ -145,14 +145,14 @@ FLIGHT_LEVELS_LIST = (
 
 PAR_LOW_LEVELS_FT = (50, 100, 150, 200, 250, 300, 350, 400, 450)
 
+# Default PAR flight-level set. Any other positive integer height within
+# 1..66000 ft remains available through the free-form input.
+PAR_DEFAULT_LEVELS_FT = tuple(range(2000, 6001, 100))
+
 
 def flight_levels_for(mode):
-    """Additional low-altitude slices for PAR; other radar modes unchanged."""
-    return PAR_LOW_LEVELS_FT + FLIGHT_LEVELS_LIST if mode in ('PAR', 'PAR-NG') else FLIGHT_LEVELS_LIST
-
-
-# User-defined default PAR coverage levels (ft AMSL); editable without presets.
-PAR_DEFAULT_LEVELS_FT = tuple(range(2000, 6001, 100))
+    """PAR defaults 2000–6000 ft every 100; PSR/SSR presets unchanged."""
+    return PAR_DEFAULT_LEVELS_FT if mode in ('PAR', 'PAR-NG') else FLIGHT_LEVELS_LIST
 
 PAR_CUSTOM_MIN_FT = 1
 PAR_CUSTOM_MAX_FT = 66000
