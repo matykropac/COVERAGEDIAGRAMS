@@ -603,8 +603,44 @@ function setRadarSite(lat,lon,origin){
  $("dem-set-radar").textContent="⌖ Změnit polohu radaru v mapě";
  return true;
 }
+function circleCandidate(ring){
+ // Project a ring into local metric coordinates, then reject non-circular
+ // coverage boundaries. Never use the center of an arbitrary KML polygon.
+ if(!Array.isArray(ring)||ring.length<24)return null;
+ const stride=Math.max(1,Math.floor(ring.length/720));
+ const points=[];
+ for(let i=0;i<ring.length;i+=stride){
+  const p=ring[i];
+  if(!Array.isArray(p)||!Number.isFinite(p[0])||!Number.isFinite(p[1]))continue;
+  points.push(p);
+ }
+ if(points.length<24)return null;
+ // Ignore the closing point; the fit uses uniquely distributed perimeter samples.
+ if(points.length>24&&Math.abs(points[0][0]-points.at(-1)[0])<1e-9&&
+     Math.abs(points[0][1]-points.at(-1)[1])<1e-9)points.pop();
+ const lo=points.map(p=>p[0]),la=points.map(p=>p[1]);
+ const midLat=(Math.max(...la)+Math.min(...la))/2;
+ const midLon=(Math.max(...lo)+Math.min(...lo))/2;
+ if(Math.max(...lo)-Math.min(...lo)>10||Math.abs(midLat)>78)return null;
+ const sx=111320*Math.cos(midLat*Math.PI/180),sy=111195;
+ if(sx<1)return null;
+ const xy=points.map(p=>[(p[0]-midLon)*sx,(p[1]-midLat)*sy]);
+ const x0=(Math.min(...xy.map(p=>p[0]))+Math.max(...xy.map(p=>p[0])))/2;
+ const y0=(Math.min(...xy.map(p=>p[1]))+Math.max(...xy.map(p=>p[1])))/2;
+ const radii=xy.map(p=>Math.hypot(p[0]-x0,p[1]-y0));
+ const mean=radii.reduce((a,b)=>a+b,0)/radii.length;
+ if(mean<100||mean>600000)return null;
+ const rms=Math.sqrt(radii.reduce((sum,v)=>sum+(v-mean)**2,0)/radii.length);
+ const angles=new Set(xy.map(p=>Math.floor((Math.atan2(p[1]-y0,p[0]-x0)+Math.PI)*18/Math.PI)));
+ const coverage=angles.size/36;
+ // Only near-complete concentric distance rings (not sectors, contours or rectangles).
+ if(rms/mean>.035||coverage<.83)return null;
+ const lat=midLat+y0/sy,lon=midLon+x0/sx;
+ return {lat,lon,radius:mean,quality:rms/mean,coverage};
+}
 function detectRadarSiteFromLayers(){
  if(radarKnown)return true;
+ // First prefer explicit site coordinates from a named radar point.
  for(const layer of layers.values()){
   for(const feature of layer.features){
    if(feature?.geometry?.type!=="Point")continue;
@@ -613,10 +649,53 @@ function detectRadarSiteFromLayers(){
    if(!/(?:^|[^a-zA-Z])radar(?:[^a-zA-Z]|$)/i.test(name))continue;
    const coords=feature.geometry.coordinates;
    if(Array.isArray(coords)&&coords.length>=2&&
-      setRadarSite(Number(coords[1]),Number(coords[0]),"radarová vrstva"))return true;
+      setRadarSite(Number(coords[1]),Number(coords[0]),"radarový bod v KML"))return true;
   }
  }
- return false;
+ // Second choice: identify truly circular KML range rings and their shared site.
+ // An irregular coverage polygon has no reliable radar center and is ignored.
+ const circles=[];
+ const read=geometry=>{
+  if(!geometry)return;
+  if(geometry.type==="GeometryCollection"){
+   for(const g of geometry.geometries||[])read(g);
+  }else if(geometry.type==="Polygon"){
+   const candidate=circleCandidate(geometry.coordinates?.[0]);
+   if(candidate)circles.push(candidate);
+  }else if(geometry.type==="LineString"){
+   const candidate=circleCandidate(geometry.coordinates);
+   if(candidate)circles.push(candidate);
+  }else if(geometry.type==="MultiPolygon"){
+   for(const polygon of geometry.coordinates||[]){
+    const candidate=circleCandidate(polygon[0]);
+    if(candidate)circles.push(candidate);
+   }
+  }else if(geometry.type==="MultiLineString"){
+   for(const ring of geometry.coordinates||[]){
+    const candidate=circleCandidate(ring);
+    if(candidate)circles.push(candidate);
+   }
+  }
+ };
+ for(const layer of layers.values())for(const feature of layer.features)read(feature.geometry);
+ if(!circles.length)return false;
+ // Prefer the common center of concentric rings. A single high-quality ring
+ // is adequate; conflicting circles from unrelated features are not.
+ circles.sort((a,b)=>a.quality-b.quality);
+ let best=null;
+ for(const pivot of circles.slice(0,Math.min(circles.length,30))){
+  const matching=circles.filter(c=>
+   Math.hypot((c.lon-pivot.lon)*111320*Math.cos(pivot.lat*Math.PI/180),
+              (c.lat-pivot.lat)*111195)<Math.max(300,pivot.radius*.008));
+  if(!best||matching.length>best.matching.length||
+     matching.length===best.matching.length&&pivot.quality<best.pivot.quality)
+    best={pivot,matching};
+ }
+ if(!best)return false;
+ // Multiple rings of the same center are stronger evidence than one.
+ const site=best.matching.reduce((a,c)=>({lat:a.lat+c.lat,lon:a.lon+c.lon}),{lat:0,lon:0});
+ return setRadarSite(site.lat/best.matching.length,site.lon/best.matching.length,
+                     best.matching.length+" soustředných kružnic KML");
 }
 function saveGeo(){
  const fs=[];for(const o of layers.values())if(o.style.show)fs.push(...o.features);
