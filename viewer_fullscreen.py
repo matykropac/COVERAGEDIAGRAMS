@@ -432,6 +432,9 @@ async function loadFile(file){
     if(++idx>300)throw Error("Příliš mnoho vrstev");addLayer(name,features,obj.styles[name],false)}
   setting.base=BASES[obj.settings?.viewer_basemap]?obj.settings.viewer_basemap:(
     Object.keys(BASES).includes(obj.settings?.base)?obj.settings.base:"dark");
+  const site=obj.settings?.radar_site;
+  if(Array.isArray(site)&&site.length===2)setRadarSite(Number(site[0]),Number(site[1]),"CDVIEW");
+  else detectRadarSiteFromLayers();
   selectBase(setting.base);refreshList();syncAll();fitAll();updateExtentPreset();
   return "Projekt načten: "+layers.size+" vrstev";
  }
@@ -452,7 +455,7 @@ async function loadFile(file){
   if(!Array.isArray(fs))throw Error("Nepodporovaný GeoJSON");
   addLayer(file.name,fs,null,false);
  }else throw Error("Nepodporovaný formát");
- refreshList();syncAll();fitAll();updateExtentPreset();return "Načteno: "+file.name;
+ detectRadarSiteFromLayers();refreshList();syncAll();fitAll();updateExtentPreset();return "Načteno: "+file.name;
 }
 async function importFiles(files){
  let messages=[],errors=[];
@@ -467,7 +470,8 @@ async function saveCDView(){
  if(!window.JSZip){notify("JSZip není dostupný",true);return}
  const data={format:"COVERAGEDIAGRAMS_VIEWER",version:1,layers:{},styles:{},
   settings:{base:setting.base,viewer_basemap:setting.base,viewer_mode:"2D MAPA",
-   viewer_legend:setting.legend,viewer_north:true}};
+   viewer_legend:setting.legend,viewer_north:true,
+   radar_site:radarKnown?[...radarCenter]:null}};
  for(const o of layers.values()){data.layers[o.name]=o.features;data.styles[o.name]=o.style}
  const zip=new JSZip();zip.file("viewer.json",JSON.stringify(data));
  download("COVERAGEDIAGRAMS_viewer.cdview",await zip.generateAsync({type:"blob",compression:"DEFLATE"}));
@@ -585,6 +589,33 @@ function downloadExtentGeoJSON(){
  }]};
  download("COVERAGEDIAGRAMS_DEM_extent_FL"+(extentLevel??"manual")+".geojson",
           new Blob([JSON.stringify(data)],{type:"application/geo+json"}));
+}
+function setRadarSite(lat,lon,origin){
+ if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)return false;
+ radarCenter=[lat,lon];radarKnown=true;placingRadar=false;
+ if(radarMarker&&map)map.removeLayer(radarMarker);
+ if(map)radarMarker=L.circleMarker(radarCenter,{
+   radius:8,color:"#ffbd6d",weight:2,fillColor:"#16547c",fillOpacity:1
+  }).addTo(map);
+ if(map)updateRange();
+ $("range-center").textContent="Radar: "+lat.toFixed(6)+"° / "+lon.toFixed(6)+"° · "+origin;
+ $("dem-set-radar").textContent="⌖ Změnit polohu radaru v mapě";
+ return true;
+}
+function detectRadarSiteFromLayers(){
+ if(radarKnown)return true;
+ for(const layer of layers.values()){
+  for(const feature of layer.features){
+   if(feature?.geometry?.type!=="Point")continue;
+   const props=feature.properties||{};
+   const name=[props.name,props.Name,props.title,props.type,props.category,layer.name].filter(Boolean).join(" ");
+   if(!/(?:^|[^a-zA-Z])radar(?:[^a-zA-Z]|$)/i.test(name))continue;
+   const coords=feature.geometry.coordinates;
+   if(Array.isArray(coords)&&coords.length>=2&&
+      setRadarSite(Number(coords[1]),Number(coords[0]),"radarová vrstva"))return true;
+  }
+ }
+ return false;
 }
 function saveGeo(){
  const fs=[];for(const o of layers.values())if(o.style.show)fs.push(...o.features);
@@ -935,7 +966,9 @@ function setup(){
  L.control.zoom({position:"topright"}).addTo(map);L.control.scale({position:"bottomright",imperial:false}).addTo(map);
  selectBase("dark");
  for(const [name,features] of Object.entries(DATA.layers||{}))addLayer(name,features,DATA.styles?.[name],false);
- refreshList();syncAll();fitAll();updateExtentPreset();$("range-center").textContent="Radar: "+radarCenter.map(x=>Number(x).toFixed(6)+"°").join(" / ");
+ refreshList();syncAll();fitAll();updateExtentPreset();
+ if(radarKnown)setRadarSite(radarCenter[0],radarCenter[1],"EDITOR");
+ else detectRadarSiteFromLayers();
  loadDiagnostics();
  $("inspect").onclick=()=>{
   inspectEnabled=!inspectEnabled;$("inspect").setAttribute("aria-pressed",String(inspectEnabled));
@@ -953,13 +986,7 @@ function setup(){
  };
  map.on("click",e=>{
   if(placingRadar){
-    placingRadar=false;radarKnown=true;
-    radarCenter=[e.latlng.lat,e.latlng.lng];
-    if(radarMarker)map.removeLayer(radarMarker);
-    radarMarker=L.circleMarker(radarCenter,{radius:8,color:"#ffbd6d",weight:2,
-                                         fillColor:"#16547c",fillOpacity:1}).addTo(map);
-    $("range-center").textContent="Radar: "+radarCenter.map(v=>v.toFixed(6)+"°").join(" / ");
-    updateRange();
+    setRadarSite(e.latlng.lat,e.latlng.lng,"ručně vybraná poloha");
     $("inspection-result").textContent="Poloha radaru nastavena. Klikni na cíl.";
     return;
   }
