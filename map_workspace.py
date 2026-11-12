@@ -724,8 +724,11 @@ def _commit_radar_site(lat,lon,*,reopen_dialog=True):
     st.session_state["ws_radar_site"]=[lat,lon]
     st.session_state["ws_lat"]=lat
     st.session_state["ws_lon"]=lon
-    st.session_state["ws_site_lat_input"]=f"{lat:.6f}"
-    st.session_state["ws_site_lon_input"]=f"{lon:.6f}"
+    # Inputs may already be mounted in a live dialog on manual submit.
+    # Never write their widget keys after instantiation on that same run.
+    if reopen_dialog:
+        st.session_state["ws_site_lat_input"]=f"{lat:.6f}"
+        st.session_state["ws_site_lon_input"]=f"{lon:.6f}"
     shadow=dict(st.session_state.get("_radar_form_shadow") or {})
     shadow.update({"ws_lat":lat,"ws_lon":lon})
     st.session_state["_radar_form_shadow"]=shadow
@@ -1232,6 +1235,9 @@ def _calculate_coverage():
                 log(msg[:260])
         try:
             phase("Kontroluji parametry radaru")
+            if _current_radar_site() is None:
+                raise ValueError("Nejdřív vyber typ radaru a potvrď stanoviště "
+                                 "kliknutím do mapy nebo ručními souřadnicemi.")
             c=_cfg()
             c.validate()
             # Validate AZ/EL channel availability before expensive DEM download.
@@ -1331,6 +1337,8 @@ def _recalculate_cached_terrain():
     previous=st.session_state.get("result")
     if previous is None:
         raise ValueError("Nejprve vypočítej nebo načti projekt.")
+    if _current_radar_site() is None:
+        raise ValueError("Nejprve potvrď stanoviště radaru.")
     requested=_cfg()
     base=previous["config"]
     if requested != base:
