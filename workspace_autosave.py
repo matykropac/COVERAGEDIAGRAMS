@@ -35,7 +35,7 @@ RADAR_FIELDS=(
     "ws_min","ws_max","ws_tilt","ws_step","ws_azstep",
     "ws_k","ws_target","ws_reference","ws_source","ws_dataset",
     "ws_par_channels","ws_par_az_beam_step","ws_par_el_beam_step",
-    "ws_par_scan_mode","ws_par_scan_loss","ws_par_quality",
+    "ws_par_scan_mode","ws_par_scan_loss","ws_par_sector_edge_loss","ws_par_quality",
     "ws_par_gas_loss","ws_par_rain_loss","ws_par_extra_loss",
     "ws_par_detection","ws_par_snr","ws_par_pd","ws_par_pfa",
     "ws_par_pulses","ws_par_level_reference",
