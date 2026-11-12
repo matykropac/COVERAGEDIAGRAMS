@@ -293,7 +293,8 @@ function init(s) {
   const data=s.latest||{};
   const center=data.center||[50.034,15.781];
   s.map=L.map(node,{center,zoom:data.zoom||8,zoomControl:true,preferCanvas:true,
-                     zoomSnap:.5,zoomDelta:.5});
+                     zoomSnap:.5,zoomDelta:.5,zoomAnimation:false,
+                     fadeAnimation:false,markerZoomAnimation:false});
   s.map.attributionControl.setPrefix(false);
   s.baseLayers=new Map();s.groups={
     coverage:L.featureGroup().addTo(s.map),
@@ -334,13 +335,23 @@ function init(s) {
     s.trigger("action",{type:"polygon",coordinates:points.map(p=>[p.lat,p.lng]),
                          id:Date.now()+"-"+Math.random().toString(36).slice(2)});
   });
+  // The floating controls do not resize the map. Only invalidate Leaflet
+  // when its actual viewport dimensions change; coalesce redundant callbacks.
+  let lastWidth=0,lastHeight=0;
   const size=()=>{
-    if(s.map)s.map.invalidateSize({pan:false,animate:false});
-    if(s.selection)drawTerrain(s);
+    if(!s.map||!node.isConnected)return;
+    const {width,height}=node.getBoundingClientRect();
+    if(width<=0||height<=0||Math.abs(width-lastWidth)<.5&&Math.abs(height-lastHeight)<.5)return;
+    lastWidth=width;lastHeight=height;
+    if(s.sizeFrame)cancelAnimationFrame(s.sizeFrame);
+    s.sizeFrame=requestAnimationFrame(()=>{
+      if(!s.map||!node.isConnected)return;
+      s.map.invalidateSize({pan:false,animate:false});
+      if(s.selection)drawTerrain(s);
+    });
   };
   s.resizeObserver=new ResizeObserver(size);
   s.resizeObserver.observe(node);
-  if(s.profilePanel)s.resizeObserver.observe(s.profilePanel);
   s.resizeInterval=setTimeout(size,160);
   s.ready=true;
   update(s);
@@ -657,6 +668,7 @@ export default function(component){
     if(!node.isConnected){
       if(s.timer)clearInterval(s.timer);
       if(s.resizeObserver)s.resizeObserver.disconnect();
+      if(s.sizeFrame)cancelAnimationFrame(s.sizeFrame);
       if(s.map)s.map.remove();
       INSTANCES.delete(node);
     }
