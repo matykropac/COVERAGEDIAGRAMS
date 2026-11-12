@@ -1973,9 +1973,10 @@ def _draw_map_folium():
     # Editing an uncalculated site must not be confused with the old result's location.
     configured=_cfg()
     c=result["config"] if result is not None else configured
+    site=_current_radar_site()
     view=st.session_state.get("ws_viewport")
-    center=[view["lat"],view["lng"]] if view else [configured.lat,configured.lon]
-    zoom=view["zoom"] if view else (8 if result else 9)
+    center=[view["lat"],view["lng"]] if view else list(site if site else (0.,0.))
+    zoom=view["zoom"] if view else (9 if site else 2)
     m=folium.Map(location=center,zoom_start=zoom,
                  tiles=None,control_scale=True,prefer_canvas=True,
                  zoom_animation=False,fade_animation=False)
@@ -3186,7 +3187,9 @@ def render_workspace():
     from workspace_floating_layout import FLOATING_EDITOR_CSS
     st.markdown(FLOATING_EDITOR_CSS, unsafe_allow_html=True)
     with st.container(key="cd_editor_status"):
-        if result is None:
+        if result is None and _current_radar_site() is None:
+            st.caption("RADAR · NEJDŘÍV ZVOL SYSTÉM A STANOVIŠTĚ")
+        elif result is None:
             st.caption(f"RADAR · {config.lat:.6f}°, {config.lon:.6f}° · "
                        f"{len(st.session_state.get('obstacles',[]))} překážek")
         else:
