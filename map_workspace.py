@@ -1646,8 +1646,10 @@ def obstacles_dialog():
 
 
 def _cfg_site():
-    c=_cfg()
-    return c.lat,c.lon
+    site=_current_radar_site()
+    if site is None:
+        raise ValueError("Stanoviště radaru není určeno. Nejdřív jej vyber v mapě.")
+    return site
 
 
 @st.dialog("NOVÁ PŘEKÁŽKA / Polygon",width="small")
