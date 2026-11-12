@@ -78,7 +78,7 @@ function refreshControl(s) {
     "Další geodata":s.groups.environment,
     "PAR · sektor ±15°":s.groups.parSector,
   };
-  if(s.openaipLayer) overlay["OpenAIP · letecká mapa"]=s.openaipLayer;
+  // OpenAIP is permanently enabled when configured, not a user-toggle layer.
   s.controls.layers=L.control.layers(bases,overlay,{collapsed:true,position:"topright"});
   s.controls.layers.addTo(s.map);
 }
@@ -414,7 +414,7 @@ function updateOpenAip(s,data) {
     };
     s.openaipLayer.on("tileerror",()=>{
       errors++;
-      if(errors>=2 && loaded===0)warn("OpenAIP: dlaždice nelze načíst. V MAPA klikni na OVĚŘIT OPENAIP · API / DLAŽDICE pro přesný důvod (401/403/429 nebo připojení).");
+      if(errors>=2 && loaded===0)warn("OpenAIP: dlaždice se nepodařilo načíst (síť / 401 / 403 / 429). Zkontroluj konfiguraci API klíče a dostupnost služby.");
     });
     s.openaipLayer.on("tileload",()=>{
       loaded++;
