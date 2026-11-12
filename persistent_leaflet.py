@@ -30,8 +30,14 @@ _CSS="""
 }
 .cd-par-inside-label{padding:7px 11px;pointer-events:none}
 .cd-par-inside-label small{color:#83d9fb;margin-left:5px;font-size:10px}
-.cd-par-inside-editor{width:184px;padding:8px 10px;cursor:auto}
-.cd-par-inside-title{color:#8bdcf7;font-size:10px;letter-spacing:.07em;margin-bottom:7px}
+.cd-par-inside-editor{width:212px;padding:9px 10px;cursor:auto;white-space:normal}
+.cd-par-inside-title{color:#8bdcf7;font-size:10px;letter-spacing:.06em;margin-bottom:5px}
+.cd-par-heading{font:750 13px system-ui;color:#fff;margin-bottom:7px}
+.cd-par-magnet{display:flex;align-items:center;justify-content:center;gap:7px;
+ padding:6px 8px;margin-top:8px;background:#163b54;border:1px solid #427c9c;
+ border-radius:6px;color:#dbf4ff;font:750 11px system-ui;cursor:pointer}
+.cd-par-magnet input{accent-color:#27c5ec;margin:0;cursor:pointer}
+.cd-par-snap-status{font:10px system-ui;color:#94ddf6}
 .cd-par-inside-row{display:flex;align-items:center;gap:6px}
 .cd-par-angle{width:125px;min-width:0;padding:7px;border-radius:6px;
  border:1px solid #6b99b4;color:#fff;background:#122e46;font:12px system-ui}
