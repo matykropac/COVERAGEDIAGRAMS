@@ -767,6 +767,24 @@ def render_viewer():
     @media(max-width:900px){.v-title{max-width:75%;text-overflow:ellipsis;overflow:hidden}}
     </style>""",unsafe_allow_html=True)
     editor_result,editor_meta=_snapshot()
+    # The main 2D workstation is one persistent, browser-controlled canvas.
+    # Streamlit never receives checkbox/slider/pan events from this viewer.
+    if st.query_params.get("viewer3d") != "1":
+        from viewer_fullscreen import render_fullscreen_viewer
+        editor_meta=editor_meta or {}
+        layers=_editor_layers(editor_result,editor_meta) if editor_result is not None else {}
+        layers.update(st.session_state.get("viewer_imported_workspace_layers") or {})
+        center=(editor_result["config"].lat,editor_result["config"].lon) if editor_result is not None else (50.,15.)
+        styles=st.session_state.get("viewer_styles") or {}
+        # Preserve the one-time EDITOR -> VIEWER snapshot token on mode changes.
+        from urllib.parse import urlencode
+        params={"viewer":"1","viewer3d":"1"}
+        if st.query_params.get("snapshot"):
+            params["snapshot"]=str(st.query_params["snapshot"])
+        render_fullscreen_viewer(layers,styles,center,
+            snapshot=str(st.query_params.get("snapshot","")),
+            three_d_url="?"+urlencode(params))
+        return
     # Explicit, high-contrast view controls: the previous segmented control
     # was visually lost under the global dark Streamlit theme.
     with st.container(key="viewer_mode_toolbar"):
