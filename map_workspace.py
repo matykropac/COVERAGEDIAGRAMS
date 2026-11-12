@@ -2637,6 +2637,35 @@ def render_workspace():
                         else:
                             st.info("Vyber výšky PAR v RADAR → CÍL / FL.")
                 st.caption("Mapové vrstvy lze exportovat i bez radarového výpočtu.")
+                with st.expander("ZÁLOHA ROZPRACOVANÝCH PARAMETRŮ",expanded=False):
+                    from workspace_autosave import export_draft,import_draft
+                    st.caption("Automatický draft se průběžně ukládá na server. "
+                               "Tato malá záloha umožní obnovu i po vymazání "
+                               "serverové cache nebo novém nasazení aplikace.")
+                    st.download_button("⇩ STÁHNOUT NASTAVENÍ · JSON",
+                        data=export_draft(st.session_state),
+                        file_name="COVERAGEDIAGRAMS_radar_draft.json",
+                        mime="application/json",key="ws_draft_export",
+                        use_container_width=True)
+                    draft_upload=st.file_uploader(
+                        "Obnovit rozpracované parametry",
+                        type=["json"],key="ws_draft_import")
+                    if draft_upload is not None and st.button(
+                            "OBNOVIT NASTAVENÍ",key="ws_draft_import_apply",
+                            use_container_width=True):
+                        try:
+                            values=import_draft(draft_upload.getvalue())
+                            st.session_state.update(values)
+                            st.session_state["_par_levels_epoch"]=(
+                                st.session_state.get("_par_levels_epoch",0)+1)
+                            _draft_checkpoint()
+                            st.session_state["ws_draft_restore_notice"]=(
+                                f"Obnoveno {len(values)} nastavení ze zálohy.")
+                            st.rerun()
+                        except (ValueError,TypeError,OSError) as exc:
+                            st.error("Zálohu nelze načíst: "+str(exc))
+                    if st.session_state.get("ws_draft_restore_notice"):
+                        st.success(st.session_state.pop("ws_draft_restore_notice"))
                 st.markdown('<div class="cd-nav-title">SPRÁVA PROJEKTU / CDPROJ</div>',
                             unsafe_allow_html=True)
                 first_btn,second_btn=st.columns(2,gap="small")
