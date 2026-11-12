@@ -3174,6 +3174,48 @@ def render_workspace():
     </style>
     """,unsafe_allow_html=True)
 
+    # Final input palette override. The old dark-theme rules in STYLES and
+    # COMMON_CSS must not make the entered text pale or unreadable.
+    st.markdown("""<style>
+    /* White editable surfaces + truly black input values everywhere in the
+       Streamlit workspace, including modal dialogs and dropdown portals. */
+    [data-testid="stApp"] input:not([type="checkbox"]):not([type="radio"]),
+    [data-testid="stApp"] textarea,
+    [data-testid="stApp"] [contenteditable="true"],
+    [data-testid="stApp"] [data-baseweb="select"] [role="combobox"],
+    [data-testid="stApp"] [data-baseweb="select"] [data-baseweb="input"] input,
+    [data-baseweb="popover"] input,
+    [data-baseweb="popover"] [role="option"],
+    [role="listbox"] [role="option"] {
+       color:#000!important;-webkit-text-fill-color:#000!important;
+       caret-color:#000!important;
+    }
+    [data-testid="stApp"] div[data-baseweb="input"],
+    [data-testid="stApp"] div[data-baseweb="textarea"],
+    [data-testid="stApp"] div[data-baseweb="select"]>div,
+    [data-testid="stApp"] input:not([type="checkbox"]):not([type="radio"]),
+    [data-testid="stApp"] textarea,
+    [data-baseweb="popover"],
+    [role="listbox"] {
+       background-color:#fff!important;color:#000!important;
+    }
+    [data-testid="stApp"] [data-baseweb="select"] span,
+    [data-testid="stApp"] [data-baseweb="select"] [data-baseweb="tag"] span,
+    [data-testid="stApp"] [data-baseweb="select"] [aria-selected],
+    [data-baseweb="popover"] [role="option"],
+    [role="listbox"] [role="option"]{
+       color:#000!important;-webkit-text-fill-color:#000!important;
+    }
+    [data-testid="stApp"] input::placeholder,
+    [data-testid="stApp"] textarea::placeholder{
+       color:#666!important;-webkit-text-fill-color:#666!important;opacity:1!important;
+    }
+    [data-testid="stApp"] input:disabled,
+    [data-testid="stApp"] textarea:disabled{color:#333!important;opacity:.75}
+    [data-testid="stApp"] input:focus-visible,
+    [data-testid="stApp"] textarea:focus-visible{outline-color:#2587d9!important}
+    </style>""",unsafe_allow_html=True)
+
     # The map fills the screen. Status is a floating, non-blocking overlay,
     # not a normal document row above Leaflet that causes map size changes.
     from workspace_floating_layout import FLOATING_EDITOR_CSS
