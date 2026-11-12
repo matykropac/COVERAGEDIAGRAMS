@@ -40,7 +40,8 @@ _CSS="""
 .cd-par-snap-status{font:10px system-ui;color:#94ddf6}
 .cd-par-inside-row{display:flex;align-items:center;gap:6px}
 .cd-par-angle{width:125px;min-width:0;padding:7px;border-radius:6px;
- border:1px solid #6b99b4;color:#fff;background:#122e46;font:12px system-ui}
+ border:1px solid #6b99b4;color:#000!important;background:#fff!important;
+ -webkit-text-fill-color:#000!important;caret-color:#000;font:12px system-ui}
 .cd-par-confirm{padding:7px 10px;border-radius:6px;background:#17648c;
  border:1px solid #69cfff;color:#fff;cursor:pointer;font:700 13px system-ui}
 .cd-par-inside-editor small{display:block;margin-top:5px;color:#a9cddd;font:10px system-ui}
