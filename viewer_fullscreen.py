@@ -136,6 +136,10 @@ background:#122d46;border:1px solid #2c4b64;border-radius:9px}
 .layer-editor{grid-column:1/-1;background:#092038;border:1px solid #2d5473;border-radius:8px;padding:9px}
 .layer-editor .field{margin:5px 0}
 .layer-editor input[type=color]{height:31px;width:45px;background:none;border:0}
+.layer-editor input[type=range]{width:120px}
+.layer-editor select{max-width:140px}
+.layer .name{cursor:pointer}
+.layer:has(.layer-editor){border-color:#5bc3e8;background:#163954}
 .note{border:1px solid #325772;background:#0b2942;border-radius:9px;padding:9px 10px;margin:10px 0;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .note.error{border-color:#b65a61;color:#ffb2b8}
 .inspection{position:absolute;right:16px;top:72px;z-index:1150;width:min(540px,calc(100vw - 32px));
@@ -169,7 +173,7 @@ font-size:11px;pointer-events:none;max-width:50vw}
  <section class="section" id="tab-layers">
    <input id="search" type="search" class="wide" placeholder="Filtrovat názvy vrstev / objektů…">
    <div class="actions"><button id="all">Vše</button><button id="none">Nic</button><button id="invert">Invertovat</button></div>
-   <div class="muted" id="layer-stats"></div><div id="layer-list"></div>
+   <div class="muted" id="layer-stats"></div><div class="muted" style="margin:4px 0 9px">Dvojklik na vrstvu nebo ⚙ otevře grafické nastavení.</div><div id="layer-list"></div>
  </section>
  <section class="section" id="tab-source" hidden>
    <h3>NAČTENÍ GEODAT</h3>
@@ -182,7 +186,7 @@ font-size:11px;pointer-events:none;max-width:50vw}
    <h3>MAPOVÁ KOMPOZICE</h3>
    <div class="field"><label for="base">Podkladová mapa</label><select id="base">
      <option value="osm">OpenStreetMap</option><option value="imagery">Esri World Imagery</option>
-     <option value="topo">Esri Topographic</option><option value="dark">CARTO Dark</option>
+     <option value="topo">Esri Topographic</option><option value="hillshade">Esri World Hillshade</option>
      <option value="opentopo">OpenTopoMap</option></select></div>
    <div class="field"><label for="labels">Popisky objektů</label><input id="labels" type="checkbox" checked></div>
    <div class="field"><label for="legend">Legenda</label><input id="legend" type="checkbox" checked></div>
@@ -232,7 +236,7 @@ const BASES={
  osm:["https://tile.openstreetmap.org/{z}/{x}/{y}.png","© OpenStreetMap contributors"],
  imagery:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}","Tiles © Esri"],
  topo:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}","Tiles © Esri"],
- dark:["https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png","© OpenStreetMap © CARTO"],
+ hillshade:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}","Hillshade © Esri and data providers"],
  opentopo:["https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png","© OpenTopoMap, OpenStreetMap"]
 };
 const COLORS=["#3fa7fa","#21d7bf","#dc8aff","#ffb058","#fc647e","#a6d67b"];
@@ -243,16 +247,26 @@ let placingRadar=false, demController=null, demRequest=0, radarMarker=null;
 let extentRectangle=null,extentLevel=null,extentSelectedFeatures=[],extentGeometry=null;
 let radarKnown=Boolean(DATA.radarKnown);
 const demCache=new Map();
-let setting={base:"dark",labels:true,legend:true,range:false,nm:20};
-let layerSeq=0,chosenBase="dark",radarCenter=DATA.center||[50,15],legendControl=null;
+let setting={base:"hillshade",labels:true,legend:true,range:false,nm:20};
+let layerSeq=0,chosenBase="hillshade",radarCenter=DATA.center||[50,15],legendControl=null;
 const escapeHTML=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const filename=s=>String(s||"import").slice(0,180);
 const status=t=>{$("status").textContent=t};
 function notify(t,error=false){$("notice").textContent=t;$("notice").classList.toggle("error",error);status(t)}
 function validFeature(f){return f&&f.type==="Feature"&&f.geometry&&typeof f.geometry.type==="string"}
-function initialStyle(s,i){return {show:s?.show!==false,color:/^#[0-9a-f]{6}$/i.test(s?.color||"")?s.color:COLORS[i%COLORS.length],
- opacity:Number.isFinite(Number(s?.opacity))?Math.max(0,Math.min(1,Number(s.opacity))):.35,
- width:Number.isFinite(Number(s?.width))?Math.max(.5,Math.min(12,Number(s.width))):2}}
+function initialStyle(s,i){
+ const bounded=(value,fallback,min,max)=>value===undefined||value===null||value===""?
+    fallback:(Number.isFinite(Number(value))?Math.min(max,Math.max(min,Number(value))):fallback);
+ return {
+  show:s?.show!==false,
+  color:/^#[0-9a-f]{6}$/i.test(s?.color||"")?s.color:COLORS[i%COLORS.length],
+  opacity:bounded(s?.opacity,.35,0,1),
+  strokeOpacity:bounded(s?.strokeOpacity,1,0,1),
+  width:bounded(s?.width,2,.5,12),
+  radius:bounded(s?.radius,4,1,16),
+  dash:["solid","dash","dot"].includes(s?.dash)?s.dash:"solid"
+ };
+}
 function addLayer(name,features,style,rerender=true){
  if(!Array.isArray(features))return;
  const good=features.filter(validFeature);
@@ -262,13 +276,18 @@ function addLayer(name,features,style,rerender=true){
  if(rerender){refreshList();syncAll();fitAll();updateExtentPreset()}
 }
 function resetLayers(){for(const o of layers.values())if(o.geo)map.removeLayer(o.geo);layers.clear();openedEditor=null}
-function styleOf(o){return {color:o.style.color,weight:o.style.width,opacity:1,fillColor:o.style.color,fillOpacity:o.style.opacity}}
+function styleOf(o){return {
+ color:o.style.color,weight:o.style.width,opacity:o.style.strokeOpacity,
+ fillColor:o.style.color,fillOpacity:o.style.opacity,
+ dashArray:o.style.dash==="dash"?"8 5":o.style.dash==="dot"?"2 5":null,
+ radius:o.style.radius
+}}
 function ensureGeo(o){
  if(o.geo)return;
  o.geo=L.geoJSON({type:"FeatureCollection",features:o.features},{
   renderer:vectorRenderer,
   style:()=>styleOf(o),
-  pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,...styleOf(o)}),
+  pointToLayer:(f,ll)=>L.circleMarker(ll,styleOf(o)),
   onEachFeature:(f,l)=>{const p=f.properties||{};const name=p.name||p.Name||p.title;
     if(name)l.bindTooltip(escapeHTML(name),{sticky:true,permanent:false});
     if(p.description)l.bindPopup("<b>"+escapeHTML(name||o.name)+"</b><p>"+escapeHTML(p.description).slice(0,1200)+"</p>")
@@ -286,25 +305,52 @@ function renderLayerRow(o,filter){
  const matched=search?o.features.filter(f=>String(f.properties?.name||f.properties?.Name||"").toLocaleLowerCase().includes(search)):null;
  if(search&&!nameMatch&&!matched.length)return null;
  const row=document.createElement("div");row.className="layer"+(o.style.show?"":" off");
+ row.title="Dvojklik otevře grafické vlastnosti vrstvy";
+ row.addEventListener("dblclick",e=>{
+   if(e.target.closest("button,input,.layer-editor"))return;
+   e.preventDefault();openedEditor=o.name;refreshList();
+ });
  const check=document.createElement("input");check.type="checkbox";check.checked=o.style.show;check.setAttribute("aria-label","Zobrazit "+o.name);
  check.addEventListener("change",()=>{o.style.show=check.checked;syncOne(o);refreshLegend();updateCount();row.classList.toggle("off",!check.checked)});
  const desc=document.createElement("div");desc.innerHTML='<div class="name" title="'+escapeHTML(o.name)+'">'+escapeHTML(o.name)+'</div><small>'+o.features.length.toLocaleString("cs")+" objektů"+(matched&&!nameMatch?" · shoda "+matched.length:"")+"</small>";
- const edit=document.createElement("button");edit.textContent="⚙";edit.setAttribute("aria-label","Vlastnosti "+o.name);
+ const edit=document.createElement("button");edit.textContent="⚙";edit.setAttribute("aria-label","Vlastnosti "+o.name);edit.title="Upravit grafické vlastnosti";
  edit.addEventListener("click",()=>{openedEditor=openedEditor===o.name?null:o.name;refreshList()});
  row.append(check,desc,edit);
  if(openedEditor===o.name){
   const ed=document.createElement("div");ed.className="layer-editor";
-  const fields=[["Barva","color","color",o.style.color],["Průhlednost výplně","opacity","range",Math.round(o.style.opacity*100)],["Tloušťka linie","width","range",o.style.width]];
+  const fields=[
+   ["Barva","color","color",o.style.color],
+   ["Průhlednost výplně","opacity","range",Math.round(o.style.opacity*100)],
+   ["Průhlednost obrysu","strokeOpacity","range",Math.round(o.style.strokeOpacity*100)],
+   ["Tloušťka linie [px]","width","range",o.style.width],
+   ["Velikost bodu [px]","radius","range",o.style.radius],
+   ["Typ čáry","dash","select",o.style.dash]
+  ];
   for(const [label,key,type,value] of fields){
    const div=document.createElement("div");div.className="field";
    const lbl=document.createElement("label");lbl.textContent=label;
    const input=document.createElement("input");input.type=type;input.value=value;
-   if(key==="opacity"){input.min=0;input.max=100;input.step=5}
-   if(key==="width"){input.min=.5;input.max=10;input.step=.5}
-   input.addEventListener("input",()=>{o.style[key]=key==="color"?input.value:key==="opacity"?Number(input.value)/100:Number(input.value);
-      if(o.geo)o.geo.setStyle(styleOf(o));refreshLegend()});
+   if(key==="opacity"||key==="strokeOpacity"){input.min=0;input.max=100;input.step=5}
+   if(key==="width"){input.min=.5;input.max=12;input.step=.5}
+   if(key==="radius"){input.min=1;input.max=16;input.step=1}
+   if(key==="dash"){
+     for(const [v,t] of [["solid","Plná"],["dash","Čárkovaná"],["dot","Tečkovaná"]]){
+       const opt=document.createElement("option");opt.value=v;opt.textContent=t;input.append(opt)
+     }
+     input.value=value;
+   }
+   const apply=()=>{
+     o.style[key]=key==="color"||key==="dash"?input.value:
+       key==="opacity"||key==="strokeOpacity"?Number(input.value)/100:Number(input.value);
+     if(o.geo)o.geo.setStyle(styleOf(o));
+     refreshLegend();
+   };
+   input.addEventListener("input",apply);input.addEventListener("change",apply);
    div.append(lbl,input);ed.append(div);
   }
+  const hint=document.createElement("div");hint.className="muted";
+  hint.textContent="Změny se projeví okamžitě, bez nového načtení mapy. Uložení CDVIEW zachová grafické vlastnosti.";
+  ed.append(hint);
   const del=document.createElement("button");del.textContent="Odstranit vrstvu";del.addEventListener("click",()=>{
     if(o.geo)map.removeLayer(o.geo);layers.delete(o.name);openedEditor=null;refreshList();refreshLegend()});
   ed.append(del);row.append(ed);
@@ -432,7 +478,7 @@ async function loadFile(file){
   for(const [name,features] of Object.entries(obj.layers)){
     if(++idx>300)throw Error("Příliš mnoho vrstev");addLayer(name,features,obj.styles[name],false)}
   setting.base=BASES[obj.settings?.viewer_basemap]?obj.settings.viewer_basemap:(
-    Object.keys(BASES).includes(obj.settings?.base)?obj.settings.base:"dark");
+    Object.keys(BASES).includes(obj.settings?.base)?obj.settings.base:"hillshade");
   const site=obj.settings?.radar_site;
   if(Array.isArray(site)&&site.length===2)setRadarSite(Number(site[0]),Number(site[1]),"CDVIEW");
   else detectRadarSiteFromLayers();
@@ -1082,7 +1128,7 @@ function setup(){
    zoomAnimation:false,fadeAnimation:false,attributionControl:true});
  vectorRenderer=L.canvas({padding:.5});
  L.control.zoom({position:"topright"}).addTo(map);L.control.scale({position:"bottomright",imperial:false}).addTo(map);
- selectBase("dark");
+ selectBase("hillshade");
  for(const [name,features] of Object.entries(DATA.layers||{}))addLayer(name,features,DATA.styles?.[name],false);
  refreshList();syncAll();fitAll();updateExtentPreset();
  if(radarKnown)setRadarSite(radarCenter[0],radarCenter[1],"EDITOR");
