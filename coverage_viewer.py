@@ -684,6 +684,7 @@ def render_viewer():
             print_params["snapshot"]=str(st.query_params["snapshot"])
         render_fullscreen_viewer(layers,styles,center,
             diagnostic_result=editor_result, diagnostic_levels=editor_meta.get("levels", []),
+            diagnostic_reference=(editor_meta.get("source_ui") or {}).get("par_level_reference", "AMSL"),
             snapshot=str(st.query_params.get("snapshot","")),
             studio_url="?"+urlencode(print_params))
         return
