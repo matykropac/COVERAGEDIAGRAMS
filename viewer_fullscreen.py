@@ -42,6 +42,7 @@ def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
             "radarMode": str(cfg.radar_mode),
             "reference": diagnostic_reference if cfg.radar_mode == "PAR-NG" else "AMSL",
             "sectorEdgeLoss": float(getattr(result.get("antenna_pattern"), "sector_edge_loss_db", 6.0)),
+            "rfAssumptions": dict(core.SSR_ASSUMPTIONS) if cfg.radar_mode == "SSR" else None,
             "levels": levels,
             "status": {},
         }
@@ -729,6 +730,40 @@ function radialAt(lat,lon){
  const bearing=(Math.atan2(Math.sin(dl)*Math.cos(p2),Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl))*180/Math.PI+360)%360;
  return {distance,bearing};
 }
+function rfInfoAtPoint(mode,distance_m,elevation_deg){
+ if(mode==="PAR-NG"){
+  return "RF · PAR-NG: dokumentovaný špičkový vysílací výkon 300 W (lineární polarizace) "+
+         "nebo 600 W (eliptická polarizace), podle režimu.\n"+
+         "Skutečný okamžitý režim/pulz není zaznamenán; přijatý výkon a dosažené SNR nelze "+
+         "bez absolutního zisku, RCS, NF a šířky pásma spolehlivě určit.";
+ }
+ if(mode==="RL-2000"){
+  return "RF · PSR: přesný vysílací výkon aktuální radarové konfigurace není zadán.\n"+
+         "Výpočet je normalizovaný na referenční dosah; přijatý výkon v dBm "+
+         "nelze bez Tx výkonu, absolutního zisku, RCS a přijímače určit.";
+ }
+ if(mode!=="SSR"||!grid.rfAssumptions)return "";
+ const a=grid.rfAssumptions;
+ // SSR is TWO one-way Friis paths, never a monostatic R^-4 radar echo.
+ // The numbers are engineering assumptions in radar_core.SSR_ASSUMPTIONS.
+ const gain=-Math.max(0,12*((elevation_deg-a.beam_peak_deg)/a.vertical_hpbw_deg)**2);
+ const gainDb=Math.max(-80,gain);
+ const received=(power,freq)=>power+a.ground_peak_gain_dbi+
+    a.aircraft_gain_dbi+gainDb-a.losses_per_link_db-
+    20*Math.log10(4*Math.PI*distance_m*freq*1e6/299792458);
+ const up=received(a.interrogator_power_dbm,a.uplink_mhz);
+ const down=received(a.transponder_power_dbm,a.downlink_mhz);
+ const worst=Math.min(up-a.transponder_threshold_dbm-a.margin_per_link_db,
+                      down-a.ground_threshold_dbm-a.margin_per_link_db);
+ const watts=dbm=>Math.pow(10,(dbm-30)/10);
+ return "RF · SSR (orientační předpoklady, nikoli kalibrovaný radar):\n"+
+  "Pozemní vysílač: "+watts(a.interrogator_power_dbm).toFixed(0)+" W (1030 MHz)"+
+  " · odpovídač: "+watts(a.transponder_power_dbm).toFixed(1)+" W (1090 MHz)\n"+
+  "Odhad na letadle (uplink): "+up.toFixed(1)+" dBm"+
+  " · na radaru (downlink): "+down.toFixed(1)+" dBm\n"+
+  "Nejmenší rezerva vůči nastavenému prahu a rezervě: "+
+  worst.toFixed(1)+" dB. Bez terénu, rušení, garblingu a selektivity.";
+}
 function showInspection(){
  clearProfileExports();
  if(!grid||!selectedPoint)return;
@@ -786,7 +821,8 @@ function showInspection(){
   "Limitní terén: "+(blocker>=0?(ranges[blocker]/1000).toFixed(3)+" km / "+samples[blocker].toFixed(1)+" m AMSL":"N/A")+"\n"+
   "Model Země: R = 6371008,8 m × k "+grid.k+" · krok azimutu a vzdálenosti je diskrétní.\n"+
   (grid.radarMode==="PAR-NG"?"Sektorový útlum PAR: "+(grid.sectorEdgeLoss*(Math.min(1,Math.abs(((grid.az[i]-grid.bearing+540)%360)-180)/15)**2)).toFixed(3)+" dB (kvadraticky, −"+grid.sectorEdgeLoss.toFixed(1)+" dB na okrajích).\\n":"")+
-  "Závěr pochází přímo z masky krytí EDITORU; profil z původních vzorků DEM.";
+  "Závěr pochází přímo z masky krytí EDITORU; profil z původních vzorků DEM.\n\n"+
+  rfInfoAtPoint(grid.radarMode,Math.sqrt(d*d+(target-grid.antenna)*(target-grid.antenna)),angle);
  if(Number.isFinite(target))drawProfile(ranges,samples,d,target);
  else $("inspection-profile").replaceChildren();
  setProfileExports({
@@ -940,7 +976,10 @@ async function showStandaloneInspection(){
     "Terén cíle: "+heights.at(-1).toFixed(1)+" m AMSL · elevace: "+(angle*180/Math.PI).toFixed(3)+"°\n"+
     "Minimální rezerva nad DEM: "+(Number.isFinite(limit)?limit.toFixed(1):"N/A")+" m"+
     (blocker>=0?" v "+(ranges[blocker]/1000).toFixed(2)+" km":"")+
-    "\nZakřivení: Rz × k = "+(re/1000).toFixed(1)+" km. Není zahrnuta Fresnelova zóna, objekty ani RCS/SNR.";
+    "\nZakřivení: Rz × k = "+(re/1000).toFixed(1)+
+    " km. Není zahrnuta Fresnelova zóna, objekty ani RCS/SNR.\n"+
+    "RF: Bez konfigurace radaru a jeho kalibrovaných hodnot nelze vypočítat "+
+    "vysílací režim ani přijatý výkon.";
   drawStandaloneProfile(ranges,heights,target,antenna,k);
   setProfileExports({
    mode:"STANDALONE_DEM_LOS",source:profile.source,
