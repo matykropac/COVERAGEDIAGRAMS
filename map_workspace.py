@@ -769,8 +769,71 @@ def _restore_radar_form():
             st.session_state[key]=saved[key]
 
 
-@st.dialog("RADAR / ENGINEERING CONFIGURATION",width="large")
+def _radar_ui_mode():
+    """ASR is currently a user-interface preset of the PSR model, not an
+    independently validated transmitter / combined PSR-MSSR solver."""
+    name=st.session_state.get("ws_radar_ui_mode")
+    if name in ("PSR","SSR","ASR","PAR"):
+        return name
+    model=st.session_state.get("ws_radar","RL-2000")
+    return {"RL-2000":"PSR","SSR":"SSR","PAR-NG":"PAR"}.get(model,"PSR")
+
+
+def _select_radar_ui_mode(name):
+    if name not in ("PSR","SSR","ASR","PAR"):
+        raise ValueError("Neznámý radarový režim.")
+    old=_radar_ui_mode()
+    _remember_radar_form()
+    profiles=dict(st.session_state.get("_radar_mode_profiles") or {})
+    profiles[old]=dict(st.session_state.get("_radar_form_shadow") or {})
+    model={"PSR":"RL-2000","SSR":"SSR","ASR":"RL-2000","PAR":"PAR-NG"}[name]
+    st.session_state["ws_radar_ui_mode"]=name
+    st.session_state["ws_radar"]=model
+    if name!=old and name in profiles:
+        # Explicit saved profile wins over old widget keys, even when Streamlit
+        # kept the same field name while changing a conditional tab.
+        for key,value in profiles[name].items():
+            if key.startswith("ws_") and key not in ("ws_radar","ws_radar_ui_mode"):
+                st.session_state[key]=value
+    st.session_state["_radar_mode_profiles"]=profiles
+    _on_radar_level_mode_change()
+    st.session_state["_radar_form_shadow"]={
+        **dict(st.session_state.get("_radar_form_shadow") or {}),
+        **{k:v for k,v in st.session_state.items()
+           if k.startswith("ws_") and k in
+           __import__("workspace_autosave").RADAR_FIELDS}
+    }
+    _draft_checkpoint()
+
+
 def radar_dialog():
+    """Open one of four dedicated radar engineering dialogs."""
+    name=_radar_ui_mode()
+    return {"PSR":_psr_dialog,"SSR":_ssr_dialog,
+            "ASR":_asr_dialog,"PAR":_par_dialog}[name]()
+
+
+@st.dialog("PSR / ENGINEERING CONFIGURATION",width="large")
+def _psr_dialog():
+    _radar_settings_body("PSR")
+
+
+@st.dialog("SSR / ENGINEERING CONFIGURATION",width="large")
+def _ssr_dialog():
+    _radar_settings_body("SSR")
+
+
+@st.dialog("ASR / ENGINEERING CONFIGURATION",width="large")
+def _asr_dialog():
+    _radar_settings_body("ASR")
+
+
+@st.dialog("PAR / ENGINEERING CONFIGURATION",width="large")
+def _par_dialog():
+    _radar_settings_body("PAR")
+
+
+def _radar_settings_body(ui_mode):
     """Guided engineering setup with original keys and numeric boundaries intact."""
     st.markdown("""
     <style>
@@ -794,11 +857,15 @@ def radar_dialog():
     """,unsafe_allow_html=True)
     _draft_begin()
     _restore_radar_form()
-    st.caption("Čtyři přehledné kroky · všechny původní radarové parametry, "
-               "omezení a ukládání do CDPROJ zůstávají zachované.")
+    st.caption(f"{ui_mode} · stanoviště / anténa / terén / letové hladiny. "
+               "Všechna nastavení se ukládají při změně i po zavření okna.")
+    if ui_mode=="ASR":
+        st.info("ASR je v této verzi samostatný profil ovládání využívající "
+                "výpočetní model PSR (RL-2000). Nejde o nezávisle "
+                "kalibrovaný ASR ani kombinovaný PSR/MSSR model.")
     st.caption("◉ AUTO-DRAFT · průběžně ukládám nastavení radaru a výšky. "
                "Koncept se obnoví po návratu přes stejný odkaz.")
-    radar=st.session_state.get("ws_radar","RL-2000")
+    radar=ui_mode
     lat=st.session_state.get("ws_lat",50.034)
     lon=st.session_state.get("ws_lon",15.781)
     agl=st.session_state.get("ws_agl",20.)
@@ -825,8 +892,8 @@ def radar_dialog():
         st.markdown('<div class="cd-radar-guide">Poloha a montážní výška radarové antény. '
                     'Výšky antény jsou vztažené k terénu v místě instalace (AGL).</div>',
                     unsafe_allow_html=True)
-        st.selectbox("Radar",["RL-2000","PAR-NG","SSR"],key="ws_radar",
-                     on_change=_on_radar_level_mode_change)
+        st.caption(f"Režim **{ui_mode}** je zvolen samostatným tlačítkem RADAR. "
+                   "Zde už jej nemusíš vybírat ze seznamu.")
         a,b=st.columns(2,gap="small")
         with a:
             st.number_input("Latitude · WGS84",min_value=-80.0,max_value=80.0,
@@ -2490,6 +2557,7 @@ def _select_comparison_levels(select_all):
 def render_workspace():
     """Persistent ATM workstation map with contextual engineering tools."""
     _draft_begin()
+    _restore_radar_form()
     # The most recently submitted Streamlit values are already available in
     # session_state at script start. Persist before conditional widgets vanish.
     _draft_checkpoint()
@@ -2909,8 +2977,23 @@ def render_workspace():
                 st.caption("Kliknutím do mapy umístíš radar. Po výběru se vrátíš do sekce MAPA.")
                 st.markdown(f"**LAT** {config.lat:.6f}° &nbsp; **LON** {config.lon:.6f}°",
                             unsafe_allow_html=True)
-                if st.button("⚙ Nastavení radaru",key="ws_command_radar",
-                             use_container_width=True):
+                st.markdown('<div class="cd-nav-title">VÝBĚR RADAROVÉHO SYSTÉMU</div>',
+                            unsafe_allow_html=True)
+                radar_choices=(("PSR","SSR"),("ASR","PAR"))
+                for row_index,options in enumerate(radar_choices):
+                    cols=st.columns(2,gap="small")
+                    for i,name in enumerate(options):
+                        with cols[i]:
+                            if st.button(name,key=f"ws_radar_mode_{name}",
+                                         type="primary" if _radar_ui_mode()==name else "secondary",
+                                         use_container_width=True,
+                                         help="Otevřít samostatné nastavení "+name):
+                                _select_radar_ui_mode(name)
+                                radar_dialog()
+                st.caption("Vyber systém jedním kliknutím. Parametry jednotlivých "
+                           "režimů zůstanou v rozpracovaném konceptu.")
+                if st.button("⚙ Upravit aktuální "+_radar_ui_mode(),
+                             key="ws_command_radar",use_container_width=True):
                     radar_dialog()
                 st.markdown('<div class="cd-nav-title">VÝPOČET KRYTÍ</div>',unsafe_allow_html=True)
                 if st.button("▶ SPOČÍTAT KRYTÍ",type="primary",
