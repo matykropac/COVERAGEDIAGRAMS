@@ -190,7 +190,8 @@ def _par_helper_context():
     return {
         "enabled":True,"lat":cfg.lat,"lon":cfg.lon,
         "bearing":cfg.bearing_deg,"range_km":cfg.range_km,
-        "runway":runway,"runway_end":int(st.session_state.get("ws_runway_end",0))
+        "runway":runway,"runways":runways,
+        "runway_end":int(st.session_state.get("ws_runway_end",0))
     }
 
 
@@ -240,6 +241,7 @@ def position_layers_export_dialog():
                             "bearing_deg":_par_helper_context()["bearing"],
                             "range_km":_par_helper_context()["range_km"],
                             "runway":_par_helper_context()["runway"],
+                            "runways":_par_helper_context()["runways"],
                             "runway_end":_par_helper_context()["runway_end"],
                             "include_range":False
                         }) if _par_helper_context() else None))
@@ -2193,6 +2195,7 @@ def _draw_map():
                      "rangeKm":float(configured.range_km),
                      "lat":float(configured.lat),"lon":float(configured.lon),
                      "referenceRunway":(_par_helper_context() or {}).get("runway"),
+                     "referenceRunways":(_par_helper_context() or {}).get("runways",[]),
                      "referenceEnd":(_par_helper_context() or {}).get("runway_end",0)},
         "live":False,
         "coverage":coverage,
