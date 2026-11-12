@@ -160,13 +160,18 @@ def par_helper_features(*,site_lat,site_lon,bearing_deg,range_km=40.,
         features.append(_feature(layer,name,_line([site,end]),
                                  bearing_true_deg=round(bearing%360,6),
                                  range_km=distance/1000))
-    ray("PAR · osa",az)
-    ray("PAR · levá hranice −15°",az-15)
-    ray("PAR · pravá hranice +15°",az+15)
-    arc=[_geodesic_point(lat,lon,az+v*.5,distance)
-         for v in range(-30,31)]
-    features.append(_feature("PAR_SCAN_GEOMETRY","PAR · vnější oblouk ±15°",
-                             _line(arc),range_km=distance/1000))
+    # Two mirrored 30° sectors, forward and reverse along the same line.
+    # The line export must match the two interactive Leaflet wedges.
+    for reverse,part in ((0,"PŘEDNÍ"),(180,"ZADNÍ")):
+        direction=(az+reverse)%360
+        ray(f"PAR · osa {part}",direction)
+        ray(f"PAR · hranice −15° {part}",direction-15)
+        ray(f"PAR · hranice +15° {part}",direction+15)
+        arc=[_geodesic_point(lat,lon,direction+v*.5,distance)
+             for v in range(-30,31)]
+        features.append(_feature("PAR_SCAN_GEOMETRY",
+                                 f"PAR · vnější oblouk ±15° {part}",
+                                 _line(arc),range_km=distance/1000))
     if runway:
         heading=float(runway["heading_deg_true"])
         if int(runway_end)==1:heading=(heading+180)%360
@@ -175,6 +180,14 @@ def par_helper_features(*,site_lat,site_lon,bearing_deg,range_km=40.,
         features.append(_feature("PAR_RUNWAY_REFERENCE",
              "PAR · rovnoběžka RWY "+str(runway.get("label","")),_line(parallel),
              bearing_true_deg=round(heading,6),
+             source=str(runway.get("source","OurAirports")),
+             verified_aip=bool(runway.get("verified_aip",False))))
+        perpendicular=[
+            _geodesic_point(lat,lon,heading-90,distance),site,
+            _geodesic_point(lat,lon,heading+90,distance)]
+        features.append(_feature("PAR_RUNWAY_REFERENCE",
+             "PAR · kolmice RWY "+str(runway.get("label","")),_line(perpendicular),
+             bearing_true_deg=round((heading+90)%360,6),
              source=str(runway.get("source","OurAirports")),
              verified_aip=bool(runway.get("verified_aip",False))))
     if include_range:
