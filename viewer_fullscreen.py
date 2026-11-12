@@ -251,18 +251,42 @@ function selectBase(k){
  const [url,attr]=BASES[k];base=L.tileLayer(url,{attribution:attr,maxZoom:19,updateWhenIdle:true,
    keepBuffer:4,crossOrigin:false}).addTo(map);base.bringToBack();$("base").value=k;
 }
+function wgs84Destination(latDeg,lonDeg,azDeg,distance){
+ // Vincenty direct problem on WGS84, distance in metres, azimuth clockwise from true north.
+ const a=6378137,f=1/298.257223563,b=a*(1-f);
+ const phi=latDeg*Math.PI/180,alpha1=azDeg*Math.PI/180;
+ const U1=Math.atan((1-f)*Math.tan(phi)),sinU1=Math.sin(U1),cosU1=Math.cos(U1);
+ const sinA1=Math.sin(alpha1),cosA1=Math.cos(alpha1);
+ const sigma1=Math.atan2(Math.tan(U1),cosA1);
+ const sinAlpha=cosU1*sinA1,cosSqAlpha=1-sinAlpha*sinAlpha;
+ const uSq=cosSqAlpha*(a*a-b*b)/(b*b);
+ const A=1+uSq/16384*(4096+uSq*(-768+uSq*(320-175*uSq)));
+ const B=uSq/1024*(256+uSq*(-128+uSq*(74-47*uSq)));
+ let sigma=distance/(b*A),delta=0;
+ for(let i=0;i<40;i++){
+   const cos2=Math.cos(2*sigma1+sigma),sinS=Math.sin(sigma),cosS=Math.cos(sigma);
+   delta=B*sinS*(cos2+B/4*(cosS*(-1+2*cos2*cos2)-
+     B/6*cos2*(-3+4*sinS*sinS)*(-3+4*cos2*cos2)));
+   const next=distance/(b*A)+delta;
+   if(Math.abs(next-sigma)<1e-12){sigma=next;break}
+   sigma=next;
+ }
+ const sinS=Math.sin(sigma),cosS=Math.cos(sigma);
+ const tmp=sinU1*sinS-cosU1*cosS*cosA1;
+ const phi2=Math.atan2(sinU1*cosS+cosU1*sinS*cosA1,
+   (1-f)*Math.sqrt(sinAlpha*sinAlpha+tmp*tmp));
+ const lambda=Math.atan2(sinS*sinA1,cosU1*cosS-sinU1*sinS*cosA1);
+ const C=f/16*cosSqAlpha*(4+f*(4-3*cosSqAlpha));
+ const L=lambda-(1-C)*f*sinAlpha*(sigma+C*sinS*
+   (Math.cos(2*sigma1+sigma)+C*cosS*(-1+2*Math.cos(2*sigma1+sigma)**2)));
+ return [phi2*180/Math.PI,((lonDeg+L*180/Math.PI+540)%360)-180];
+}
 function updateRange(){
  if(rangeShape){map.removeLayer(rangeShape);rangeShape=null}
  const nm=Number($("range").value);setting.nm=nm;$("range-text").textContent=nm;
  if(!$("range-on").checked)return;
- // Leaflet's geodesic circle meters radii are approximated by latitude/longitude.
- // Direct Vincenty-like spherical destination from radar, 180 segments.
- const R=6371008.8,lat1=radarCenter[0]*Math.PI/180,lon1=radarCenter[1]*Math.PI/180;
- const d=nm*1852/R,pts=[];
- for(let a=0;a<=360;a+=2){const bearing=a*Math.PI/180;
- const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(bearing));
- const lon2=lon1+Math.atan2(Math.sin(bearing)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
- pts.push([lat2*180/Math.PI,((lon2*180/Math.PI+540)%360)-180])}
+ const pts=[];
+ for(let a=0;a<=360;a+=2)pts.push(wgs84Destination(radarCenter[0],radarCenter[1],a,nm*1852));
  rangeShape=L.polyline(pts,{color:"#4fd5ff",weight:2,dashArray:"7,5",interactive:false}).addTo(map);
 }
 function geometry(node){
