@@ -105,7 +105,7 @@ font-size:11px;pointer-events:none;max-width:50vw}
   <button id="panel-toggle" class="primary" aria-expanded="true">☷ Nastavení</button>
   <button id="quick-open" class="ghost">＋ Soubor</button>
   <button id="fit" class="ghost">◎ Přiblížit data</button>
-  <button id="go3d" class="ghost" hidden>◈ 3D</button>
+  <button id="go3d" class="ghost" hidden>◈ 3D okno</button>
 </div>
 <div class="panel" id="panel">
  <header><strong>MAP WORKSPACE</strong><span id="count" class="muted">0 vrstev</span><button id="close" aria-label="Zavřít panel">×</button></header>
@@ -268,8 +268,11 @@ function updateRange(){
 function geometry(node){
  const ns="http://www.opengis.net/kml/2.2";
  const find=(n,tag)=>n.getElementsByTagNameNS(ns,tag)[0]||n.getElementsByTagName(tag)[0];
- const all=(n,tag)=>[...n.getElementsByTagNameNS(ns,tag),...n.getElementsByTagName(tag)];
+ const all=(n,tag)=>[...n.getElementsByTagName("*")].filter(x=>x.localName===tag);
  const coords=n=>String(find(n,"coordinates")?.textContent||"").trim().split(/\s+/).map(s=>s.split(",").map(Number)).filter(v=>v.length>=2&&v.every(Number.isFinite));
+ const multi=[...node.children].find(x=>x.localName==="MultiGeometry");
+ if(multi){const geometries=[...multi.children].map(geometry).filter(Boolean);
+   return geometries.length?{type:"GeometryCollection",geometries}:null}
  const point=find(node,"Point");if(point){const c=coords(point);return c.length?{type:"Point",coordinates:c[0]}:null}
  const line=find(node,"LineString");if(line){const c=coords(line);return c.length>1?{type:"LineString",coordinates:c}:null}
  const poly=find(node,"Polygon");if(poly){
@@ -369,7 +372,7 @@ function setup(){
  for(const [name,features] of Object.entries(DATA.layers||{}))addLayer(name,features,DATA.styles?.[name],false);
  refreshList();syncAll();fitAll();$("range-center").textContent="Radar: "+radarCenter.map(x=>Number(x).toFixed(6)+"°").join(" / ");
  $("go3d").hidden=!DATA.threeDUrl;
- $("go3d").onclick=()=>window.open(DATA.threeDUrl,"_top");
+ $("go3d").onclick=()=>window.open(DATA.threeDUrl,"_blank","noopener");
  $("panel-toggle").onclick=()=>{const hidden=$("panel").classList.toggle("hidden");$("panel-toggle").setAttribute("aria-expanded",String(!hidden));map.invalidateSize()};
  $("close").onclick=()=>{$("panel").classList.add("hidden");$("panel-toggle").setAttribute("aria-expanded","false")};
  $("fit").onclick=fitAll;
