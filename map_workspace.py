@@ -775,6 +775,7 @@ def _select_radar_ui_mode(name):
     model={"PSR":"RL-2000","SSR":"SSR","ASR":"RL-2000","PAR":"PAR-NG"}[name]
     st.session_state["ws_radar_ui_mode"]=name
     st.session_state["ws_radar"]=model
+    st.session_state["ws_radar_mode_chosen"]=True
     if name!=old and name in profiles:
         # Explicit saved profile wins over old widget keys, even when Streamlit
         # kept the same field name while changing a conditional tab.
@@ -906,12 +907,18 @@ def _radar_settings_body(ui_mode):
     # unmounted/remounted. An explicit controlled page is persistent instead.
     step=st.session_state.get("_radar_active_step","STANOVIŠTĚ")
     if step not in _RADAR_STEPS:step="STANOVIŠTĚ"
-    st.radio("KROK KONFIGURACE",_RADAR_STEPS,
-             index=_RADAR_STEPS.index(step),
-             key="ws_radar_step",on_change=_on_radar_step_change,
-             horizontal=True)
-    step=st.session_state["ws_radar_step"]
-    st.session_state["_radar_active_step"]=step
+    st.caption("KROK KONFIGURACE")
+    step_cols=st.columns(4,gap="small")
+    for i,(col,step_name) in enumerate(zip(step_cols,_RADAR_STEPS),start=1):
+        with col:
+            if st.button(f"{i:02d} · "+step_name,
+                         key="ws_radar_step_button_"+str(i),
+                         type="primary" if step==step_name else "secondary",
+                         use_container_width=True):
+                _remember_radar_form()
+                st.session_state["_radar_active_step"]=step_name
+                st.rerun()
+    step=st.session_state.get("_radar_active_step","STANOVIŠTĚ")
     if step=="STANOVIŠTĚ":
         st.markdown('<div class="cd-radar-guide">Poloha a montážní výška radarové antény. '
                     'Výšky antény jsou vztažené k terénu v místě instalace (AGL).</div>',
@@ -3032,30 +3039,21 @@ def render_workspace():
             elif section=="RADAR":
                 st.markdown('<div class="cd-nav-title">1 / ZVOL RADAROVÝ SYSTÉM</div>',
                             unsafe_allow_html=True)
-                # One fixed-size, button-like segmented control instead of
-                # four independent Streamlit button containers that jitter.
-                with st.container(key="ws_radar_mode_panel"):
-                    current_ui=st.session_state.get("ws_radar_ui_mode")
-                    if ("ws_radar_selector" not in st.session_state or
-                            current_ui in ("PSR","SSR","ASR","PAR") and
-                            st.session_state["ws_radar_selector"]!=current_ui):
-                        # A loaded CDPROJ or restored autosave may have selected
-                        # another radar while this widget was unmounted.
-                        st.session_state["ws_radar_selector"]=current_ui
-                    st.segmented_control(
-                        "RADAROVÝ SYSTÉM",("PSR","SSR","ASR","PAR"),
-                        selection_mode="single",key="ws_radar_selector",
-                        on_change=_on_main_radar_selection,
-                        label_visibility="collapsed",width="stretch")
-                    selected=st.session_state.get("ws_radar_selector")
-                    if selected:
-                        st.caption(f"**{selected}** · zvolený systém. "
-                                   "Přepnutím se otevře jeho konfigurátor.")
-                    else:
-                        st.caption("Vyber PSR, SSR, ASR nebo PAR. Každý systém "
-                                   "má vlastní uložené parametry.")
-                    if st.session_state.pop("ws_open_selected_radar_dialog",False):
-                        radar_dialog()
+                # Four actual action buttons: select radar FIRST, then choose
+                # the installation site, then open its engineering parameters.
+                cols=st.columns(4,gap="small")
+                for col,mode_name in zip(cols,("PSR","SSR","ASR","PAR")):
+                    with col:
+                        if st.button(mode_name,key="ws_radar_button_"+mode_name,
+                                     type="primary" if _radar_ui_mode()==mode_name else "secondary",
+                                     use_container_width=True):
+                            _select_radar_ui_mode(mode_name)
+                            st.session_state["ws_radar_mode_chosen"]=True
+                            st.rerun()
+                if st.session_state.get("ws_radar_mode_chosen"):
+                    st.caption("Zvolený radar: **"+_radar_ui_mode()+"**")
+                else:
+                    st.caption("Nejdřív klikni na typ radaru, potom stanov polohu.")
                 _render_frequency_inventory(_radar_ui_mode())
                 st.markdown('<div class="cd-nav-title">2 / STANOVIŠTĚ RADARU</div>',
                             unsafe_allow_html=True)
@@ -3067,9 +3065,30 @@ def render_workspace():
                     st.caption(f"LAT {site[0]:.6f}° · LON {site[1]:.6f}°")
                 if st.button("⌖ URČIT STANOVIŠTĚ Z MAPY",
                              key="ws_radar_site_from_section",
-                             use_container_width=True):
+                             use_container_width=True,
+                             disabled=not st.session_state.get("ws_radar_mode_chosen",False)):
                     _begin_radar_site_pick()
                     st.rerun()
+                with st.expander("NEBO ZADAT SOUŘADNICE LAT / LON",expanded=False):
+                    if "ws_site_lat_input" not in st.session_state:
+                        st.session_state["ws_site_lat_input"]=f"{site[0]:.6f}" if site else ""
+                    if "ws_site_lon_input" not in st.session_state:
+                        st.session_state["ws_site_lon_input"]=f"{site[1]:.6f}" if site else ""
+                    st.text_input("LAT · WGS84",key="ws_site_lat_input",
+                                  placeholder="např. 50.034000")
+                    st.text_input("LON · WGS84",key="ws_site_lon_input",
+                                  placeholder="např. 15.781000")
+                    if st.button("✓ ULOŽIT LAT / LON",
+                                 key="ws_save_site_sidebar",
+                                 use_container_width=True,
+                                 disabled=not st.session_state.get("ws_radar_mode_chosen",False)):
+                        try:
+                            lat=float(st.session_state["ws_site_lat_input"].replace(",","."))
+                            lon=float(st.session_state["ws_site_lon_input"].replace(",","."))
+                            _commit_radar_site(lat,lon,reopen_dialog=False)
+                            st.success("Souřadnice stanoviště byly uloženy.")
+                        except (ValueError,TypeError,KeyError) as exc:
+                            st.error("Neplatné souřadnice: "+str(exc))
                 if st.button("⚙ Upravit aktuální "+_radar_ui_mode(),
                              key="ws_command_radar",use_container_width=True):
                     radar_dialog()
