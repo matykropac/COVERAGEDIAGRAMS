@@ -981,11 +981,11 @@ def _normalize_dem_payload(path, prefix, content_type, progress):
     """
     import zipfile
     header=prefix[:8]
-    tiff=(header.startswith(b'II*\\x00') or header.startswith(b'MM\\x00*')
-          or header.startswith(b'II+\\x00') or header.startswith(b'MM\\x00+'))
+    tiff=(header.startswith(b'II*\x00') or header.startswith(b'MM\x00*')
+          or header.startswith(b'II+\x00') or header.startswith(b'MM\x00+'))
     if tiff:
         return
-    if header.startswith(b'PK\\x03\\x04'):
+    if header.startswith(b'PK\x03\x04'):
         progress('OpenTopography vrátilo ZIP; rozbaluji GeoTIFF…')
         try:
             with zipfile.ZipFile(path) as archive:
@@ -1006,7 +1006,7 @@ def _normalize_dem_payload(path, prefix, content_type, progress):
                             dest.write(block)
                     with open(temporary,'rb') as candidate:
                         magic=candidate.read(4)
-                    if magic not in (b'II*\\x00',b'MM\\x00*',b'II+\\x00',b'MM\\x00+'):
+                    if magic not in (b'II*\x00',b'MM\x00*',b'II+\x00',b'MM\x00+'):
                         raise ValueError('ZIP obsahuje soubor .tif, který není GeoTIFF.')
                     os.replace(temporary,path)
                 finally:
@@ -1021,8 +1021,8 @@ def _normalize_dem_payload(path, prefix, content_type, progress):
         or header.lstrip()[:1] in (b'{',b'[',b'<')) else ''
     if detail:
         raise ValueError('OpenTopography místo GeoTIFFu vrátilo zprávu serveru: '+detail)
-    kind=('GZIP' if header.startswith(b'\\x1f\\x8b') else
-          'PNG' if header.startswith(b'\\x89PNG') else
+    kind=('GZIP' if header.startswith(b'\x1f\x8b') else
+          'PNG' if header.startswith(b'\x89PNG') else
           'PDF' if header.startswith(b'%PDF') else
           'neznámý binární formát')
     raise ValueError(
