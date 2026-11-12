@@ -785,6 +785,7 @@ def render_viewer():
         if st.query_params.get("snapshot"):
             print_params["snapshot"]=str(st.query_params["snapshot"])
         render_fullscreen_viewer(layers,styles,center,
+            diagnostic_result=editor_result, diagnostic_levels=(editor_meta or {}).get("levels", []),
             snapshot=str(st.query_params.get("snapshot","")),
             three_d_url="?"+urlencode(params),
             studio_url="?"+urlencode(print_params))
