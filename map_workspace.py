@@ -930,68 +930,77 @@ def radar_dialog():
                            "elektronicky vychylovaný svazek (Gaussian ≤0,65° HPBW), "
                            "nikoli změřenou charakteristiku. Výstup je "
                            "simulace skenování, ne validovaná detekční obálka.")
-        st.markdown('<div class="cd-panel-title">ANTENNA GAIN / ELEVATION CUT</div>',
-                    unsafe_allow_html=True)
-        try:
-            from antenna_workspace_preview import antenna_figure
-            diagram_config=_cfg()
-            diagram_pattern=_pattern(diagram_config)
-            diagram,source_name,limitations=antenna_figure(
-                diagram_config,diagram_pattern)
-            st.plotly_chart(diagram,use_container_width=True,
-                            key="ws_radar_antenna_chart",
-                            config={"displaylogo":False,"responsive":True})
-            st.caption("DATA SOURCE · "+source_name)
-            st.caption(limitations)
-            if mode=="PAR-NG":
-                from antenna_workspace_preview import par_3d_figure,par_pattern_info
-                detail=par_pattern_info(diagram_pattern)
-                st.markdown("**3D ANTENNA GAIN · 9 GHz SOURCE GRID**")
-                view=st.segmented_control("Pohled diagramu",
-                    ["Provozní sektor ±20°","Celá anténa ±180°"],
-                    default="Provozní sektor ±20°",
-                    key="ws_par_3d_view",width="stretch")
-                fig3d=par_3d_figure(
-                    diagram_pattern,near_field=view=="Provozní sektor ±20°")
-                st.plotly_chart(fig3d,use_container_width=True,
-                    key="ws_radar_par_3d_heatmap",
-                    config={"displaylogo":False,"responsive":True})
-                if diagram_pattern.scan_mode=="TRACKING":
-                    from antenna_workspace_preview import par_scanned_coverage_figure
-                    st.markdown("**AESA · SKENOVANÁ DOSAHOVÁ OBÁLKA**")
-                    st.caption("Výpočet napříč všemi povelovanými polohami "
-                               "svazku, nikoli statický anténní diagram. "
-                               "Barva vyjadřuje maximální *modelový* dosah "
-                               "před započtením terénního horizontu.")
-                    scanned=par_scanned_coverage_figure(diagram_pattern)
-                    st.plotly_chart(scanned,use_container_width=True,
-                        key="ws_radar_par_scan_envelope",
+        # The heavy Plotly antenna heatmaps are only built on explicit request.
+        # Streamlit tabs instantiate ALL their contents on each parameter edit:
+        # eager plotting here previously caused jitter even in the site tab.
+        preview=st.toggle("ZOBRAZIT ANTÉNNÍ DIAGRAMY / AESA NÁHLED",
+                          value=False,key="ws_radar_preview_enabled",
+                          help="Náročné grafy zůstanou vypnuté během zadávání "
+                               "souřadnic a RF parametrů; pro kontrolu je "
+                               "kdykoliv zapneš.")
+        if preview:
+            st.markdown('<div class="cd-panel-title">ANTENNA GAIN / ELEVATION CUT</div>',
+                        unsafe_allow_html=True)
+            try:
+                from antenna_workspace_preview import antenna_figure
+                diagram_config=_cfg()
+                diagram_pattern=_pattern(diagram_config)
+                diagram,source_name,limitations=antenna_figure(
+                    diagram_config,diagram_pattern)
+                st.plotly_chart(diagram,use_container_width=True,
+                                key="ws_radar_antenna_chart",
+                                config={"displaylogo":False,"responsive":True})
+                st.caption("DATA SOURCE · "+source_name)
+                st.caption(limitations)
+                if mode=="PAR-NG":
+                    from antenna_workspace_preview import par_3d_figure,par_pattern_info
+                    detail=par_pattern_info(diagram_pattern)
+                    st.markdown("**3D ANTENNA GAIN · 9 GHz SOURCE GRID**")
+                    view=st.segmented_control("Pohled diagramu",
+                        ["Provozní sektor ±20°","Celá anténa ±180°"],
+                        default="Provozní sektor ±20°",
+                        key="ws_par_3d_view",width="stretch")
+                    fig3d=par_3d_figure(
+                        diagram_pattern,near_field=view=="Provozní sektor ±20°")
+                    st.plotly_chart(fig3d,use_container_width=True,
+                        key="ws_radar_par_3d_heatmap",
                         config={"displaylogo":False,"responsive":True})
-                    st.caption("Základ je 40 km; tento úhlový náhled nezahrnuje "
-                               "skutečný terén ani scénářový útlum závislý na vzdálenosti. "
-                               "Nejde o ověřenou Pd.")
+                    if diagram_pattern.scan_mode=="TRACKING":
+                        from antenna_workspace_preview import par_scanned_coverage_figure
+                        st.markdown("**AESA · SKENOVANÁ DOSAHOVÁ OBÁLKA**")
+                        st.caption("Výpočet napříč všemi povelovanými polohami "
+                                   "svazku, nikoli statický anténní diagram. "
+                                   "Barva vyjadřuje maximální *modelový* dosah "
+                                   "před započtením terénního horizontu.")
+                        scanned=par_scanned_coverage_figure(diagram_pattern)
+                        st.plotly_chart(scanned,use_container_width=True,
+                            key="ws_radar_par_scan_envelope",
+                            config={"displaylogo":False,"responsive":True})
+                        st.caption("Základ je 40 km; tento úhlový náhled nezahrnuje "
+                                   "skutečný terén ani scénářový útlum závislý na vzdálenosti. "
+                                   "Nejde o ověřenou Pd.")
 
-                a,b,c=st.columns(3,gap="small")
-                a.metric("ELEVACE × AZIMUT",
-                    f"{detail['elevation_samples']} × {detail['azimuth_samples']}")
-                b.metric("KROK DIAGRAMU",
-                    f"{detail['elevation_step_deg']:g}° / {detail['azimuth_step_deg']:g}°")
-                c.metric("MAX. ZDROJOVÁ HODNOTA",
-                    f"{detail['source_peak_db']:.4f} dB")
-                st.caption("SOUBOR: 3Dscan9GHz05deg(2).txt · SHA-256 "
-                           +detail["sha256"])
-                st.info("Výpočet používá relativní zisk normalizovaný na 0 dB v "
-                        "globálním maximu. Importovaný 3D diagram nemá doložený "
-                        "absolutní zisk v dBi, certifikovanou kalibraci, "
-                        "model rušení ani atmosférické útlumy.")
-            if mode=="RL-2000":
-                st.caption("LOW = vysílací/přijímací svazek · "
-                           "HIGH = pouze přijímací svazek. Průběhy jsou "
-                           "normalizované, nikoli absolutní zisk dBi.")
-        except (ValueError,TypeError,KeyError,OSError) as exc:
-            st.warning("Anténní náhled není dostupný: "+str(exc))
-        st.caption("Graf je pouze čtecí náhled. RF výpočet stále používá "
-                   "původní anténní objekt a jeho interpolaci.")
+                    a,b,c=st.columns(3,gap="small")
+                    a.metric("ELEVACE × AZIMUT",
+                        f"{detail['elevation_samples']} × {detail['azimuth_samples']}")
+                    b.metric("KROK DIAGRAMU",
+                        f"{detail['elevation_step_deg']:g}° / {detail['azimuth_step_deg']:g}°")
+                    c.metric("MAX. ZDROJOVÁ HODNOTA",
+                        f"{detail['source_peak_db']:.4f} dB")
+                    st.caption("SOUBOR: 3Dscan9GHz05deg(2).txt · SHA-256 "
+                               +detail["sha256"])
+                    st.info("Výpočet používá relativní zisk normalizovaný na 0 dB v "
+                            "globálním maximu. Importovaný 3D diagram nemá doložený "
+                            "absolutní zisk v dBi, certifikovanou kalibraci, "
+                            "model rušení ani atmosférické útlumy.")
+                if mode=="RL-2000":
+                    st.caption("LOW = vysílací/přijímací svazek · "
+                               "HIGH = pouze přijímací svazek. Průběhy jsou "
+                               "normalizované, nikoli absolutní zisk dBi.")
+            except (ValueError,TypeError,KeyError,OSError) as exc:
+                st.warning("Anténní náhled není dostupný: "+str(exc))
+            st.caption("Graf je pouze čtecí náhled. RF výpočet stále používá "
+                       "původní anténní objekt a jeho interpolaci.")
         if mode=="PAR-NG":
             from par_y8600_spec import (
                 AZIMUTH_ANTENNA,ELEVATION_ANTENNA,audit)
