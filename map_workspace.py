@@ -507,7 +507,7 @@ def _par_pattern_metadata(pattern):
         "reference_snr_db","pd","pfa","pulses","channel_mode",
         "az_beam_step_deg","el_beam_step_deg",
         "coverage_mode","gas_loss_db_per_km","rain_loss_db_per_km",
-        "additional_loss_db")}
+        "additional_loss_db","sector_edge_loss_db")}
 
 
 def _par_model_metadata():
@@ -527,6 +527,7 @@ def _par_model_metadata():
         "gas_loss_db_per_km":float(st.session_state.get("ws_par_gas_loss",0.0)),
         "rain_loss_db_per_km":float(st.session_state.get("ws_par_rain_loss",0.0)),
         "additional_loss_db":float(st.session_state.get("ws_par_extra_loss",0.0)),
+        "sector_edge_loss_db":float(st.session_state.get("ws_par_sector_edge_loss",6.0)),
     }
 
 
@@ -551,6 +552,7 @@ def _restore_par_model_metadata(meta):
         "gas_loss_db_per_km":"ws_par_gas_loss",
         "rain_loss_db_per_km":"ws_par_rain_loss",
         "additional_loss_db":"ws_par_extra_loss",
+        "sector_edge_loss_db":"ws_par_sector_edge_loss",
     }
     if set(values)-set(allowed):
         raise ValueError("Neznámé parametry PAR v projektu.")
@@ -988,6 +990,13 @@ def radar_dialog():
                          key="ws_par_scan_mode")
             st.number_input("Ztráta skenu [dB/°] · orientační",min_value=0.,max_value=5.,
                             value=0.,step=.05,key="ws_par_scan_loss")
+            st.select_slider(
+                "Útlum na okraji sektoru ±15° [dB] · simulační předpoklad",
+                options=[0.0,1.5,3.0,4.0,6.0,8.0,10.0],
+                value=6.0,key="ws_par_sector_edge_loss")
+            st.caption("Kvadratický profil: L(α) = Lmax × (|α| / 15°)². "
+                       "Výchozí −6 dB, porovnávací −3 dB. Nejde o naměřený "
+                       "vyzařovací diagram ani ověřenou RF bilanci.")
             st.markdown("**REŽIM VÝPOČTU · AESA**")
             st.segmented_control("Úroveň detailu",["FAST","ENGINEERING"],
                                  default="FAST",key="ws_par_quality",
