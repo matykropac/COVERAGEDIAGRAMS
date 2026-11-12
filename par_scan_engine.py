@@ -109,6 +109,12 @@ def evaluate(pattern, elevation_rad, azimuth_deg, slant_range_m, *,
     safe_distance = np.maximum(distance_km, 1e-6)
     range_margin = 40.*np.log10(reference_range_km/safe_distance)
     extra_loss_db = 2.*loss_one_way + pattern.additional_loss_db
+    # Smooth sector-edge attenuation: 0 dB on boresight, -1.5 dB at ±15°.
+    # Applied to the monostatic 40 log10(range) link margin in both channels.
+    # At the edge this shortens the ideal range by 10**(-1.5/40) ≈ 8.27%.
+    azimuth = np.asarray(azimuth_deg, dtype=float)
+    edge_loss_db = 1.5 * np.clip(np.abs(azimuth) / 15.0, 0.0, 1.0)
+    extra_loss_db = extra_loss_db + edge_loss_db
     with np.errstate(divide="ignore", invalid="ignore"):
         margin_az = (range_margin+
                      40.*np.log10(np.maximum(az_factor, 1e-12))-
