@@ -2704,12 +2704,20 @@ def render_workspace():
                         if st.button("↗ PŘEVZÍT ROVNOBĚŽKU RWY JAKO OSU PAR",
                                      key="ws_par_parallel_accept",
                                      use_container_width=True):
-                            st.session_state["ws_bearing"]=round(bearing,2)
+                            angle=round(bearing,2)
+                            st.session_state["ws_bearing"]=angle
+                            shadow=dict(st.session_state.get("_radar_form_shadow") or {})
+                            shadow["ws_bearing"]=angle
+                            st.session_state["_radar_form_shadow"]=shadow
                             st.session_state["ws_par_aiming"]=False
+                            st.session_state["ws_next_section"]="RADAR"
+                            st.session_state["ws_reopen_radar_dialog"]=True
                             st.rerun()
                     if st.button("ZRUŠIT SMĚROVÁNÍ PAR",key="ws_par_aim_cancel",
                                  use_container_width=True):
                         st.session_state["ws_par_aiming"]=False
+                        st.session_state["ws_next_section"]="RADAR"
+                        st.session_state["ws_reopen_radar_dialog"]=True
                         st.rerun()
                 # OpenAIP is always on when a key is configured. No UI toggle,
                 # no ADS-B live polling or menu entry.
