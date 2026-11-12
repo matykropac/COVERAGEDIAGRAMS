@@ -12,13 +12,15 @@ import streamlit.components.v1 as components
 
 
 def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
-                             diagnostic_levels=(), snapshot="", studio_url=""):
+                             diagnostic_levels=(), diagnostic_reference="AMSL",
+                             snapshot="", studio_url=""):
     """Only mount one map. UI edits, import and filtering never rerun Streamlit."""
     # Base64 avoids closing the embedded script or injecting HTML from imported data.
     # Native grid: no second DEM sampler, no speculative covered points.
     # Compression avoids sending megabytes of repetitive JSON through the iframe.
     diagnostics = None
-    if diagnostic_result is not None:
+    if diagnostic_result is not None and (diagnostic_result.get("antenna_pattern") is not None
+                                          or not diagnostic_result["config"].csc_enabled):
         result = diagnostic_result
         cfg = result["config"]
         levels = [int(ft) for ft in diagnostic_levels
@@ -38,12 +40,14 @@ def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
             "maxElev": float(cfg.max_elev),
             "bearing": float(cfg.bearing_deg),
             "radarMode": str(cfg.radar_mode),
+            "reference": diagnostic_reference if cfg.radar_mode == "PAR-NG" else "AMSL",
             "sectorEdgeLoss": float(getattr(result.get("antenna_pattern"), "sector_edge_loss_db", 6.0)),
             "levels": levels,
             "status": {},
         }
         for ft in levels:
-            values = core.status_at_height(result, ft * core.FT_TO_M)
+            values = core.status_at_height(result, ft * core.FT_TO_M,
+                                           reference=grid["reference"])
             # 2: unknown, 0: blocked, 1: covered.
             grid["status"][str(ft)] = np.where(
                 np.isfinite(values), np.asarray(np.nan_to_num(values), dtype=np.uint8), 2
@@ -451,7 +455,7 @@ async function loadDiagnostics(){
   const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
   grid=JSON.parse(await new Response(stream).text());
   const select=$("inspection-level");
-  for(const ft of grid.levels){const option=document.createElement("option");option.value=ft;option.textContent=ft.toLocaleString("cs")+" ft";select.add(option)}
+  for(const ft of grid.levels){const option=document.createElement("option");option.value=ft;option.textContent=ft.toLocaleString("cs")+" ft "+grid.reference;select.add(option)}
   select.onchange=showInspection;
   $("inspect").title="Výběr bodu s diagnostikou výpočtu krytí";
  }catch(e){notify("Diagnostická síť se nepodařila otevřít: "+e.message,true)}
@@ -479,7 +483,9 @@ function showInspection(){
   $("inspection-profile").replaceChildren();$("inspection-details").textContent="Zvolený azimut: "+bearing.toFixed(2)+"° · vzdálenost: "+(distance/1000).toFixed(2)+" km";
   return;
  }
- const d=grid.distance[j],ft=Number($("inspection-level").value),target=ft*.3048;
+ const d=grid.distance[j],ft=Number($("inspection-level").value);
+ const localGround=grid.terrain[i][j];
+ const target=ft*.3048+(grid.reference==="AGL"?localGround:0);
  const samples=grid.terrain[i].slice(0,j+1),ranges=grid.distance.slice(0,j+1);
  const status=grid.status[String(ft)][i][j],ground=grid.terrain[i][j];
  const horizon=grid.lower[i][j],ceiling=grid.upper[i][j];
@@ -507,21 +513,22 @@ function showInspection(){
  inspectionLine=L.polyline([radarCenter,native],{color:"#fcbd67",weight:3,dashArray:"6,5",interactive:false}).addTo(map);
  inspectionMarker=L.circleMarker(native,{radius:7,color:"#fff",fillColor:status===1?"#1acb92":status===0?"#fa646d":"#e5ad54",fillOpacity:1,weight:2}).addTo(map);
  $("inspection").hidden=false;
- $("inspection-result").textContent=textStatus+" · "+ft+" ft AMSL"+(causes.length?"\n"+causes.join(" · "):"");
+ $("inspection-result").textContent=textStatus+" · "+ft+" ft "+grid.reference+(causes.length?"\n"+causes.join(" · "):"");
  $("inspection-details").textContent=
   "Kliknutý bod: "+selectedPoint.lat.toFixed(6)+"°, "+selectedPoint.lng.toFixed(6)+"°\n"+
   "Výpočetní vzorek: "+native[0].toFixed(6)+"°, "+native[1].toFixed(6)+"°\n"+
   "Azimut: "+(grid.az[i]%360+360)%360+"° · horizontální vzdálenost: "+(d/1000).toFixed(3)+" km\n"+
-  "Výška antény: "+grid.antenna.toFixed(1)+" m AMSL · cíl: "+target.toFixed(1)+" m AMSL\n"+
+  "Výška antény: "+grid.antenna.toFixed(1)+" m AMSL · cíl: "+(Number.isFinite(target)?target.toFixed(1):"N/A")+" m AMSL\n"+
   "Terén v cíli: "+(Number.isFinite(ground)?ground.toFixed(1):"N/A")+" m AMSL\n"+
   "Minimální potřebná výška pro LOS: "+(Number.isFinite(horizon)?horizon.toFixed(1):"N/A")+" m AMSL\n"+
   "Maximální geometrická výška: "+(Number.isFinite(ceiling)?ceiling.toFixed(1):"N/A")+" m AMSL\n"+
-  "Elevace cíle: "+angle.toFixed(3)+"° · překážkový horizont: "+(Number.isFinite(maxAngle)?maxAngle.toFixed(3):"N/A")+"°\n"+
+  "Elevace cíle: "+(Number.isFinite(angle)?angle.toFixed(3):"N/A")+"° · překážkový horizont: "+(Number.isFinite(maxAngle)?maxAngle.toFixed(3):"N/A")+"°\n"+
   "Limitní terén: "+(blocker>=0?(ranges[blocker]/1000).toFixed(3)+" km / "+samples[blocker].toFixed(1)+" m AMSL":"N/A")+"\n"+
   "Model Země: R = 6371008,8 m × k "+grid.k+" · krok azimutu a vzdálenosti je diskrétní.\n"+
   (grid.radarMode==="PAR-NG"?"Sektorový útlum PAR: "+(grid.sectorEdgeLoss*(Math.min(1,Math.abs(((grid.az[i]-grid.bearing+540)%360)-180)/15)**2)).toFixed(3)+" dB (kvadraticky, −"+grid.sectorEdgeLoss.toFixed(1)+" dB na okrajích).\\n":"")+
   "Závěr pochází přímo z masky krytí EDITORU; profil z původních vzorků DEM.";
- drawProfile(ranges,samples,d,target);
+ if(Number.isFinite(target))drawProfile(ranges,samples,d,target);
+ else $("inspection-profile").replaceChildren();
 }
 function drawProfile(ranges,terrain,d,target){
  const svg=$("inspection-profile");svg.replaceChildren();
