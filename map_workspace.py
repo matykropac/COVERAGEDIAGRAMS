@@ -2895,23 +2895,28 @@ def render_workspace():
     </style>
     """,unsafe_allow_html=True)
 
-    # The map is always present and does not change when the sidebar section changes.
-    if result is None:
-        st.caption(f"RADAR · {config.lat:.6f}°, {config.lon:.6f}° · "
-                   f"{len(st.session_state.get('obstacles',[]))} překážek")
-    else:
-        is_stale=(result.get("obstacles_signature")!=obstacle_signature(
-            st.session_state.get("obstacles",[])) or config!=result["config"] or
-            (result["config"].radar_mode=="PAR-NG" and
-             _par_model_metadata()!=_par_pattern_metadata(result.get("antenna_pattern"))))
-        if is_stale:
-            st.warning("Nastavení nebo překážky se změnily. Zobrazené krytí patří k předchozímu výpočtu.")
+    # The map fills the screen. Status is a floating, non-blocking overlay,
+    # not a normal document row above Leaflet that causes map size changes.
+    from workspace_floating_layout import FLOATING_EDITOR_CSS
+    st.markdown(FLOATING_EDITOR_CSS, unsafe_allow_html=True)
+    with st.container(key="cd_editor_status"):
+        if result is None:
+            st.caption(f"RADAR · {config.lat:.6f}°, {config.lon:.6f}° · "
+                       f"{len(st.session_state.get('obstacles',[]))} překážek")
         else:
-            st.caption(f"{result['config'].radar_mode} · "
-                       f"{config.lat:.6f}°, {config.lon:.6f}° · "
-                       f"{len(st.session_state.get('obstacles',[]))} překážek · KRYTÍ AKTUÁLNÍ")
-    if st.session_state.pop("ws_result_notice",None):
-        st.success("Krytí vypočteno. Letové hladiny přepínáš v sekci MAPA.")
+            is_stale=(result.get("obstacles_signature")!=obstacle_signature(
+                st.session_state.get("obstacles",[])) or config!=result["config"] or
+                (result["config"].radar_mode=="PAR-NG" and
+                 _par_model_metadata()!=_par_pattern_metadata(result.get("antenna_pattern"))))
+            if is_stale:
+                st.warning("Nastavení nebo překážky se změnily. "
+                           "Zobrazené krytí patří k předchozímu výpočtu.")
+            else:
+                st.caption(f"{result['config'].radar_mode} · "
+                           f"{config.lat:.6f}°, {config.lon:.6f}° · "
+                           f"{len(st.session_state.get('obstacles',[]))} překážek · KRYTÍ AKTUÁLNÍ")
+        if st.session_state.pop("ws_result_notice",None):
+            st.success("Krytí vypočteno. Letové hladiny přepínáš v sekci MAPA.")
 
     if st.session_state.get("ws_legacy_map",False):
         if st.session_state.get("ws_live_adsb",False) and section=="MAPA":
