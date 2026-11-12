@@ -448,6 +448,15 @@ def export_kml(result, levels, environment_items=None, *, helper_features=None):
             _kml_element(folder, 'name', 'Environmental layers / OSM or imported')
             for mark in source_doc.findall('{' + KML_NS + '}Placemark'):
                 folder.append(mark)
+    # Every PAR KML, including QuickReport-generated KML, contains the
+    # sector lines even without a UI session or runway data. When supplied,
+    # add the selected RWY reference via the richer helper_features argument.
+    if helper_features is None and result['config'].radar_mode=="PAR-NG":
+        from position_export import par_helper_features
+        c=result['config']
+        helper_features=par_helper_features(
+            site_lat=c.lat,site_lon=c.lon,bearing_deg=c.bearing_deg,
+            range_km=c.range_km,include_range=False)
     # Engineering overlays remain separate from calculated coverage polygons.
     # Their source and bearing are preserved as ExtendedData in WGS84 KML.
     if helper_features:
