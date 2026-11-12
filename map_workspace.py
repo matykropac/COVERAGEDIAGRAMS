@@ -627,6 +627,9 @@ def _config_state_from_project(config):
     if config.radar_mode == "RL-2000":
         values["ws_psr_nm"] = min(core.PSR_RANGES_NM,key=lambda n:abs(core.radar_preset("RL-2000",n)-config.range_km))
     st.session_state.update(values)
+    shadow=dict(st.session_state.get("_radar_form_shadow") or {})
+    shadow.update(values)
+    st.session_state["_radar_form_shadow"]=shadow
 
 
 def _visual_project_state():
@@ -737,6 +740,33 @@ def _draft_checkpoint():
         st.session_state["_workspace_draft_error"]=str(exc)
 
 
+def _remember_radar_form():
+    """Snapshot form values independently of ephemeral Streamlit widget IDs."""
+    from workspace_autosave import capture, RADAR_FIELDS
+    values=dict(st.session_state.get("_radar_form_shadow") or {})
+    current=capture(st.session_state)
+    values.update({key:current[key] for key in RADAR_FIELDS if key in current})
+    st.session_state["_radar_form_shadow"]=values
+    _draft_checkpoint()
+
+
+def _restore_radar_form():
+    """Restore widget values that Streamlit discarded when dialog was closed."""
+    from workspace_autosave import RADAR_FIELDS, read_draft
+    saved={}
+    token=st.session_state.get("_workspace_draft_token")
+    if token:
+        try:
+            old=read_draft(token)
+            if old:saved.update(old["fields"])
+        except (OSError,ValueError,TypeError):
+            pass
+    saved.update(st.session_state.get("_radar_form_shadow") or {})
+    for key in RADAR_FIELDS:
+        if key not in st.session_state and key in saved:
+            st.session_state[key]=saved[key]
+
+
 @st.dialog("RADAR / ENGINEERING CONFIGURATION",width="large")
 def radar_dialog():
     """Guided engineering setup with original keys and numeric boundaries intact."""
@@ -761,6 +791,7 @@ def radar_dialog():
     </style>
     """,unsafe_allow_html=True)
     _draft_begin()
+    _restore_radar_form()
     st.caption("Čtyři přehledné kroky · všechny původní radarové parametry, "
                "omezení a ukládání do CDPROJ zůstávají zachované.")
     st.caption("◉ AUTO-DRAFT · průběžně ukládám nastavení radaru a výšky. "
@@ -828,6 +859,7 @@ def radar_dialog():
                                  help="Klikni do mapy pro určení osy PAR; "
                                       "sektor ±15° se vykreslí automaticky.",
                                  use_container_width=True):
+                        _remember_radar_form()
                         st.session_state["ws_par_aiming"]=True
                         st.session_state["ws_section"]="MAPA"
                         st.rerun()
@@ -1090,7 +1122,7 @@ def radar_dialog():
                            "Pro elektronický sken EL či OBĚ přepni na TRACKING.")
             st.caption("Parametry PAR skenu a SNR jsou modelové, nikoliv změřená specifikace.")
     st.divider()
-    _draft_checkpoint()
+    _remember_radar_form()
     if st.session_state.get("_workspace_draft_error"):
         st.warning("Automatické uložení není dostupné: "
                    +st.session_state["_workspace_draft_error"])
@@ -2202,9 +2234,14 @@ def _draw_map():
                     az=float(action["bearing"])
                     if not np.isfinite(az):
                         raise ValueError("Neplatný azimut.")
-                    st.session_state["ws_bearing"]=round(az%360,2)
+                    bearing=round(az%360,2)
+                    st.session_state["ws_bearing"]=bearing
+                    shadow=dict(st.session_state.get("_radar_form_shadow") or {})
+                    shadow["ws_bearing"]=bearing
+                    st.session_state["_radar_form_shadow"]=shadow
                     st.session_state["ws_par_aiming"]=False
-                    st.session_state["ws_next_section"]="MAPA"
+                    st.session_state["ws_next_section"]="RADAR"
+                    st.session_state["ws_reopen_radar_dialog"]=True
                     st.rerun()
                 except (ValueError,TypeError,KeyError) as exc:
                     st.warning("PAR nelze nasměrovat: "+str(exc))
@@ -3001,3 +3038,8 @@ def render_workspace():
             _draw_map_folium()
     else:
         _draw_map()
+    # On confirmed map direction, return to the RADAR settings in this rerun.
+    # The widget-independent snapshot restores all unfinished inputs first.
+    if st.session_state.pop("ws_reopen_radar_dialog",False):
+        _restore_radar_form()
+        radar_dialog()
