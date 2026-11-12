@@ -44,7 +44,7 @@ RADAR_FIELDS=(
 )
 # Only options/geometry that are safe to preserve as simple values; don't
 # inadvertently serialize large geodata, credentials or uploaded files.
-OTHER_FIELDS=("ws_section","ws_map_level","ws_display_mode")
+OTHER_FIELDS=("ws_section","ws_map_level","ws_display_mode","ws_radar_ui_mode")
 
 def _root():
     configured=os.environ.get("COVERAGEDIAGRAMS_DRAFT_DIR","").strip()
@@ -80,7 +80,7 @@ def _clean(key,value):
                "ws_ssr_diagram","ws_par_channels","ws_par_quality",
                "ws_par_detection","ws_par_scan_mode",
                "ws_par_level_reference","ws_display_mode","ws_section",
-               "ws_dataset"):
+               "ws_dataset","ws_radar_ui_mode"):
         return value if isinstance(value,str) and len(value)<=90 else None
     if key in ("ws_par_pulses","ws_psr_nm","ws_map_level"):
         return value if type(value) is int and abs(value)<100000 else None
