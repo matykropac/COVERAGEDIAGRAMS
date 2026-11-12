@@ -61,11 +61,13 @@ class PositionExportTests(unittest.TestCase):
             site_lat=-22.48,site_lon=17.48,bearing_deg=96.4,
             range_km=40,runway=RUNWAY,runway_end=0)
         labels={f["properties"]["name"] for f in helpers}
-        self.assertIn("PAR · osa",labels)
-        self.assertIn("PAR · levá hranice −15°",labels)
-        self.assertIn("PAR · pravá hranice +15°",labels)
+        for sector in ("PŘEDNÍ","ZADNÍ"):
+            self.assertIn(f"PAR · osa {sector}",labels)
+            self.assertIn(f"PAR · hranice −15° {sector}",labels)
+            self.assertIn(f"PAR · hranice +15° {sector}",labels)
+            self.assertIn(f"PAR · vnější oblouk ±15° {sector}",labels)
         self.assertIn("PAR · rovnoběžka RWY 08 / 26",labels)
-        self.assertIn("PAR · vnější oblouk ±15°",labels)
+        self.assertIn("PAR · kolmice RWY 08 / 26",labels)
         self.assertIn("RANGE · 260 NM",labels)
         parallel=[f for f in helpers if f["properties"]["layer"]=="PAR_RUNWAY_REFERENCE"][0]
         self.assertEqual(parallel["geometry"]["coordinates"][1],[17.48,-22.48])
