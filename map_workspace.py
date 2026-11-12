@@ -785,6 +785,35 @@ def _restore_radar_form():
             st.session_state[key]=saved[key]
 
 
+def _commit_radar_site(lat,lon,*,reopen_dialog=True):
+    """Single authoritative map-site transaction for a Streamlit session.
+
+    Keep the working numeric fields, the independent modal snapshot, and
+    the durable draft synchronized BEFORE rerunning Streamlit. This prevents
+    a closed dialog's stale widget keys from reverting the chosen radar site.
+    """
+    lat,lon=float(lat),float(lon)
+    if not (np.isfinite(lat) and np.isfinite(lon)
+            and -80<=lat<=80 and -180<=lon<=180):
+        raise ValueError("Stanoviště musí mít LAT −80 až 80° a LON −180 až 180°.")
+    st.session_state["ws_lat"]=lat
+    st.session_state["ws_lon"]=lon
+    shadow=dict(st.session_state.get("_radar_form_shadow") or {})
+    shadow.update({"ws_lat":lat,"ws_lon":lon})
+    st.session_state["_radar_form_shadow"]=shadow
+    st.session_state["ws_radar_site_picking"]=False
+    st.session_state["ws_next_section"]="RADAR"
+    if reopen_dialog:
+        st.session_state["ws_reopen_radar_dialog"]=True
+    _draft_checkpoint()
+
+
+def _begin_radar_site_pick():
+    _remember_radar_form()
+    st.session_state["ws_radar_site_picking"]=True
+    st.session_state["ws_section"]="RADAR"
+
+
 def _radar_ui_mode():
     """ASR is currently a user-interface preset of the PSR model, not an
     independently validated transmitter / combined PSR-MSSR solver."""
@@ -917,6 +946,12 @@ def _radar_settings_body(ui_mode):
         with b:
             st.number_input("Longitude · WGS84",min_value=-180.0,max_value=180.0,
                             value=15.781,format="%.6f",key="ws_lon")
+        if st.button("⌖ URČIT STANOVIŠTĚ V MAPĚ",
+                     key="ws_pick_radar_site_dialog",use_container_width=True,
+                     help="Kliknutí do mapy uloží souřadnice do session a "
+                          "vrátí tě do rozpracovaného konfigurátoru."):
+            _begin_radar_site_pick()
+            st.rerun()
         st.number_input("Výška antény [m AGL]",min_value=.1,max_value=5000.,
                         value=20.,key="ws_agl")
         st.caption("Změna souřadnic nebo výšky vyžaduje nové vyhodnocení krytí.")
@@ -2347,9 +2382,7 @@ def _draw_map():
                 try:
                     lat,lon=coordinates_from_map_click({
                         "lat":action["lat"],"lng":action["lon"]})
-                    st.session_state["ws_lat"]=lat
-                    st.session_state["ws_lon"]=lon
-                    st.session_state["ws_next_section"]="MAPA"
+                    _commit_radar_site(lat,lon)
                     st.rerun()
                 except (ValueError,TypeError,KeyError) as exc:
                     st.warning("Neplatné stanoviště radaru: "+str(exc))
@@ -2518,6 +2551,8 @@ def _map_tool():
     """Map editing follows the active workspace section automatically."""
     if st.session_state.get("ws_par_aiming") and st.session_state.get("ws_radar")=="PAR-NG":
         return "PAR_AIM"
+    if st.session_state.get("ws_radar_site_picking"):
+        return "Radar"
     return {
         "MAPA": "Prohlížení",
         "RADAR": "Radar",
@@ -2990,7 +3025,8 @@ def render_workspace():
                 _render_los_validation(result)
             elif section=="RADAR":
                 st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
-                st.caption("Kliknutím do mapy umístíš radar. Po výběru se vrátíš do sekce MAPA.")
+                st.caption("Kliknutím do mapy určíš stanoviště. Souřadnice se okamžitě "
+                           "uloží do session a otevře se zpět konfigurátor.")
                 st.markdown(f"**LAT** {config.lat:.6f}° &nbsp; **LON** {config.lon:.6f}°",
                             unsafe_allow_html=True)
                 st.markdown('<div class="cd-nav-title">VÝBĚR RADAROVÉHO SYSTÉMU</div>',
@@ -3011,6 +3047,14 @@ def render_workspace():
                 if st.button("⚙ Upravit aktuální "+_radar_ui_mode(),
                              key="ws_command_radar",use_container_width=True):
                     radar_dialog()
+                if st.session_state.get("ws_radar_site_picking"):
+                    st.info("⌖ VYBER STANOVIŠTĚ · Klikni do mapy. "
+                            "Vrátíš se do konfigurátoru se zachovanými hodnotami.")
+                    if st.button("ZRUŠIT VÝBĚR STANOVIŠTĚ",
+                                 key="ws_cancel_radar_site_pick",use_container_width=True):
+                        st.session_state["ws_radar_site_picking"]=False
+                        st.session_state["ws_reopen_radar_dialog"]=True
+                        st.rerun()
                 st.markdown('<div class="cd-nav-title">VÝPOČET KRYTÍ</div>',unsafe_allow_html=True)
                 if st.button("▶ SPOČÍTAT KRYTÍ",type="primary",
                              use_container_width=True,key="ws_calculate_main"):
