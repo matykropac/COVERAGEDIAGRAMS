@@ -2218,6 +2218,16 @@ def _draw_map():
                     st.session_state["ws_selected_obstacle"]={
                         "kind":kind,"id":identifier,"token":event_id}
                     obstacles_dialog()
+            elif action.get("type")=="validate_los" and payload["tool"]=="Validate":
+                try:
+                    lat,lon=coordinates_from_map_click({
+                        "lat":action["lat"],"lng":action["lon"]})
+                    st.session_state["ws_los_clicked"]={"lat":lat,"lon":lon}
+                    st.session_state.pop("ws_los_az_index",None)
+                    st.session_state.pop("ws_los_range_index",None)
+                    st.rerun()
+                except (ValueError,TypeError,KeyError) as exc:
+                    st.warning("Výběr LOS bodu selhal: "+str(exc))
             elif action.get("type")=="radar" and payload["tool"]=="Radar":
                 try:
                     lat,lon=coordinates_from_map_click({
@@ -2265,11 +2275,130 @@ def _workspace_basemaps():
     return {name:core.BASEMAP_PROVIDERS[name] for name in names}
 
 
+def _render_los_validation(result):
+    """Independent point check: no DEM download, no coverage recalculation."""
+    st.markdown('<div class="cd-nav-title">LINE OF SIGHT · MATHEMATICAL CHECK</div>',
+                unsafe_allow_html=True)
+    if result is None:
+        st.info("Nejdříve vypočítej radarové krytí nebo otevři CDPROJ s DEM.")
+        return
+    from los_validation import verify_radial_point
+    from pyproj import Geod
+    c=result["config"]
+    az_values=np.asarray(result["az"],dtype=float)
+    d_values=np.asarray(result["distance"],dtype=float)
+    clicked=st.session_state.get("ws_los_clicked")
+    st.caption("Klikni do mapy pro výběr cílového bodu. Výpočet nezávisle "
+               "kontroluje geometrii vůči hlavnímu výpočtu.")
+    if clicked:
+        az_raw,_,length=Geod(ellps="WGS84").inv(
+            c.lon,c.lat,float(clicked["lon"]),float(clicked["lat"]))
+        az=az_raw%360
+        near,inside=core.azimuth_indices(az_values,c,az)
+        if not inside or length>d_values[-1] or length<d_values[0]/2:
+            st.warning("Vybraný bod je mimo výpočetní sektor/dosah.")
+            return
+        azi=int(near)
+        ri=int(np.argmin(np.abs(d_values-length)))
+        st.caption(f"Vybraný bod: {clicked['lat']:.6f}°, {clicked['lon']:.6f}° "
+                   f"· {length/1000:.2f} km · AZ {az:.2f}°")
+    else:
+        azi=int(np.argmin(np.abs(az_values-c.bearing_deg))) if c.radar_mode=="PAR-NG" else 0
+        ri=min(len(d_values)-1,max(0,int(len(d_values)*.5)))
+        st.caption("Zatím žádný bod z mapy: kontroluji střed sektoru na polovině dosahu.")
+
+    ref_options=("AMSL","AGL")
+    selected_ref=st.selectbox("Výšková reference",ref_options,
+        index=0,key="ws_los_reference")
+    levels=_chosen_levels(c.radar_mode)
+    selected_level=st.selectbox("Cílová hladina [ft]",
+        levels if levels else [2000],key="ws_los_flight_level")
+    height_m=float(selected_level)*core.FT_TO_M
+    # Slider/index controls let the engineer test adjacent samples without
+    # forcing another map click.
+    col_a,col_b=st.columns(2,gap="small")
+    with col_a:
+        azi=st.number_input("Azimut · index",min_value=0,
+                            max_value=len(az_values)-1,value=azi,
+                            step=1,key="ws_los_az_index")
+    with col_b:
+        ri=st.number_input("Vzdálenost · index",min_value=0,
+                           max_value=len(d_values)-1,value=ri,
+                           step=1,key="ws_los_range_index")
+    try:
+        check=verify_radial_point(result,int(azi),int(ri),height_m,
+                                  reference=selected_ref)
+    except (ValueError,IndexError,TypeError,KeyError) as exc:
+        st.error("LOS validátor: "+str(exc))
+        return
+    if check["status"]=="UNKNOWN":
+        st.warning("NEDOSTATEČNÁ DEM DATA · "+check["reason"])
+        return
+    if check["status"]=="MATCH":
+        st.success("MATHEMATICAL LOS · MATCH s hlavním geometrickým modelem")
+    else:
+        st.error("MATHEMATICAL LOS · MISMATCH! Výpočet vyžaduje kontrolu.")
+    first,second=st.columns(2,gap="small")
+    first.metric("MIN. REZERVA LOS",
+                 f"{check['minimum_clearance_m']:+.2f} m")
+    second.metric("KRITICKÝ BOD",
+                  f"{check['limiting_distance_m']/1000:.2f} km")
+    geometric=check["independent_geometry"]
+    radio=check["final_coverage"]
+    if np.isfinite(radio):
+        if geometric and radio<.5:
+            st.info("Geometrická LOS vyhovuje, ale výsledné krytí ne: "
+                    "pravděpodobná RF/anténní podmínka, nikoliv chyba LOS.")
+        elif not geometric and radio>=.5:
+            st.error("POZOR: Model hlásí krytí bez geometrické LOS! "
+                     "Zkontroluj vstupy, překážky a výpočet.")
+    st.caption(f"AZ {check['azimuth_deg']:.3f}° · "
+               f"EL {check['elevation_deg']:.3f}° · "
+               f"vzdálenost {check['distance_m'][-1]/1000:.2f} km · "
+               f"k={c.k:.3f}. Kontrola používá stejné DEM vzorky, "
+               "ale nezávislou geometrii tětivy.")
+    try:
+        import plotly.graph_objects as go
+        x=check["distance_m"]/1000
+        fig=go.Figure()
+        fig.add_trace(go.Scatter(x=x,y=check["terrain_m"],
+            name="DEM · AMSL",mode="lines",fill="tozeroy",
+            line=dict(color="#9abd87",width=1.6)))
+        fig.add_trace(go.Scatter(x=x,y=check["ray_m"],
+            name="Radar → cíl · LOS",mode="lines",
+            line=dict(color="#5dcdf4",width=2.2)))
+        fig.add_vline(x=check["limiting_distance_m"]/1000,
+                      line_dash="dot",line_color="#f7c66b")
+        fig.update_layout(template="plotly_dark",height=280,
+            paper_bgcolor="#10243b",plot_bgcolor="#10243b",
+            margin=dict(l=3,r=5,t=8,b=32),
+            legend=dict(orientation="h",y=1.13,font=dict(size=9)),
+            xaxis_title="Vzdálenost [km]",yaxis_title="Výška [m AMSL]",
+            font=dict(size=10,color="#d4e8f5"))
+        st.plotly_chart(fig,use_container_width=True,
+                        key="ws_los_validation_profile",
+                        config={"displaylogo":False,"responsive":True})
+        import io,csv
+        output=io.StringIO()
+        writer=csv.writer(output)
+        writer.writerow(["range_m","dem_amsl_m","los_amsl_m","clearance_m"])
+        writer.writerows(zip(check["distance_m"],check["terrain_m"],
+                             check["ray_m"],check["clearance_m"]))
+        st.download_button("⇩ PROFIL LOS · CSV",data=output.getvalue(),
+            file_name="COVERAGEDIAGRAMS_LOS_check.csv",mime="text/csv",
+            key="ws_los_profile_csv",use_container_width=True)
+    except (ImportError,ValueError,TypeError) as exc:
+        st.warning("Graf LOS nelze zobrazit: "+str(exc))
+    st.caption("VALIDACE 01 · Nezávislá geometrie na stejné vzorkované DEM "
+               "síti. Nepotvrzuje měřený Pd ani překážky mezi vzorky terénu.")
+
+
 def _map_tool():
     """Map editing follows the active workspace section automatically."""
     return {
         "MAPA": "Prohlížení",
         "RADAR": "Radar",
+        "VALIDACE": "Validate",
         "POZICE": "Prohlížení",
         "PŘEKÁŽKY": "Polygon",
     }.get(st.session_state.get("ws_section","MAPA"),"Prohlížení")
@@ -2343,7 +2472,7 @@ def render_workspace():
     st.session_state["ws_daynight"]="NIGHT"  # Fixed workstation palette.
 
     next_section=st.session_state.pop("ws_next_section",None)
-    if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE","TERÉN","EXPORT"):
+    if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE","TERÉN","EXPORT","VALIDACE"):
         st.session_state["ws_section"]=next_section
 
     from workspace_theme import COMMON_CSS
@@ -2418,6 +2547,7 @@ def render_workspace():
                 for name,symbol,label,tip in (
                     ("MAPA","▧","MAPA","Mapa a krytí"),
                     ("RADAR","◉","RADAR","Radar / výpočet"),
+                    ("VALIDACE","✓","TEST","Matematická kontrola LOS"),
                     ("TERÉN","△","TERÉN","Terén / DEM"),
                     ("PŘEKÁŽKY","▤","VRSTVY","Vrstvy a překážky"),
                     ("POZICE","✈","AIP","Aviation / ICAO"),
@@ -2439,6 +2569,7 @@ def render_workspace():
         with panel:
             st.markdown('<div class="cd-panel-title">'+
                 {"MAPA":"MAPA / ANALÝZA","RADAR":"RADAR / ENGINE",
+                 "VALIDACE":"VALIDACE / LOS",
                  "TERÉN":"TERÉN / 3D","PŘEKÁŽKY":"VRSTVY / OBSTACLES",
                  "POZICE":"AVIATION / GEODATA","EXPORT":"EXPORT STUDIO"}.get(
                     st.session_state.get("ws_section","MAPA"),"MAPA")+
@@ -2717,6 +2848,8 @@ def render_workspace():
                             'padding:8px;border-radius:7px;text-decoration:none;font-weight:700">'
                             '↗ OTEVŘÍT VÝSLEDEK</a>',unsafe_allow_html=True)
 
+            elif section=="VALIDACE":
+                _render_los_validation(result)
             elif section=="RADAR":
                 st.markdown('<div class="cd-nav-title">STANOVIŠTĚ RADARU</div>',unsafe_allow_html=True)
                 st.caption("Kliknutím do mapy umístíš radar. Po výběru se vrátíš do sekce MAPA.")
