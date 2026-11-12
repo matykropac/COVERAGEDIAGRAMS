@@ -12,7 +12,7 @@ import streamlit.components.v1 as components
 
 
 def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
-                             diagnostic_levels=(), snapshot="", three_d_url="", studio_url=""):
+                             diagnostic_levels=(), snapshot="", studio_url=""):
     """Only mount one map. UI edits, import and filtering never rerun Streamlit."""
     # Base64 avoids closing the embedded script or injecting HTML from imported data.
     # Native grid: no second DEM sampler, no speculative covered points.
@@ -56,7 +56,6 @@ def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
         "styles":styles,
         "center":[float(center[0]),float(center[1])],
         "snapshot":str(snapshot),
-        "threeDUrl":str(three_d_url),
         "studioUrl":str(studio_url),
         "diagnostics":diagnostics,
     },ensure_ascii=False,allow_nan=False).encode("utf-8")).decode("ascii")
@@ -156,7 +155,6 @@ font-size:11px;pointer-events:none;max-width:50vw}
   <button id="quick-open" class="ghost">＋ Soubor</button>
   <button id="fit" class="ghost">◎ Přiblížit data</button>
   <button id="inspect" class="ghost" aria-pressed="false">⌖ BOD / PROFIL</button>
-  <button id="go3d" class="ghost" hidden>◈ 3D okno</button>
   <button id="print-studio" class="ghost">⇩ Export studio</button>
 </div>
 <div class="panel" id="panel">
@@ -566,8 +564,6 @@ function setup(){
  };
  map.on("click",e=>{if(inspectEnabled&&grid){selectedPoint=e.latlng;showInspection()}});
  $("inspection-close").onclick=()=>{$("inspection").hidden=true;inspectEnabled=false;$("inspect").classList.remove("primary");$("inspect").setAttribute("aria-pressed","false");map.getContainer().style.cursor=""};
- $("go3d").hidden=!DATA.threeDUrl;
- $("go3d").onclick=()=>window.open(DATA.threeDUrl,"_blank","noopener");
  $("print-studio").onclick=()=>window.open(DATA.studioUrl,"_blank","noopener");
  $("panel-toggle").onclick=()=>{const hidden=$("panel").classList.toggle("hidden");$("panel-toggle").setAttribute("aria-expanded",String(!hidden));map.invalidateSize()};
  $("close").onclick=()=>{$("panel").classList.add("hidden");$("panel-toggle").setAttribute("aria-expanded","false")};
