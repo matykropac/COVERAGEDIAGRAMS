@@ -123,7 +123,8 @@ h3{font-size:11px;letter-spacing:.12em;color:#83d8fd;margin:4px 0 13px}
 .field{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0}
 .field label{font-size:12px;color:#d7e5f0}
 .field input[type=range]{width:140px}
-input[type=text],input[type=search],select,input[type=number]{background:#102a42;color:#f1f7ff;border:1px solid #3c5d78;border-radius:7px;padding:9px;min-width:0}
+input[type=text],input[type=search],select,input[type=number],textarea{background:#fff!important;color:#000!important;-webkit-text-fill-color:#000!important;caret-color:#000!important;border:1px solid #7e99af;border-radius:7px;padding:9px;min-width:0}
+input[type=text]::placeholder,input[type=search]::placeholder,textarea::placeholder{color:#666!important;-webkit-text-fill-color:#666!important;opacity:1}
 select{max-width:190px}.wide{width:100%;max-width:none!important}
 .actions{display:flex;gap:6px;margin:9px 0}.actions button{flex:1}
 input[type=checkbox]{accent-color:#0aa5e8;cursor:pointer}
