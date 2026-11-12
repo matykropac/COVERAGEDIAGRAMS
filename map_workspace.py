@@ -3035,9 +3035,13 @@ def render_workspace():
                 # One fixed-size, button-like segmented control instead of
                 # four independent Streamlit button containers that jitter.
                 with st.container(key="ws_radar_mode_panel"):
-                    if "ws_radar_selector" not in st.session_state:
-                        st.session_state["ws_radar_selector"]=st.session_state.get(
-                            "ws_radar_ui_mode")
+                    current_ui=st.session_state.get("ws_radar_ui_mode")
+                    if ("ws_radar_selector" not in st.session_state or
+                            current_ui in ("PSR","SSR","ASR","PAR") and
+                            st.session_state["ws_radar_selector"]!=current_ui):
+                        # A loaded CDPROJ or restored autosave may have selected
+                        # another radar while this widget was unmounted.
+                        st.session_state["ws_radar_selector"]=current_ui
                     st.segmented_control(
                         "RADAROVÝ SYSTÉM",("PSR","SSR","ASR","PAR"),
                         selection_mode="single",key="ws_radar_selector",
