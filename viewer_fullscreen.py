@@ -194,7 +194,15 @@ font-size:11px;pointer-events:none;max-width:50vw}
 </div>
 <aside id="inspection" class="inspection" hidden>
   <header><strong>⌖ ANALÝZA BODU / LINE OF SIGHT</strong><button id="inspection-close" aria-label="Zavřít analýzu">×</button></header>
-  <div class="field"><label for="inspection-level">Výška cíle [ft AMSL]</label><select id="inspection-level"></select></div>
+  <div id="native-level-row" class="field" hidden><label for="inspection-level">Hladina z výpočtu [ft]</label><select id="inspection-level"></select></div>
+  <div id="dem-controls">
+    <div class="note">Bez výpočtu z EDITORU se automaticky načte DEM pro trasu radar → bod. Výsledkem je pouze geometrická kontrola LOS, nikoli RF krytí.</div>
+    <div class="field"><label for="dem-antenna">Výška antény [m AGL]</label><input id="dem-antenna" type="number" min="0.1" max="5000" step="1" value="20"></div>
+    <div class="field"><label for="dem-target">Výška cíle [ft AMSL]</label><input id="dem-target" type="number" min="-1000" max="66000" step="100" value="3000"></div>
+    <div class="field"><label for="dem-k">Efektivní poloměr Země (k)</label><input id="dem-k" type="number" min="0.5" max="3" step=".01" value="1.333333"></div>
+    <button id="dem-set-radar" class="ghost wide">⌖ Zadat polohu radaru kliknutím do mapy</button>
+    <div id="dem-source" class="muted">Zdroj: Copernicus GLO-90 přes Open-Meteo Elevation API. Přenos DEM může vyžadovat internetové připojení.</div>
+  </div>
   <div id="inspection-result" class="note">Klikni na libovolný bod v mapě.</div>
   <svg id="inspection-profile" viewBox="0 0 520 184" role="img" aria-label="Terénní profil a spojnice přímé viditelnosti"></svg>
   <div id="inspection-details" class="muted"></div>
@@ -214,6 +222,8 @@ const BASES={
 const COLORS=["#3fa7fa","#21d7bf","#dc8aff","#ffb058","#fc647e","#a6d67b"];
 let layers=new Map(),map=null,base=null,rangeShape=null,openedEditor=null,vectorRenderer=null;
 let grid=null, inspectEnabled=false, selectedPoint=null, inspectionLine=null, inspectionMarker=null;
+let placingRadar=false, demController=null, demRequest=0, radarMarker=null;
+const demCache=new Map();
 let setting={base:"dark",labels:true,legend:true,range:false,nm:20};
 let layerSeq=0,chosenBase="dark",radarCenter=DATA.center||[50,15],legendControl=null;
 const escapeHTML=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -449,11 +459,13 @@ function saveGeo(){
  download("COVERAGEDIAGRAMS_visible.geojson",new Blob([JSON.stringify({type:"FeatureCollection",features:fs})],{type:"application/geo+json"}))
 }
 async function loadDiagnostics(){
- if(!DATA.diagnostics){$("inspect").title="Nejprve otevři VIEWER z vypočteného projektu EDITORU";return}
+ if(!DATA.diagnostics){$("inspect").title="Vyber bod a automaticky načti profil DEM";return}
  try{
   const bytes=Uint8Array.from(atob(DATA.diagnostics),c=>c.charCodeAt(0));
   const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
   grid=JSON.parse(await new Response(stream).text());
+  $("native-level-row").hidden=false;
+  $("dem-controls").hidden=true;
   const select=$("inspection-level");
   for(const ft of grid.levels){const option=document.createElement("option");option.value=ft;option.textContent=ft.toLocaleString("cs")+" ft "+grid.reference;select.add(option)}
   select.onchange=showInspection;
@@ -552,6 +564,133 @@ function drawProfile(ranges,terrain,d,target){
  txt.setAttribute("x",30);txt.setAttribute("y",14);txt.setAttribute("fill","#cde6f6");txt.setAttribute("font-size","11");
  txt.textContent="DEM (zelená) · LOS paprsek (oranžová) · "+(d/1000).toFixed(2)+" km";svg.append(txt)
 }
+async function downloadDemProfile(target, request){
+ const params=radialAt(target.lat,target.lng);
+ const distance=params.distance, bearing=params.bearing;
+ if(distance<20)throw Error("Bod musí být alespoň 20 m od radaru.");
+ if(distance>500000)throw Error("Pro DEM profil je podporována vzdálenost nejvýše 500 km.");
+ // Copernicus 90m DEM; sample at >=120m spacing and max 400 points.
+ const n=Math.min(400,Math.max(2,Math.ceil(distance/150)+1));
+ const ranges=Array.from({length:n},(_,i)=>distance*i/(n-1));
+ const positions=ranges.map(d=>wgs84Destination(radarCenter[0],radarCenter[1],bearing,d));
+ const cacheKey=[...radarCenter,target.lat,target.lng].map(v=>v.toFixed(5)).join(":");
+ if(demCache.has(cacheKey))return demCache.get(cacheKey);
+ if(demController)demController.abort();
+ demController=new AbortController();
+ const heights=[];
+ for(let offset=0;offset<n;offset+=100){
+  if(request!==demRequest)throw Error("Analýza byla nahrazena novým bodem.");
+  const group=positions.slice(offset,offset+100);
+  const url="https://api.open-meteo.com/v1/elevation?latitude="+
+    group.map(p=>p[0].toFixed(6)).join(",")+"&longitude="+
+    group.map(p=>p[1].toFixed(6)).join(",");
+  const response=await fetch(url,{signal:demController.signal,cache:"default"});
+  if(!response.ok)throw Error("DEM API vrátilo HTTP "+response.status);
+  const data=await response.json();
+  if(!Array.isArray(data.elevation)||data.elevation.length!==group.length)
+    throw Error("API nevrátilo kompletní výškový profil.");
+  heights.push(...data.elevation.map(v=>typeof v==="number"&&Number.isFinite(v)?v:null));
+  if(request===demRequest)$("inspection-result").textContent=
+    "Načítám terénní model… "+heights.length+" / "+n+" bodů";
+ }
+ const result={ranges,heights,bearing,distance,
+               resolution:distance/(n-1),source:"Copernicus GLO-90 / Open-Meteo"};
+ demCache.set(cacheKey,result);
+ if(demCache.size>12)demCache.delete(demCache.keys().next().value);
+ return result;
+}
+function drawStandaloneProfile(ranges,terrain,targetAMSL,antennaAMSL,k){
+ const svg=$("inspection-profile");svg.replaceChildren();
+ const valid=terrain.filter(Number.isFinite);
+ if(!valid.length)return;
+ const dist=ranges.at(-1),re=6371008.8*k;
+ const phi=Math.atan2((re+targetAMSL)*Math.cos(dist/re)-(re+antennaAMSL),
+                      (re+targetAMSL)*Math.sin(dist/re));
+ const rayHeight=x=>(re+antennaAMSL)*Math.cos(phi)/Math.cos(x/re+phi)-re;
+ const values=[...valid,targetAMSL,antennaAMSL];
+ const ys=ranges.map(rayHeight).filter(Number.isFinite);
+ values.push(...ys);
+ const min=Math.min(...values)-30,max=Math.max(...values)+30;
+ const sx=x=>25+(x/dist)*475,sy=z=>164-(z-min)/(max-min)*138;
+ function line(coords,color,dashed=false){
+  const el=document.createElementNS("http://www.w3.org/2000/svg","polyline");
+  el.setAttribute("points",coords.map(p=>p.map(x=>x.toFixed(1)).join(",")).join(" "));
+  el.setAttribute("stroke",color);el.setAttribute("fill","none");
+  el.setAttribute("stroke-width","2.2");
+  if(dashed)el.setAttribute("stroke-dasharray","6,4");
+  svg.append(el);
+ }
+ let part=[];
+ terrain.forEach((z,i)=>{if(Number.isFinite(z))part.push([sx(ranges[i]),sy(z)]);
+   else if(part.length){line(part,"#5bdeb2");part=[]}});
+ if(part.length)line(part,"#5bdeb2");
+ line(ranges.map(x=>[sx(x),sy(rayHeight(x))]),"#ffc16e",true);
+ const caption=document.createElementNS("http://www.w3.org/2000/svg","text");
+ caption.setAttribute("x","25");caption.setAttribute("y","14");
+ caption.setAttribute("fill","#d4ebff");caption.setAttribute("font-size","11");
+ caption.textContent="Zelená: DEM · Oranžová: přímá viditelnost (LOS)";
+ svg.append(caption);
+}
+async function showStandaloneInspection(){
+ if(!selectedPoint)return;
+ const request=++demRequest;
+ $("inspection").hidden=false;
+ $("inspection-result").textContent="Načítám DEM pro trasu radar → bod…";
+ $("inspection-details").textContent="Výškový profil se stahuje automaticky. Bez editorového výpočtu nelze určit RF krytí.";
+ $("inspection-profile").replaceChildren();
+ if(inspectionLine)map.removeLayer(inspectionLine);
+ if(inspectionMarker)map.removeLayer(inspectionMarker);
+ inspectionLine=L.polyline([radarCenter,selectedPoint],{color:"#ffbd6d",weight:3,dashArray:"7,5",interactive:false}).addTo(map);
+ inspectionMarker=L.circleMarker(selectedPoint,{radius:7,color:"#fff",fillColor:"#f7b45b",
+                                               fillOpacity:1,weight:2}).addTo(map);
+ try{
+  const profile=await downloadDemProfile(selectedPoint,request);
+  if(request!==demRequest)return;
+  const {ranges,heights,distance,bearing,resolution}=profile;
+  const agl=Number($("dem-antenna").value),ft=Number($("dem-target").value),k=Number($("dem-k").value);
+  if(!Number.isFinite(agl)||agl<=0||!Number.isFinite(ft)||!Number.isFinite(k)||k<.5||k>3)
+    throw Error("Zadej platnou výšku antény, hladinu a faktor k.");
+  const site=heights[0],target=ft*.3048;
+  if(!Number.isFinite(site)||heights.some(h=>!Number.isFinite(h))){
+    $("inspection-result").textContent="NEZNÁMÉ LOS · DEM neobsahuje všechna potřebná data.";
+    $("inspection-details").textContent="Nevyplněná místa v DEM nesmí být vyhodnocena jako viditelná.";
+    drawStandaloneProfile(ranges,heights,target,Number.isFinite(site)?site+agl:target,k);
+    return;
+  }
+  const antenna=site+agl,re=6371008.8*k;
+  const angle=Math.atan2((re+target)*Math.cos(distance/re)-(re+antenna),
+                         (re+target)*Math.sin(distance/re));
+  let limit=Infinity,blocker=-1;
+  for(let i=1;i<ranges.length-1;i++){
+   const x=ranges[i];
+   const ray=(re+antenna)*Math.cos(angle)/Math.cos(x/re+angle)-re;
+   const clearance=ray-heights[i];
+   if(clearance<limit){limit=clearance;blocker=i}
+  }
+  const visible=(limit>=0&&target>=heights.at(-1));
+  $("inspection-result").textContent=(visible?"LOS VOLNÁ":"LOS BLOKOVANÁ")+
+    " · geometrie z automaticky staženého DEM (nikoliv RF krytí)";
+  $("inspection-details").textContent=
+    "Zdroj: Copernicus DEM GLO-90 / Open-Meteo · nejedná se o radarovou detekční analýzu.\n"+
+    "Radar: "+radarCenter.map(x=>x.toFixed(6)+"°").join(", ")+" · "+site.toFixed(1)+" m AMSL\n"+
+    "Bod: "+selectedPoint.lat.toFixed(6)+"°, "+selectedPoint.lng.toFixed(6)+"°\n"+
+    "Azimut: "+bearing.toFixed(3)+"° · vzdálenost: "+(distance/1000).toFixed(3)+" km\n"+
+    "Vzorkování trasy: "+ranges.length+" bodů / "+resolution.toFixed(0)+" m mezi body (zdrojový DEM 90 m)\n"+
+    "Anténa: "+antenna.toFixed(1)+" m AMSL · cíl: "+target.toFixed(1)+" m AMSL\n"+
+    "Terén cíle: "+heights.at(-1).toFixed(1)+" m AMSL · elevace: "+(angle*180/Math.PI).toFixed(3)+"°\n"+
+    "Minimální rezerva nad DEM: "+(Number.isFinite(limit)?limit.toFixed(1):"N/A")+" m"+
+    (blocker>=0?" v "+(ranges[blocker]/1000).toFixed(2)+" km":"")+
+    "\nZakřivení: Rz × k = "+(re/1000).toFixed(1)+" km. Není zahrnuta Fresnelova zóna, objekty ani RCS/SNR.";
+  drawStandaloneProfile(ranges,heights,target,antenna,k);
+  status("DEM načten: "+ranges.length+" bodů · "+(visible?"LOS volná":"LOS blokovaná"));
+ }catch(error){
+  if(request!==demRequest)return;
+  $("inspection-result").textContent="DEM SE NEPODAŘILO NAČÍST";
+  $("inspection-details").textContent=error.message+
+    "\nZkontroluj připojení a dostupnost veřejného API. Krytí není bez DEM určitelné.";
+  status("Chyba DEM: "+error.message);
+ }
+}
 function setup(){
  if(!window.L){status("Leaflet se nepodařilo načíst. Zkontroluj připojení nebo blokování CDN.");return}
  map=L.map("map",{center:radarCenter,zoom:7,preferCanvas:true,zoomControl:false,
@@ -563,13 +702,35 @@ function setup(){
  refreshList();syncAll();fitAll();$("range-center").textContent="Radar: "+radarCenter.map(x=>Number(x).toFixed(6)+"°").join(" / ");
  loadDiagnostics();
  $("inspect").onclick=()=>{
-  if(!grid){notify("Pro analýzu otevři VIEWER z vypočteného projektu EDITORU.",true);return}
   inspectEnabled=!inspectEnabled;$("inspect").setAttribute("aria-pressed",String(inspectEnabled));
   $("inspect").classList.toggle("primary",inspectEnabled);
   map.getContainer().style.cursor=inspectEnabled?"crosshair":"";
-  if(inspectEnabled){$("inspection").hidden=false;$("inspection-result").textContent="Klikni do mapy pro výběr bodu."}
+  if(inspectEnabled){$("inspection").hidden=false;$("inspection-result").textContent="Klikni do mapy; terén se načte automaticky, pokud chybí výpočet z EDITORU."}
  };
- map.on("click",e=>{if(inspectEnabled&&grid){selectedPoint=e.latlng;showInspection()}});
+ map.on("click",e=>{
+  if(placingRadar){
+    placingRadar=false;radarCenter=[e.latlng.lat,e.latlng.lng];
+    if(radarMarker)map.removeLayer(radarMarker);
+    radarMarker=L.circleMarker(radarCenter,{radius:8,color:"#ffbd6d",weight:2,
+                                         fillColor:"#16547c",fillOpacity:1}).addTo(map);
+    $("range-center").textContent="Radar: "+radarCenter.map(v=>v.toFixed(6)+"°").join(" / ");
+    updateRange();
+    $("inspection-result").textContent="Poloha radaru nastavena. Klikni na cíl.";
+    return;
+  }
+  if(!inspectEnabled)return;
+  selectedPoint=e.latlng;
+  if(grid)showInspection();
+  else showStandaloneInspection();
+ });
+ $("dem-set-radar").onclick=()=>{
+  placingRadar=true;inspectEnabled=true;
+  $("inspect").classList.add("primary");
+  $("inspection-result").textContent="Klikni do mapy na polohu radaru.";
+ };
+ for(const id of ["dem-antenna","dem-target","dem-k"]){
+  $(id).addEventListener("change",()=>{if(selectedPoint&&!grid)showStandaloneInspection()});
+ }
  $("inspection-close").onclick=()=>{$("inspection").hidden=true;inspectEnabled=false;$("inspect").classList.remove("primary");$("inspect").setAttribute("aria-pressed","false");map.getContainer().style.cursor=""};
  $("print-studio").onclick=()=>window.open(DATA.studioUrl,"_blank","noopener");
  $("panel-toggle").onclick=()=>{const hidden=$("panel").classList.toggle("hidden");$("panel-toggle").setAttribute("aria-expanded",String(!hidden));map.invalidateSize()};
