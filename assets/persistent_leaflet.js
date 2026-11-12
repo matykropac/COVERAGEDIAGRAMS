@@ -76,7 +76,7 @@ function refreshControl(s) {
     "Překážky":s.groups.obstacles,
     "Radar":s.groups.radar,
     "Další geodata":s.groups.environment,
-    "ADS-B LIVE":s.groups.aircraft,
+    "PAR · sektor ±15°":s.groups.parSector,
   };
   if(s.openaipLayer) overlay["OpenAIP · letecká mapa"]=s.openaipLayer;
   s.controls.layers=L.control.layers(bases,overlay,{collapsed:true,position:"topright"});
@@ -305,6 +305,7 @@ function init(s) {
     radar:L.featureGroup().addTo(s.map),
     environment:L.featureGroup().addTo(s.map),
     aircraft:L.featureGroup().addTo(s.map),
+    parSector:L.featureGroup().addTo(s.map),
   };
   s.controls={layers:null,draw:null};
   s.aircraft=new Map();
@@ -314,6 +315,12 @@ function init(s) {
     const tool=s.latest?.tool;
     if(tool==="Radar"){
       s.trigger("action",{type:"radar",lat:ev.latlng.lat,lon:ev.latlng.lng,
+                            id:Date.now()+"-"+Math.random().toString(36).slice(2)});
+    }else if(tool==="PAR_AIM"){
+      const radar=s.latest?.radar;
+      if(!radar||!Number.isFinite(Number(radar.lat))||!Number.isFinite(Number(radar.lon)))return;
+      const {az}=geodesic([Number(radar.lat),Number(radar.lon)],ev.latlng);
+      s.trigger("action",{type:"par_aim",bearing:az,
                             id:Date.now()+"-"+Math.random().toString(36).slice(2)});
     }else if(tool==="Validate"){
       s.trigger("action",{type:"validate_los",lat:ev.latlng.lat,lon:ev.latlng.lng,
@@ -575,7 +582,7 @@ function updateMode(s,data) {
     });
     s.map.addControl(s.controls.draw);
   }
-  s.node.style.cursor=(data.tool==="Radar"||data.tool==="Validate")?"crosshair":"";
+  s.node.style.cursor=(data.tool==="Radar"||data.tool==="Validate"||data.tool==="PAR_AIM")?"crosshair":"";
 }
 function refreshAircraft(s,items){
   const seen=new Set();
@@ -628,6 +635,50 @@ function updateLive(s,data) {
   fetchAircraft(s);
   s.timer=setInterval(()=>fetchAircraft(s),15000);
 }
+
+function parDestination(lat,lon,azDeg,distanceKm){
+  // Geodesic direct solution on a spherical Earth; used for visual sector
+  // guide only, never to drive the solver or its DEM sampling.
+  const r=6371.0088,rad=Math.PI/180;
+  const phi1=lat*rad,lambda1=lon*rad,theta=azDeg*rad;
+  const delta=distanceKm/r;
+  const phi2=Math.asin(Math.sin(phi1)*Math.cos(delta)+
+                       Math.cos(phi1)*Math.sin(delta)*Math.cos(theta));
+  const lambda2=lambda1+Math.atan2(Math.sin(theta)*Math.sin(delta)*Math.cos(phi1),
+                     Math.cos(delta)-Math.sin(phi1)*Math.sin(phi2));
+  return [phi2/rad,((lambda2/rad+540)%360)-180];
+}
+function updateParSector(s,data){
+  const cfg=data.parSector||{};
+  const enabled=cfg.enabled===true;
+  const sig=JSON.stringify([enabled,cfg.lat,cfg.lon,cfg.bearing,cfg.rangeKm]);
+  if(s.last.parSector===sig)return;
+  s.last.parSector=sig;
+  s.groups.parSector.clearLayers();
+  if(!enabled)return;
+  const lat=Number(cfg.lat),lon=Number(cfg.lon),az=Number(cfg.bearing);
+  const distance=Number(cfg.rangeKm);
+  if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(az)||
+     !Number.isFinite(distance)||distance<=0)return;
+  const site=[lat,lon],axis=parDestination(lat,lon,az,distance);
+  const left=parDestination(lat,lon,az-15,distance);
+  const right=parDestination(lat,lon,az+15,distance);
+  // Full scan geometry: continuous outer boundary plus radial ±15° edges.
+  const arc=[];
+  for(let i=-15;i<=15;i+=.5)arc.push(parDestination(lat,lon,az+i,distance));
+  const wedge=L.polygon([site,...arc,site],{
+    color:"#2bbfe8",weight:1,opacity:.8,fillColor:"#23b0e9",
+    fillOpacity:.12,interactive:false
+  }).addTo(s.groups.parSector);
+  for(const [point,text] of [[left,"LEVÁ HRANICE −15°"],[right,"PRAVÁ HRANICE +15°"]]){
+    L.polyline([site,point],{color:"#4fd4ff",weight:2,dashArray:"6 5",
+      interactive:false}).bindTooltip(text).addTo(s.groups.parSector);
+  }
+  L.polyline([site,axis],{color:"#f8cf67",weight:3,interactive:false})
+    .bindTooltip("PAR OSA · "+az.toFixed(2)+"° TRUE").addTo(s.groups.parSector);
+  L.circleMarker(axis,{radius:5,color:"#ffe5a0",weight:2,
+    fillColor:"#f8cf67",fillOpacity:1,interactive:false}).addTo(s.groups.parSector);
+}
 function updateRange(s,data){
   const nm=Number(data.rangeNm||20);
   const enabled=!!data.rangeEnabled;
@@ -657,6 +708,7 @@ function update(s){
   updateRange(s,data);
   updateObstacles(s,data);
   updateRadar(s,data);
+  updateParSector(s,data);
   updateProfile(s,data);
   updateEnvironment(s,data);
   updateMode(s,data);
