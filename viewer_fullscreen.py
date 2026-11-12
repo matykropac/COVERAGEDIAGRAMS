@@ -40,7 +40,7 @@ def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
             "maxElev": float(cfg.max_elev),
             "bearing": float(cfg.bearing_deg),
             "radarMode": str(cfg.radar_mode),
-            "reference": diagnostic_reference if cfg.radar_mode == "PAR-NG" else "AMSL",
+            "reference": "AMSL",
             "sectorEdgeLoss": float(getattr(result.get("antenna_pattern"), "sector_edge_loss_db", 6.0)),
             "rfAssumptions": dict(core.SSR_ASSUMPTIONS) if cfg.radar_mode == "SSR" else None,
             "levels": levels,
@@ -998,7 +998,7 @@ function showInspection(){
  }
  const d=grid.distance[j],ft=Number($("inspection-level").value);
  const localGround=grid.terrain[i][j];
- const target=ft*.3048+(grid.reference==="AGL"?localGround:0);
+ const target=ft*.3048; // Flight levels are always ft AMSL.
  const samples=grid.terrain[i].slice(0,j+1),ranges=grid.distance.slice(0,j+1);
  const status=grid.status[String(ft)][i][j],ground=grid.terrain[i][j];
  const horizon=grid.lower[i][j],ceiling=grid.upper[i][j];
