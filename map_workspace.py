@@ -422,14 +422,29 @@ def _chosen_levels(mode):
     return list(core.STANDARD_LEVELS_FT)
 
 
+def _current_radar_site():
+    """Authoritative session coordinates; no implicit factory-default radar site."""
+    site=st.session_state.get("ws_radar_site")
+    if not isinstance(site,(list,tuple)) or len(site)!=2:
+        return None
+    try:
+        lat,lon=map(float,site)
+    except (TypeError,ValueError):
+        return None
+    if not (np.isfinite(lat) and np.isfinite(lon) and -80<=lat<=80 and -180<=lon<=180):
+        return None
+    return lat,lon
+
+
 def _cfg():
-    """Use explicit workspace keys; never modify legacy input widgets on a rerun."""
+    """Read one authoritative site for every solver/map/export call."""
     model = st.session_state.get("ws_radar", "RL-2000")
     psr = st.session_state.get("ws_psr_nm", 100)
     range_km = float(40 if model == "PAR-NG" else core.radar_preset(model, psr))
+    site=_current_radar_site()
     return core.Config(
-        lat=float(st.session_state.get("ws_lat", 50.034)),
-        lon=float(st.session_state.get("ws_lon", 15.781)),
+        lat=site[0] if site is not None else 0.,
+        lon=site[1] if site is not None else 0.,
         antenna_agl=float(st.session_state.get("ws_agl", 20.0)),
         radar_mode=model,
         bearing_deg=float(st.session_state.get("ws_bearing", 0.0)),
@@ -547,6 +562,9 @@ def _config_state_from_project(config):
     if config.radar_mode == "RL-2000":
         values["ws_psr_nm"] = min(core.PSR_RANGES_NM,key=lambda n:abs(core.radar_preset("RL-2000",n)-config.range_km))
     st.session_state.update(values)
+    st.session_state["ws_radar_site"]=[float(config.lat),float(config.lon)]
+    st.session_state["ws_site_lat_input"]=f"{float(config.lat):.6f}"
+    st.session_state["ws_site_lon_input"]=f"{float(config.lon):.6f}"
     # CDPROJ owns the physical radar mode; never keep an ASR/SSR/PAR label
     # from a previously edited, unrelated project.
     st.session_state["ws_radar_ui_mode"]={
@@ -703,8 +721,11 @@ def _commit_radar_site(lat,lon,*,reopen_dialog=True):
     if not (np.isfinite(lat) and np.isfinite(lon)
             and -80<=lat<=80 and -180<=lon<=180):
         raise ValueError("Stanoviště musí mít LAT −80 až 80° a LON −180 až 180°.")
+    st.session_state["ws_radar_site"]=[lat,lon]
     st.session_state["ws_lat"]=lat
     st.session_state["ws_lon"]=lon
+    st.session_state["ws_site_lat_input"]=f"{lat:.6f}"
+    st.session_state["ws_site_lon_input"]=f"{lon:.6f}"
     shadow=dict(st.session_state.get("_radar_form_shadow") or {})
     shadow.update({"ws_lat":lat,"ws_lon":lon})
     st.session_state["_radar_form_shadow"]=shadow
@@ -821,8 +842,8 @@ def _radar_settings_body(ui_mode):
     st.caption("◉ AUTO-DRAFT · průběžně ukládám nastavení radaru a výšky. "
                "Koncept se obnoví po návratu přes stejný odkaz.")
     radar=ui_mode
-    lat=st.session_state.get("ws_lat",50.034)
-    lon=st.session_state.get("ws_lon",15.781)
+    site=_current_radar_site()
+    lat,lon=site if site else (None,None)
     agl=st.session_state.get("ws_agl",20.)
     header=st.columns([1.2,1,1],gap="small")
     with header[0]:
@@ -837,8 +858,10 @@ def _radar_settings_body(ui_mode):
     with header[2]:
         st.markdown('<div class="cd-radar-summary"><div class="cd-radar-caption">RADAR SITE</div>'
                     '<div class="cd-radar-value" style="font-size:14px;padding:9px 0">'
-                    +f"LAT {float(lat):.4f}°"+'</div><div class="cd-radar-unit">'
-                    +f"LON {float(lon):.4f}°"+'</div></div>',unsafe_allow_html=True)
+                    +(f"LAT {lat:.4f}°" if site else "NENASTAVENO")
+                    +'</div><div class="cd-radar-unit">'
+                    +(f"LON {lon:.4f}°" if site else "Zvol polohu v mapě")
+                    +'</div></div>',unsafe_allow_html=True)
 
     location_tab,antenna_tab,terrain_tab,flight_tab=st.tabs([
         "01 · STANOVIŠTĚ","02 · ANTÉNA","03 · TERÉN / MODEL","04 · CÍL / FL"
@@ -849,13 +872,29 @@ def _radar_settings_body(ui_mode):
                     unsafe_allow_html=True)
         st.caption(f"Režim **{ui_mode}** je zvolen samostatným tlačítkem RADAR. "
                    "Zde už jej nemusíš vybírat ze seznamu.")
+        # The text fields begin empty; a factory-default location is never a
+        # real radar site. Values persist outside dialog widget lifetimes.
+        if "ws_site_lat_input" not in st.session_state:
+            st.session_state["ws_site_lat_input"]=f"{site[0]:.6f}" if site else ""
+        if "ws_site_lon_input" not in st.session_state:
+            st.session_state["ws_site_lon_input"]=f"{site[1]:.6f}" if site else ""
         a,b=st.columns(2,gap="small")
         with a:
-            st.number_input("Latitude · WGS84",min_value=-80.0,max_value=80.0,
-                            value=50.034,format="%.6f",key="ws_lat")
+            st.text_input("Latitude · WGS84",key="ws_site_lat_input",
+                          placeholder="Zadej LAT (bez výchozí hodnoty)")
         with b:
-            st.number_input("Longitude · WGS84",min_value=-180.0,max_value=180.0,
-                            value=15.781,format="%.6f",key="ws_lon")
+            st.text_input("Longitude · WGS84",key="ws_site_lon_input",
+                          placeholder="Zadej LON (bez výchozí hodnoty)")
+        if st.button("✓ ULOŽIT ZADANÉ SOUŘADNICE",key="ws_manual_site_confirm",
+                     use_container_width=True):
+            try:
+                _commit_radar_site(
+                    float(st.session_state["ws_site_lat_input"].replace(",",".")),
+                    float(st.session_state["ws_site_lon_input"].replace(",",".")),
+                    reopen_dialog=False)
+                st.success("Stanoviště uloženo do projektu a session.")
+            except (ValueError,KeyError,TypeError) as exc:
+                st.error("Neplatná poloha radaru: "+str(exc))
         if st.button("⌖ URČIT STANOVIŠTĚ V MAPĚ",
                      key="ws_pick_radar_site_dialog",use_container_width=True,
                      help="Kliknutí do mapy uloží souřadnice do session a "
