@@ -2239,7 +2239,7 @@ def _draw_map():
                                           default=str).encode("utf-8")).hexdigest()[:20]
     # WGS84 direct-geodesic circle; exact radial distance in meters.
     range_circle=[]
-    if st.session_state.get("ws_range_enabled",False):
+    if _current_radar_site() is not None and st.session_state.get("ws_range_enabled",False):
         from pyproj import Geod
         radius_m=float(st.session_state.get("ws_range_nm",20))*1852.0
         bearings=np.linspace(0.,360.,181)
@@ -2249,16 +2249,22 @@ def _draw_map():
             np.full(bearings.shape,float(configured.lat)),
             bearings,np.full(bearings.shape,radius_m))
         range_circle=[[float(lat),float(lon)] for lat,lon in zip(lats,lons)]
+    site=_current_radar_site()
+    runways_for_view=st.session_state.get("ws_airport_geometry") or []
+    # A map viewport is not a radar site. With no user-chosen position, show
+    # RWY context if available, otherwise a neutral world overview.
+    initial_center=(site if site else
+                    tuple(runways_for_view[0]["midpoint"]) if runways_for_view else (0.,0.))
     payload={
-        "center":[configured.lat,configured.lon],
-        "zoom":8 if result else 9,
-        "radar":{"lat":configured.lat,"lon":configured.lon,
-                 "label":configured.radar_mode+" · RADAR"},
+        "center":list(initial_center),
+        "zoom":8 if site else (10 if runways_for_view else 2),
+        "radar":({"lat":site[0],"lon":site[1],
+                 "label":configured.radar_mode+" · RADAR"} if site else None),
         "basemaps":basemaps,
         "openaip":openaip,
         "theme":st.session_state.get("ws_daynight","NIGHT"),
         "tool":_map_tool(),
-        "parSector":{"enabled":configured.radar_mode=="PAR-NG",
+        "parSector":{"enabled":site is not None and configured.radar_mode=="PAR-NG",
                      "bearing":float(configured.bearing_deg),
                      "rangeKm":float(configured.range_km),
                      "lat":float(configured.lat),"lon":float(configured.lon),
@@ -2271,7 +2277,7 @@ def _draw_map():
            if st.session_state.get("ws_show_runways",True) else [],
         "airportCode":st.session_state.get("ws_airport_code",""),
         "airspaces":[],
-        "rangeEnabled":bool(st.session_state.get("ws_range_enabled",False)),
+        "rangeEnabled":bool(site is not None and st.session_state.get("ws_range_enabled",False)),
         "rangeNm":int(st.session_state.get("ws_range_nm",20)),
         "rangeCircle":range_circle,
         "opacity":alpha,
