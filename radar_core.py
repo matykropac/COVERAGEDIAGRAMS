@@ -146,56 +146,42 @@ def height_at_angle(distance, angle, antenna_amsl, k):
 FT_TO_M = 0.3048
 
 
-FLIGHT_LEVELS_LIST = (
-    500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 9000,
-    10000, 12000, 15000, 20000, 25000, 30000, 35000, 40000, 66000
-)
-
-
-PAR_LOW_LEVELS_FT = (50, 100, 150, 200, 250, 300, 350, 400, 450)
-
-# Default PAR flight-level set. Any other positive integer height within
-# 1..66000 ft remains available through the free-form input.
-PAR_DEFAULT_LEVELS_FT = tuple(range(2000, 6001, 100))
+# The only permitted output heights, in feet. No custom values.
+STANDARD_LEVELS_FT = tuple(range(100, 9001, 100))
+FLIGHT_LEVELS_LIST = STANDARD_LEVELS_FT
+PAR_LOW_LEVELS_FT = tuple(range(100, 901, 100))
+PAR_DEFAULT_LEVELS_FT = STANDARD_LEVELS_FT
+PAR_CUSTOM_MIN_FT = 100
+PAR_CUSTOM_MAX_FT = 9000
+PAR_CUSTOM_MAX_COUNT = len(STANDARD_LEVELS_FT)
 
 
 def flight_levels_for(mode):
-    """PAR defaults 2000–6000 ft every 100; PSR/SSR presets unchanged."""
-    return PAR_DEFAULT_LEVELS_FT if mode in ('PAR', 'PAR-NG') else FLIGHT_LEVELS_LIST
-
-PAR_CUSTOM_MIN_FT = 1
-PAR_CUSTOM_MAX_FT = 66000
-PAR_CUSTOM_MAX_COUNT = 500
+    """One fixed output-height catalog for all radar modes."""
+    return STANDARD_LEVELS_FT
 
 
 def valid_flight_level(mode, ft):
-    """Presets for PSR/SSR; any whole-foot elevation 1..66000 for PAR.
-
-    Bool/float/string are rejected, so project metadata cannot silently
-    change an altitude or accept fractional/unsafe values.
-    """
+    """Only whole 100 ft increments in the fixed 100–9000 ft catalog."""
     if isinstance(ft, (bool, np.bool_)) or not isinstance(ft, (int, np.integer)):
         return False
-    ft=int(ft)
-    if mode in ('PAR','PAR-NG'):
-        return PAR_CUSTOM_MIN_FT <= ft <= PAR_CUSTOM_MAX_FT
-    return ft in flight_levels_for(mode)
+    return int(ft) in STANDARD_LEVELS_FT
 
 
 def parse_par_flight_levels(text):
-    """Read comma/semicolon/whitespace separated custom flight levels in ft."""
+    """Compatibility parser; reject every level outside the fixed catalog."""
     import re
-    raw=str(text or "").strip()
+    raw = str(text or "").strip()
     if not raw:
         return ()
-    tokens=[x for x in re.split(r"[,;\s]+",raw) if x]
+    tokens = [x for x in re.split(r"[,;\\s]+",raw) if x]
     if len(tokens)>PAR_CUSTOM_MAX_COUNT:
-        raise ValueError(f"Maximálně {PAR_CUSTOM_MAX_COUNT} vlastních hladin.")
+        raise ValueError(f"Maximálně {PAR_CUSTOM_MAX_COUNT} standardních hladin.")
     if any(not re.fullmatch(r"[0-9]+",token) for token in tokens):
-        raise ValueError("Zadej celá čísla v ft, například 300, 400, 900, 1500.")
+        raise ValueError("Lze použít pouze násobky 100 ft od 100 do 9000 ft.")
     values=tuple(sorted(set(int(token) for token in tokens)))
     if any(not valid_flight_level('PAR-NG',ft) for ft in values):
-        raise ValueError(f"PAR hladiny musí být v rozsahu {PAR_CUSTOM_MIN_FT}–{PAR_CUSTOM_MAX_FT} ft.")
+        raise ValueError("Povoleny jsou pouze hladiny 100, 200, …, 9000 ft.")
     return values
 
 
