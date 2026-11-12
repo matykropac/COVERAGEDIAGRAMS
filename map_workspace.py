@@ -1015,22 +1015,31 @@ def radar_dialog():
             st.selectbox("DEM dataset",list(core.DATASETS),key="ws_dataset")
         a,b=st.columns(2,gap="small")
         with a:
-            st.select_slider("Radiální krok [m]",options=[25,50,100,250,500,1000,2000],
-                             value=500,key="ws_step")
+            st.select_slider("Radiální krok [m]",
+                             options=[5,10,15,20,25,50,75,100,150,250,500,1000,2000],
+                             value=500,key="ws_step",
+                             help="Expertní krok 5 m; skutečná přesnost závisí na DEM.")
         with b:
-            st.select_slider("Azimutální krok [°]",options=[.25,.5,1.,2.,2.5,5.],
-                             value=1.,key="ws_azstep")
+            st.select_slider("Azimutální krok [°]",
+                             options=[.025,.05,.075,.1,.125,.15,.2,.25,.5,1.,2.,2.5,5.],
+                             value=1.,key="ws_azstep",
+                             help="Expertní krok 0,025°; rozestup paprsků roste se vzdáleností.")
         st.number_input("k-factor",.5,3.,4/3,format="%.4f",key="ws_k")
         try:
             current=_cfg()
             az,d=core.axes(current)
             samples=len(az)*len(d)
             st.metric("VÝPOČETNÍ SÍŤ",f"{samples:,} vzorků")
-            if samples>750000:
-                st.warning("Překročen limit 750 000 vzorků. Zvětši krok.")
-            else:
-                st.progress(min(1.,samples/750000.))
-        except Exception:
+            st.caption(f"{len(az):,} azimutů × {len(d):,} vzdáleností · "
+                       f"technický limit {core.MAX_GRID_SAMPLES:,} vzorků.")
+            if samples>2_000_000:
+                st.warning("EXPERT / MAX DETAIL: velmi náročná síť; "
+                           "výpočet i export mohou vyžadovat značnou paměť. "
+                           "Přesnost terénu stále určuje zdrojový DEM.")
+            st.progress(min(1.,samples/core.MAX_GRID_SAMPLES))
+        except ValueError as exc:
+            st.error(str(exc))
+        except (TypeError,KeyError):
             st.caption("Výpočetní síť bude zkontrolována při spuštění výpočtu.")
 
     with flight_tab:
@@ -1172,8 +1181,11 @@ def _calculate_coverage():
             samples=len(az)*len(distance)
             log(f"Radar: {c.radar_mode} · {c.lat:.6f}°, {c.lon:.6f}°")
             log(f"Výpočetní síť: {len(az)} azimutů × {len(distance)} vzdáleností = {samples:,} vzorků")
-            if samples>750000:
-                raise ValueError("Výpočet přesahuje 750 000 vzorků. Zvětši radiální nebo azimutální krok.")
+            if samples>core.MAX_GRID_SAMPLES:
+                raise ValueError(f"Výpočet přesahuje {core.MAX_GRID_SAMPLES:,} vzorků. "
+                                 "Zvětši radiální nebo azimutální krok.")
+            if samples>2_000_000:
+                log("EXPERT: vysoce detailní síť; skutečné rozlišení výsledku omezuje DEM.")
 
             source=st.session_state.get("ws_source","OpenTopography")
             if source=="DEM soubor":
