@@ -2334,7 +2334,12 @@ def _render_los_validation(result):
     if check["status"]=="UNKNOWN":
         st.warning("NEDOSTATEČNÁ DEM DATA · "+check["reason"])
         return
-    if check["status"]=="MATCH":
+    if check["status"]=="OBSTACLES_NOT_CHECKED":
+        st.warning("LOS DEM · samostatná kontrola terénu. V projektu jsou "
+                   "také ručně vložené překážky; ty tato nezávislá DEM "
+                   "kontrola neobsahuje. Rozdíl oproti hlavnímu krytí "
+                   "proto automaticky neznamená matematickou chybu.")
+    elif check["status"]=="MATCH":
         st.success("MATHEMATICAL LOS · MATCH s hlavním geometrickým modelem")
     else:
         st.error("MATHEMATICAL LOS · MISMATCH! Výpočet vyžaduje kontrolu.")
@@ -2390,7 +2395,8 @@ def _render_los_validation(result):
     except (ImportError,ValueError,TypeError) as exc:
         st.warning("Graf LOS nelze zobrazit: "+str(exc))
     st.caption("VALIDACE 01 · Nezávislá geometrie na stejné vzorkované DEM "
-               "síti. Nepotvrzuje měřený Pd ani překážky mezi vzorky terénu.")
+               "síti. Ruční překážky se kontrolují pouze v hlavním enginu. "
+               "Nepotvrzuje měřený Pd ani překážky mezi vzorky terénu.")
 
 
 def _map_tool():
