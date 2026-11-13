@@ -186,7 +186,17 @@ font-size:11px;pointer-events:none;max-width:50vw}
 #file{display:none}
 @media(max-width:680px){.brand small{display:none}.brand{padding:9px}.toolbar{gap:5px;left:8px;top:8px}.toolbar button{padding:9px 8px;font-size:11px}
 .panel{left:8px;top:60px;width:calc(100vw - 16px);height:calc(100dvh - 77px)}.status{bottom:16px;right:8px}}
+
+#cd-viewer-busy[hidden]{display:none!important}
+#cd-viewer-busy{position:fixed;z-index:99999;inset:0;display:flex;align-items:center;justify-content:center;background:#061728ad;backdrop-filter:blur(4px)}
+.cd-viewer-busy-card{width:min(365px,calc(100vw - 32px));background:#10283d;color:#e6f5ff;border:1px solid #5089aa;border-radius:16px;padding:25px;text-align:center;box-shadow:0 20px 60px #000a;font:13px system-ui}
+.cd-viewer-busy-radar{position:relative;width:140px;height:140px;border-radius:50%;margin:0 auto 17px;overflow:hidden;border:2px solid #56bada;background:repeating-radial-gradient(circle,transparent 0 22px,#65a9c066 23px 24px),#0b2536}
+.cd-viewer-busy-radar:before{content:"";position:absolute;inset:0;background:conic-gradient(transparent 0deg,transparent 285deg,#53cce829 315deg,#6feaffbb 355deg,transparent 360deg);animation:cd-viewer-sweep 2s linear infinite}
+.cd-viewer-busy-radar:after{content:"";position:absolute;left:66%;top:33%;width:8px;height:8px;border-radius:50%;background:#b7ff9a;box-shadow:0 0 12px #aaffaa}
+.cd-viewer-busy-card strong{display:block;font-size:17px;letter-spacing:.02em}.cd-viewer-busy-card p{color:#b3cee0;font-size:12px;overflow-wrap:anywhere}
+@keyframes cd-viewer-sweep{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.cd-viewer-busy-radar:before{animation:none}}
 </style></head><body>
+<div id="cd-viewer-busy" role="status" aria-live="polite" hidden><div class="cd-viewer-busy-card"><div class="cd-viewer-busy-radar"></div><strong id="cd-viewer-busy-title">ZPRACOVÁVÁM DATA</strong><p id="cd-viewer-busy-detail">Načítám…</p><small>COVERAGEDIAGRAMS · RADAR PROCESSING</small></div></div>
 <div id="map" role="application" aria-label="Interaktivní mapa VIEWER"></div>
 <div class="toolbar">
   <div class="brand">◈ VIEWER <small>GEOSPATIAL WORKSPACE</small></div>
@@ -280,6 +290,12 @@ let setting={base:"hillshade",labels:true,legend:true,range:false,nm:20};
 let layerSeq=0,chosenBase="hillshade",radarCenter=DATA.center||[50,15],legendControl=null;
 const escapeHTML=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const filename=s=>String(s||"import").slice(0,180);
+let viewerBusyCount=0;
+function viewerBusyStart(title,detail){viewerBusyCount++;$("cd-viewer-busy-title").textContent=title;$("cd-viewer-busy-detail").textContent=detail;$("cd-viewer-busy").hidden=false}
+function viewerBusyDetail(detail){$("cd-viewer-busy-detail").textContent=detail}
+function viewerBusyEnd(){viewerBusyCount=Math.max(0,viewerBusyCount-1);if(!viewerBusyCount)$("cd-viewer-busy").hidden=true}
+const viewerPaint=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+
 const status=t=>{$("status").textContent=t};
 function notify(t,error=false){$("notice").textContent=t;$("notice").classList.toggle("error",error);status(t)}
 function validFeature(f){return f&&f.type==="Feature"&&f.geometry&&typeof f.geometry.type==="string"}
@@ -598,9 +614,18 @@ async function loadFile(file){
  detectRadarSiteFromLayers();refreshList();syncAll();fitAll();updateExtentPreset();return "Načteno: "+file.name;
 }
 async function importFiles(files){
+ if(!files||!files.length)return;
+ viewerBusyStart("IMPORT GEODAT","Kontroluji vybrané soubory…");
+ await viewerPaint();
  let messages=[],errors=[];
- for(const f of [...files]){try{messages.push(await loadFile(f))}catch(e){errors.push(filename(f)+": "+e.message)}}
- notify([...messages,...errors].join("\n")||"Žádná data",errors.length>0);
+ try{
+   for(let i=0;i<files.length;i++){
+     const f=files[i];viewerBusyDetail((i+1)+"/"+files.length+" · "+filename(f.name));
+     await viewerPaint();
+     try{messages.push(await loadFile(f))}catch(e){errors.push(filename(f)+": "+e.message)}
+   }
+   notify([...messages,...errors].join("\n")||"Žádná data",errors.length>0);
+ }finally{viewerBusyEnd()}
 }
 function download(name,blob){
  const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;
@@ -608,6 +633,9 @@ function download(name,blob){
 }
 async function saveCDView(){
  if(!window.JSZip){notify("JSZip není dostupný",true);return}
+ viewerBusyStart("UKLÁDÁM PROJEKT","Komprimuji vrstvy CDVIEW…");
+ await viewerPaint();
+ try{
  const data={format:"COVERAGEDIAGRAMS_VIEWER",version:1,layers:{},styles:{},
   settings:{base:setting.base,viewer_basemap:setting.base,viewer_mode:"2D MAPA",
    viewer_legend:setting.legend,viewer_north:true,
@@ -615,6 +643,7 @@ async function saveCDView(){
  for(const o of layers.values()){data.layers[o.name]=o.features;data.styles[o.name]=o.style}
  const zip=new JSZip();zip.file("viewer.json",JSON.stringify(data));
  download("COVERAGEDIAGRAMS_viewer.cdview",await zip.generateAsync({type:"blob",compression:"DEFLATE"}));
+ }finally{viewerBusyEnd()}
 }
 function selectedCoverageLevel(layerName){
  // Only radar coverage layers; unrelated imported/airport layer names are ignored.
