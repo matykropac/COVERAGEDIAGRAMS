@@ -2969,7 +2969,7 @@ def render_workspace():
                                 try:
                                     from par_diagnostics_export import make_diagnostics_zip
                                     with busy_overlay("PAR DIAGNOSTIKA", "Připravuji datové rastry a diagnostický ZIP…"):
-                        blob=make_diagnostics_zip(result,int(level),
+                                        blob=make_diagnostics_zip(result,int(level),
                                                              reference=reference)
                                     st.session_state["ws_par_diag_zip"]={
                                         "key":(result.get("completed_at"),int(level),reference),
