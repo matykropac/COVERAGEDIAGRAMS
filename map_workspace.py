@@ -35,6 +35,7 @@ from ssr_custom import load_measured_ssr
 from wind_turbines import load_wind_turbines, add_wind_layer
 from geodata_obstacle_catalog import catalog_from_data, synchronize
 from selected_export import FORMATS, build_selected_zip
+from busy_overlay import busy_overlay
 
 STYLES = """
 <style>
@@ -125,7 +126,7 @@ def _position_nearby_controls():
     if st.button("NAČÍST BUDOVY / LESY / STOŽÁRY · 2 KM",
                  use_container_width=True,key="ws_position_osm_2km"):
         try:
-            with st.spinner("Načítám objekty OSM do 2 km…"):
+            with busy_overlay("IMPORT GEODAT", "Načítám objekty OpenStreetMap v okolí…"):
                 fetched=env.fetch_osm(round(ref[0],5),round(ref[1],5),2.0)
             if not fetched:
                 st.warning("V okruhu 2 km nejsou dostupné objekty ve zdroji OSM.")
@@ -1289,7 +1290,7 @@ def _calculate_coverage():
     def elapsed():
         return f"{time.perf_counter()-started:.1f} s"
 
-    with st.status("⏳ RADAR ENGINE · Zahajuji výpočet…",
+    with busy_overlay("RADAR ENGINE · Výpočet krytí", "Připravuji radarový model…") as busy_update, st.status("⏳ RADAR ENGINE · Zahajuji výpočet…",
                    state="running",expanded=True) as panel:
         live_log=st.empty()
         def log(message):
@@ -1301,6 +1302,7 @@ def _calculate_coverage():
             panel.update(label=f"⏳ {title} · {elapsed()}",
                          state="running",expanded=True)
             log(title)
+            busy_update(title)
         def report(message,*args):
             # Core download/sample callbacks run as data actually arrive.
             msg=str(message).strip()
@@ -1790,13 +1792,14 @@ def layers_dialog():
             errors=[]
             completed={}
             started=time.perf_counter()
-            with st.status("⏳ Připravuji načtení geodat…",expanded=True,state="running") as progress:
+            with busy_overlay("IMPORT GEODAT", "Připravuji připojení ke zdrojům…") as busy_update, st.status("⏳ Připravuji načtení geodat…",expanded=True,state="running") as progress:
                 st.caption(f"📍 {site[0]:.5f}°, {site[1]:.5f}° · {len(work)} zdroje · "
                            "skutečný průběh bez odhadovaných procent")
                 for step,(name,enabled) in enumerate(sources,1):
                     if not enabled:
                         continue
                     current=len(completed)+1
+                    busy_update(f"{current}/{len(work)} · {name}")
                     progress.update(label=f"⏳ Pracuji · {current}/{len(work)} · {name}",
                                     state="running",expanded=True)
                     st.write(f"**⏳ {name}** — navazuji spojení / zpracovávám data…")
@@ -1954,7 +1957,7 @@ def exports_dialog():
     })
     if st.button("PŘIPRAVIT ZIP",type="primary",use_container_width=True,key="ws_export_build"):
         try:
-            with st.spinner("Připravuji export…"):
+            with busy_overlay("EXPORTNÍ CENTRUM", "Sestavuji a komprimuji vybrané soubory…"):
                 proj=None
                 if selected["project"]:
                     proj=save_project(result,levels=st.session_state.get("ws_levels",[]),
@@ -2005,7 +2008,7 @@ def exports_dialog():
                 basemap=report_basemap,
                 dpi=600,
                 cover_docx=cover_docx.getvalue() if cover_docx is not None else None)
-            with st.spinner("Generating high-resolution 600 DPI report with selected map layers..."):
+            with busy_overlay("GENERUJI PDF REPORT", "Připravuji mapové vrstvy a stránky v 600 DPI…"):
                 st.session_state["ws_report_pdf"]=generate_coverage_report_pdf(
                     result,report_options)
                 st.session_state["ws_report_filename"]="Coverage_Report_600dpi.pdf"
