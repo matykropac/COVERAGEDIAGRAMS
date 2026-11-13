@@ -2642,7 +2642,11 @@ def render_workspace():
     """Persistent ATM workstation map with contextual engineering tools."""
     _draft_begin()
     _restore_radar_form()
-    st.session_state["ws_levels"]=list(core.flight_levels_for(st.session_state.get("ws_radar","RL-2000")))
+    current_mode=st.session_state.get("ws_radar","RL-2000")
+    current_levels=core.flight_levels_for(current_mode)
+    st.session_state["ws_levels"]=list(current_levels)
+    if st.session_state.get("ws_target_ft") not in current_levels:
+        st.session_state["ws_target_ft"]=3000
     st.session_state["_par_saved_levels"]=list(core.STANDARD_LEVELS_FT)
     st.session_state["ws_reference"]="AMSL"
     st.session_state["ws_par_level_reference"]="AMSL"
