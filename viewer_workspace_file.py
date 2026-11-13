@@ -8,7 +8,7 @@ from zipfile import ZipFile, ZIP_DEFLATED, BadZipFile
 import json
 
 FORMAT="COVERAGEDIAGRAMS_VIEWER"
-MAX_ARCHIVE=50*1024*1024
+MAX_ARCHIVE=200*1024*1024
 MAX_JSON=150*1024*1024
 
 
@@ -23,7 +23,7 @@ def make_workspace(layers,styles,settings):
     with ZipFile(output,"w",ZIP_DEFLATED,compresslevel=6) as archive:
         archive.writestr("viewer.json",data)
     if output.tell()>MAX_ARCHIVE:
-        raise ValueError("Projekt VIEWERU překračuje limit 50 MB.")
+        raise ValueError("Projekt VIEWERU překračuje limit 200 MB.")
     return output.getvalue()
 
 
