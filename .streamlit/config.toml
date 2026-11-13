@@ -6,3 +6,6 @@ secondaryBackgroundColor = "#FFFFFF"
 textColor = "#263D54"
 linkColor = "#245FC5"
 font = "sans serif"
+
+[server]
+maxUploadSize = 200
