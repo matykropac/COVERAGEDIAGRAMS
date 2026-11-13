@@ -12,6 +12,7 @@ import folium
 import numpy as np
 import pandas as pd
 import streamlit as st
+from busy_overlay import busy_overlay
 import radar_core as core
 import html
 import re
@@ -211,7 +212,7 @@ def download_dem_dialog(center):
         try:
             if not key:
                 raise ValueError("Chybí OpenTopography API key.")
-            with st.status("Načítám DEM z OpenTopography",expanded=True) as status:
+            with busy_overlay("VIEWER · NAČÍTÁM DEM","Stahuji a kontroluji výšková data…"), st.status("Načítám DEM z OpenTopography",expanded=True) as status:
                 event=st.empty()
                 def progress(msg,*_):
                     event.caption(str(msg).replace(key,"[API KEY]"))
