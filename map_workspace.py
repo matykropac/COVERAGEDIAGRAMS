@@ -233,19 +233,20 @@ def position_layers_export_dialog():
                      use_container_width=True,disabled=not levels):
             try:
                 from web_support import export_kml
-                st.session_state["ws_coverage_kml_ready"]=(
-                    tuple(levels),export_kml(
-                        result,levels,
-                        helper_features=par_helper_features(**{
-                            "site_lat":_par_helper_context()["lat"],
-                            "site_lon":_par_helper_context()["lon"],
-                            "bearing_deg":_par_helper_context()["bearing"],
-                            "range_km":_par_helper_context()["range_km"],
-                            "runway":_par_helper_context()["runway"],
-                            "runways":_par_helper_context()["runways"],
-                            "runway_end":_par_helper_context()["runway_end"],
-                            "include_range":False
-                        }) if _par_helper_context() else None))
+                with busy_overlay("EXPORT KML", "Sestavuji polygonové vrstvy radarového krytí…"):
+                    st.session_state["ws_coverage_kml_ready"]=(
+                        tuple(levels),export_kml(
+                            result,levels,
+                            helper_features=par_helper_features(**{
+                                "site_lat":_par_helper_context()["lat"],
+                                "site_lon":_par_helper_context()["lon"],
+                                "bearing_deg":_par_helper_context()["bearing"],
+                                "range_km":_par_helper_context()["range_km"],
+                                "runway":_par_helper_context()["runway"],
+                                "runways":_par_helper_context()["runways"],
+                                "runway_end":_par_helper_context()["runway_end"],
+                                "include_range":False
+                            }) if _par_helper_context() else None))
             except Exception as exc:
                 st.error(f"Radarový KML export selhal: {exc}")
         prepared=st.session_state.get("ws_coverage_kml_ready")
@@ -280,7 +281,8 @@ def position_layers_export_dialog():
             pack={"KML":position_kml_bytes,
                   "KMZ":position_kmz_bytes,
                   "GEOJSON":position_geojson_bytes}
-            st.session_state["ws_position_export_bytes"]=pack[fmt](features)
+            with busy_overlay("EXPORT MAPOVÝCH VRSTEV", "Připravuji "+fmt+" z geodat…"):
+                st.session_state["ws_position_export_bytes"]=pack[fmt](features)
             st.session_state["ws_position_export_stamp"]=(selected,fmt)
             st.session_state["ws_position_export_count"]=len(features)
         except Exception as exc:
