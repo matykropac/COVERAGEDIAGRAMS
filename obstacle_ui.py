@@ -57,7 +57,7 @@ def render_obstacle_editor(radar_lat, radar_lon):
             st.caption(f'Další mapové objekty: {len(visible_environment)}')
             usable = [x for x in visible_environment if x["height_m"] is not None and
                       x["kind"] in ("Building", "Tower") and len(x["coordinates"]) >= 3]
-            with st.expander('PŘEVOD A EXPORT DAT', expanded=False):
+            with st.expander('PŘEVOD DAT', expanded=False):
                 st.dataframe(pd.DataFrame([{
                     "Objekt": v["name"], "Typ": env.LABELS[v["kind"]],
                     "Výška AGL [m]": v["height_m"],
@@ -65,26 +65,6 @@ def render_obstacle_editor(radar_lat, radar_lon):
                     "Vzdálenost [km]": v["distance_km"],
                     "Původ": v["source"]
                 } for v in visible_environment[:1000]]), use_container_width=True, height=230)
-                if st.button("Připravit export vrstev (ZIP)", key="env_bundle_prepare"):
-                    st.session_state["obstacle_environment_zip"] = env.export_bundle(
-                        visible_environment, canopy_overlay=canopy_overlay, airports=airports)
-                    st.session_state["obstacle_environment_signature"] = (
-                        env.geojson_bytes(visible_environment),
-                        canopy_overlay[0] if canopy_overlay else b"",
-                        repr(airports))
-                signature_now = (env.geojson_bytes(visible_environment),
-                                 canopy_overlay[0] if canopy_overlay else b"", repr(airports))
-                if (st.session_state.get("obstacle_environment_zip") is not None
-                        and st.session_state.get("obstacle_environment_signature") == signature_now):
-                    st.download_button("Stáhnout ZIP", st.session_state["obstacle_environment_zip"],
-                                       file_name="OBSTACLES_layers.zip", mime="application/zip",
-                                       key="env_bundle_editor")
-                st.download_button("GeoJSON", env.geojson_bytes(visible_environment),
-                                   file_name="environment_layers.geojson",
-                                   mime="application/geo+json", key="env_geojson_editor")
-                st.download_button("KML", env.kml_bytes(visible_environment),
-                                   file_name="environment_layers.kml",
-                                   mime="application/vnd.google-earth.kml+xml", key="env_kml_editor")
                 if st.button(f'Převést objekty se známou výškou ({min(len(usable), MAX_OBSTACLES-len(obstacles))})',
                              key="environment_to_obstacles",
                              help="Pouze budovy a věže se známou výškou, max. 1000 objektů."):
