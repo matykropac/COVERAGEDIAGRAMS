@@ -834,7 +834,14 @@ def antenna_lab_dialog():
     except (ValueError,TypeError,OSError) as exc:
         st.warning("Výchozí anténní model není dostupný: "+str(exc))
         original=None
-    render_lab(original)
+    from engineering_workbench_v2 import render_sensor_registry, render_3d_pattern
+    tab1,tab2,tab3=st.tabs(["1D · PATTERN EDITOR","3D · AZ / EL MATRIX","SENSOR REGISTRY"])
+    with tab1:
+        render_lab(original)
+    with tab2:
+        render_3d_pattern()
+    with tab3:
+        render_sensor_registry(_current_radar_site())
 
 
 def radar_dialog():
