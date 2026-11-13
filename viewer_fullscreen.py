@@ -117,7 +117,7 @@ backdrop-filter:blur(12px)}
 .tabs button{flex:1;padding:8px 3px;font-size:12px}
 .tabs button.active{background:#195f87;border-color:#5bc3e8}
 .section{flex:1;overflow:auto;min-height:0;padding:13px}
-.section[hidden]{display:none}
+.section[hidden],[hidden]{display:none!important}
 h3{font-size:11px;letter-spacing:.12em;color:#83d8fd;margin:4px 0 13px}
 .muted{color:#9bb4c9;font-size:11px;line-height:1.5}
 .field{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0}
@@ -194,11 +194,11 @@ font-size:11px;pointer-events:none;max-width:50vw}
   <button id="quick-open" class="ghost">＋ Soubor</button>
   <button id="fit" class="ghost">◎ Přiblížit data</button>
   <button id="inspect" class="ghost" aria-pressed="false">⌖ BOD / PROFIL</button>
-  <button id="print-studio" class="ghost">⇩ Export studio</button>
+  <button id="print-studio" class="ghost" hidden>⇩ Export studio</button>
 </div>
 <div class="panel" id="panel">
  <header><strong>MAP WORKSPACE</strong><span id="count" class="muted">0 vrstev</span><button id="close" aria-label="Zavřít panel">×</button></header>
- <div class="tabs"><button class="active" data-tab="layers">VRSTVY</button><button data-tab="source">IMPORT</button><button data-tab="map">MAPA / EXPORT</button></div>
+ <div class="tabs"><button class="active" data-tab="layers">VRSTVY</button><button data-tab="source">IMPORT</button><button data-tab="map">MAPA</button></div>
  <section class="section" id="tab-layers">
    <input id="search" type="search" class="wide" placeholder="Filtrovat názvy vrstev / objektů…">
    <div class="actions"><button id="all">Vše</button><button id="none">Nic</button><button id="invert">Invertovat</button></div>
@@ -207,7 +207,7 @@ font-size:11px;pointer-events:none;max-width:50vw}
  <section class="section" id="tab-source" hidden>
    <h3>NAČTENÍ GEODAT</h3>
    <button id="load" class="primary wide">＋ Načíst KML / KMZ / GeoJSON / CDVIEW</button>
-   <p class="muted">Lze také přetáhnout soubory přímo do mapy. Importované vrstvy se přidají k existujícím; projekt CDVIEW obnoví celé pracovní prostředí.</p>
+   <p class="muted">Maximálně 200 MB na soubor. Lze také přetáhnout soubory přímo do mapy. Importované vrstvy se přidají k existujícím; projekt CDVIEW obnoví celé pracovní prostředí.</p>
    <div class="actions"><button id="clear">Odstranit všechny vrstvy</button></div>
    <div id="notice" class="note">Mapové ovládání běží přímo v prohlížeči. Posouvání, zoom a změny vrstev neaktualizují Streamlit.</div>
  </section>
@@ -229,11 +229,11 @@ font-size:11px;pointer-events:none;max-width:50vw}
    <div class="field"><label for="extent-north">Sever / LAT max</label><input id="extent-north" type="number" min="-90" max="90" step=".000001" placeholder="N"></div>
    <div class="field"><label for="extent-west">Západ / LON min</label><input id="extent-west" type="number" min="-180" max="180" step=".000001" placeholder="W"></div>
    <div class="field"><label for="extent-east">Východ / LON max</label><input id="extent-east" type="number" min="-180" max="180" step=".000001" placeholder="E"></div>
-   <div class="actions"><button id="extent-export" class="ghost wide">⇩ STÁHNOUT OBLAST · GEOJSON</button></div>
+   <div class="actions" hidden><button id="extent-export" class="ghost wide">⇩ STÁHNOUT OBLAST · GEOJSON</button></div>
    <p class="muted">Obdélník přesně zahrnuje vnější okraj polygonů krytí nejvyšší dostupné FL. Hodnoty lze upravit ručně. GeoJSON určuje geografickou oblast pro následné stažení DEM; neobsahuje samotný výškový rastr.</p>
-   <h3 style="margin-top:24px">EXPORT</h3>
-   <div class="actions"><button id="save-geo">GeoJSON</button><button id="save-project">Projekt CDVIEW</button></div>
-   <p class="muted">GeoJSON obsahuje právě zobrazené objekty. CDVIEW uchovává všechny vrstvy, nastavení, jejich barvy a viditelnost.</p>
+   <h3 style="margin-top:24px" hidden>EXPORT</h3>
+   <div class="actions" hidden><button id="save-geo">GeoJSON</button><button id="save-project">Projekt CDVIEW</button></div>
+
  </section>
 </div>
 <aside id="inspection" class="inspection" hidden>
@@ -558,7 +558,7 @@ function parseKML(xml,file){
  traverse(doc.documentElement,"Imported");return groups;
 }
 async function loadFile(file){
- if(file.size>60*1024*1024)throw Error("Soubor přesahuje limit 60 MB");
+ if(file.size>200*1024*1024)throw Error("Soubor přesahuje limit 200 MB");
  const lower=file.name.toLowerCase();
  if(lower.endsWith(".cdview")){
   if(!window.JSZip)throw Error("Modul JSZip není dostupný");
