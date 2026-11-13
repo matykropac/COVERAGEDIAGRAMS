@@ -2661,7 +2661,7 @@ def render_workspace():
     st.session_state["ws_openaip"]=True
 
     next_section=st.session_state.pop("ws_next_section",None)
-    if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE","TERÉN","EXPORT","VALIDACE"):
+    if next_section in ("MAPA","RADAR","PŘEKÁŽKY","POZICE","TERÉN","EXPORT","VALIDACE","LAB"):
         st.session_state["ws_section"]=next_section
 
     from workspace_theme import COMMON_CSS
