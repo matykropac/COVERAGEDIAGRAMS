@@ -3071,23 +3071,29 @@ def render_workspace():
                     _begin_radar_site_pick()
                     st.rerun()
                 with st.expander("NEBO ZADAT SOUŘADNICE LAT / LON",expanded=False):
-                    if "ws_site_lat_input" not in st.session_state:
-                        st.session_state["ws_site_lat_input"]=f"{site[0]:.6f}" if site else ""
-                    if "ws_site_lon_input" not in st.session_state:
-                        st.session_state["ws_site_lon_input"]=f"{site[1]:.6f}" if site else ""
-                    st.text_input("LAT · WGS84",key="ws_site_lat_input",
-                                  placeholder="např. 50.034000")
-                    st.text_input("LON · WGS84",key="ws_site_lon_input",
-                                  placeholder="např. 15.781000")
+                    # These inputs may coexist with the RADAR dialog on the
+                    # SAME Streamlit run. Never reuse the dialog widget keys.
+                    sidebar_signature=tuple(site) if site else None
+                    if st.session_state.get("_ws_sidebar_site_signature")!=sidebar_signature:
+                        st.session_state["_ws_sidebar_site_signature"]=sidebar_signature
+                        st.session_state["ws_sidebar_lat_input"]=(
+                            f"{site[0]:.6f}" if site else "")
+                        st.session_state["ws_sidebar_lon_input"]=(
+                            f"{site[1]:.6f}" if site else "")
+                    st.text_input("LAT · WGS84",key="ws_sidebar_lat_input",
+                                  placeholder="Zeměpisná šířka")
+                    st.text_input("LON · WGS84",key="ws_sidebar_lon_input",
+                                  placeholder="Zeměpisná délka")
                     if st.button("✓ ULOŽIT LAT / LON",
                                  key="ws_save_site_sidebar",
                                  use_container_width=True,
                                  disabled=not st.session_state.get("ws_radar_mode_chosen",False)):
                         try:
-                            lat=float(st.session_state["ws_site_lat_input"].replace(",","."))
-                            lon=float(st.session_state["ws_site_lon_input"].replace(",","."))
+                            lat=float(st.session_state["ws_sidebar_lat_input"].replace(",","."))
+                            lon=float(st.session_state["ws_sidebar_lon_input"].replace(",","."))
                             _commit_radar_site(lat,lon,reopen_dialog=False)
                             st.success("Souřadnice stanoviště byly uloženy.")
+                            st.rerun()
                         except (ValueError,TypeError,KeyError) as exc:
                             st.error("Neplatné souřadnice: "+str(exc))
                 if st.button("⚙ Upravit aktuální "+_radar_ui_mode(),
