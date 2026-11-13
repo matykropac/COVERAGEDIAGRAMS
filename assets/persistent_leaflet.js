@@ -71,6 +71,8 @@ function refreshControl(s) {
   for(const [name,layer] of s.baseLayers) bases[name]=layer;
   const overlay={
     "Radarové krytí":s.groups.coverage,
+    "AZ · geometrický anténní sektor":s.groups.antennaAZ,
+    "EL · projekce relativního zisku":s.groups.antennaEL,
     "RWY / Airport geometry":s.groups.airport,
     "RANGE · NM":s.groups.range,
     "Překážky":s.groups.obstacles,
@@ -299,6 +301,8 @@ function init(s) {
   s.map.attributionControl.setPrefix(false);
   s.baseLayers=new Map();s.groups={
     coverage:L.featureGroup().addTo(s.map),
+    antennaAZ:L.featureGroup().addTo(s.map),
+    antennaEL:L.featureGroup().addTo(s.map),
     airport:L.featureGroup().addTo(s.map),
     airspaces:L.featureGroup().addTo(s.map),
     range:L.featureGroup().addTo(s.map),
@@ -434,6 +438,28 @@ function updateCoverage(s,data) {
       weight:previous?2.3:1.5,dashArray:previous?"7 5":null,
       fillColor:color,fillOpacity:previous?0:(data.opacity??.4)})});
     item.addTo(s.groups.coverage);
+  }
+}
+function updateAntenna(s,data){
+  const sig=data.antennaVersion||"none";
+  if(s.last.antenna===sig)return;
+  s.last.antenna=sig;
+  s.groups.antennaAZ.clearLayers();
+  s.groups.antennaEL.clearLayers();
+  if(data.antennaAZ?.features?.length){
+    L.geoJSON(data.antennaAZ,{
+      style:()=>({color:"#16b6f2",weight:2,dashArray:"7 4",fillColor:"#16b6f2",fillOpacity:.12}),
+      onEachFeature:(feature,layer)=>layer.bindTooltip(feature.properties?.label||"AZ · sektor")
+    }).addTo(s.groups.antennaAZ);
+  }
+  if(data.antennaEL?.features?.length){
+    L.geoJSON(data.antennaEL,{
+      style:f=>({color:f.properties?.color||"#df674f",weight:.3,
+                 fillColor:f.properties?.color||"#df674f",fillOpacity:.42}),
+      onEachFeature:(f,layer)=>layer.bindTooltip(
+        (f.properties?.label||"EL")+" · "+(f.properties?.gain_band||"")+
+        " · "+(f.properties?.flight_level_ft||"")+" ft AMSL")
+    }).addTo(s.groups.antennaEL);
   }
 }
 function updateAirspaces(s,data){
@@ -866,6 +892,7 @@ function update(s){
   updateDayNight(s,data);
   updateOpenAip(s,data);
   updateCoverage(s,data);
+  updateAntenna(s,data);
   updateAirport(s,data);
   updateAirspaces(s,data);
   updateRange(s,data);
