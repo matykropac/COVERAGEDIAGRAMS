@@ -2340,6 +2340,14 @@ def _draw_map():
             show_az=st.session_state.get("ws_antenna_map_az",False),
             show_el=st.session_state.get("ws_antenna_map_el",False),
             experimental=st.session_state.get("lab_preview"))
+    # Registry markers are informational and do not change the active radar solver.
+    registry=st.session_state.get("v2_sensor_registry") or {}
+    sensor_markers=[
+        {"id":item.sensor_id,"kind":item.kind.value,
+         "lat":item.latitude_deg,"lon":item.longitude_deg,
+         "revision":item.revision}
+        for item in registry.values()
+    ]
     payload={
         "center":list(initial_center),
         "zoom":8 if site else (10 if runways_for_view else 2),
@@ -2373,6 +2381,8 @@ def _draw_map():
                                       result.get("completed_at") if result else None,
                                       st.session_state.get("ws_compare_previous",False),
                                       (st.session_state.get("ws_previous_result") or {}).get("completed_at")]),
+        "sensorRegistry":sensor_markers,
+        "sensorRegistryVersion":signature(sensor_markers),
         "obstacles":obstacle_data,
         "obstaclesVersion":signature(obstacle_data),
         "environment":environment_data,
