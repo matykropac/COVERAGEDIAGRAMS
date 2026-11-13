@@ -25,7 +25,7 @@ def _sector(lat,lon,bearing,width,r0,r1):
     return {"type":"Polygon","coordinates":[outer+inner+[outer[0]]]}
 
 def build_layers(config, *, result=None, width_deg=30., bearing_deg=0.,
-                 range_nm=20., level_ft=None, show_az=False, show_el=False):
+                 range_nm=20., level_ft=None, show_az=False, show_el=False, experimental=None):
     """Make two independent GeoJSON feature collections on WGS84 coordinates."""
     empty={"type":"FeatureCollection","features":[]}
     az={"type":"FeatureCollection","features":[]}
@@ -51,7 +51,14 @@ def build_layers(config, *, result=None, width_deg=30., bearing_deg=0.,
     elevation=core.apparent_angle(radii, np.full_like(radii,float(level_ft)*core.FT_TO_M),
                                   antenna,config.k)
     try:
-        if pattern is not None:
+        if experimental and len(experimental.get("angle",[]))>=3:
+            angle=np.asarray(experimental["angle"],dtype=float)
+            values=np.asarray(experimental["gain"],dtype=float)
+            if len(values)!=len(angle) or np.any(np.diff(angle)<=0):
+                raise ValueError("Invalid experimental antenna values")
+            gain=np.interp(np.rad2deg(elevation)-config.antenna_tilt_deg,
+                           angle,values,left=-200.,right=-200.)
+        elif pattern is not None:
             gain=np.asarray(pattern.gain_db(elevation,config.antenna_tilt_deg),dtype=float)
         else:
             gain=10.*np.log10(np.maximum(core.csc_gain(elevation,config),1e-20))
