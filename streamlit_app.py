@@ -25,6 +25,7 @@ import radar_core as core
 from ssr_custom import load_measured_ssr
 from obstacles import apply_obstacles, obstacle_polygon, obstacle_signature
 from project_file import save_project, load_project
+from busy_overlay import busy_overlay
 from project_widgets import restored_widget_values
 from obstacle_ui import render_obstacle_editor
 from live_simulation import simulation_tab
@@ -406,7 +407,7 @@ Bez multipath, difrakce, rušení, garblingu, SLS a výpočtu pravděpodobnosti 
                     log(message)
                     progress.info(message)
                 log(f'Počáteční kontrola OK · {len(az) * len(distance):,} vzorků')
-                with st.spinner('Počítám terén a krytí…'):
+                with busy_overlay('RADAR ENGINE · Výpočet krytí','Načítám DEM a počítám radarové pokrytí…'):
                     log('Připravuji digitální model terénu…')
                     if source == 'Nahrát DEM':
                         if uploaded is None:
@@ -719,7 +720,7 @@ else:
                      use_container_width=True, disabled=count == 0 or (requires_fl and not selected_levels),
                      key='zip_create'):
             try:
-                with st.spinner('Připravuji vybrané soubory…'), plot_lock():
+                with busy_overlay('EXPORTNÍ CENTRUM','Připravuji vybrané soubory…'), plot_lock():
                     project_bytes = None
                     if selected['project']:
                         project_bytes = save_project(
