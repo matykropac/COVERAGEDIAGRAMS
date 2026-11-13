@@ -1894,31 +1894,6 @@ def layers_dialog():
     with visibility[2]:
         st.checkbox("Letiště",value=True,key="ws_geo_show_airports")
 
-    if environment_items or wind_items or airport_items:
-        buffer=BytesIO()
-        with ZipFile(buffer,"w",ZIP_DEFLATED) as archive:
-            if environment_items:
-                archive.writestr("geodata/objects.geojson",env.geojson_bytes(environment_items))
-                archive.writestr("geodata/objects.kml",env.kml_bytes(environment_items))
-            if airport_items:
-                archive.writestr("geodata/airports.geojson",aviation.geojson_bytes(airport_items))
-                archive.writestr("geodata/airports.csv",aviation.csv_bytes(airport_items))
-            if wind_items:
-                columns=["lat","lon","name","height","hub_height","rotor","distance_km","az","osm_id"]
-                out=StringIO()
-                writer=csv.DictWriter(out,fieldnames=columns,extrasaction="ignore")
-                writer.writeheader()
-                writer.writerows(wind_items)
-                archive.writestr("geodata/wind_turbines.csv",out.getvalue().encode("utf-8-sig"))
-                archive.writestr("geodata/wind_turbines.geojson",
-                    json.dumps({"type":"FeatureCollection","features":[
-                        {"type":"Feature","geometry":{"type":"Point",
-                          "coordinates":[x["lon"],x["lat"]]},
-                         "properties":{k:v for k,v in x.items() if k not in ("lat","lon")}}
-                        for x in wind_items]},ensure_ascii=False).encode("utf-8"))
-        st.download_button("STÁHNOUT NAČTENÁ GEODATA · ZIP",
-                           data=buffer.getvalue(),file_name="COVERAGEDIAGRAMS_geodata.zip",
-                           mime="application/zip",use_container_width=True,key="ws_geodata_download")
     st.caption("Objekty se známou výškou a validním polygonem se zařadí do výpočtu automaticky "
                "do limitu 1000; ostatní zůstávají editovatelné, ale zatím pouze informativní.")
 
@@ -2557,9 +2532,6 @@ def _render_los_validation(result):
         writer.writerow(["range_m","dem_amsl_m","los_amsl_m","clearance_m"])
         writer.writerows(zip(check["distance_m"],check["terrain_m"],
                              check["ray_m"],check["clearance_m"]))
-        st.download_button("⇩ PROFIL LOS · CSV",data=output.getvalue(),
-            file_name="COVERAGEDIAGRAMS_LOS_check.csv",mime="text/csv",
-            key="ws_los_profile_csv",use_container_width=True)
     except (ImportError,ValueError,TypeError) as exc:
         st.warning("Graf LOS nelze zobrazit: "+str(exc))
     st.caption("VALIDACE 01 · Nezávislá geometrie na stejné vzorkované DEM "
@@ -2880,23 +2852,6 @@ def render_workspace():
                 if not configured_key():
                     st.caption("OpenAIP: podklady se automaticky zapnou po "
                                "nastavení API klíče.")
-                st.markdown('<div class="cd-nav-title">EXPORTNÍ CENTRUM</div>',
-                            unsafe_allow_html=True)
-                if result is not None:
-                    st.caption("Původní výstupy: PDF report 600 DPI, PNG po hladinách, "
-                               "QuickReport, zákaznický ZIP, GeoTIFF a další.")
-                    if st.button("⇩ PDF 600 DPI / PNG / QUICKREPORT / ZIP",
-                                 key="ws_command_export",type="primary",
-                                 use_container_width=True):
-                        exports_dialog()
-                else:
-                    st.caption("PDF report a PNG radarového krytí vyžadují vypočtená data. "
-                               "Samostatné geodatové vrstvy můžeš exportovat ihned.")
-                if st.button("⇩ KML / KMZ / GEOJSON · MAPOVÉ VRSTVY",
-                             key="ws_map_export_layers",use_container_width=True,
-                             help="Vrstvy RWY, CTR/TMA, překážek a okolních geodat bez výpočtu."):
-                    position_layers_export_dialog()
-
             elif section=="TERÉN":
                 st.markdown('<div class="cd-nav-title">DIGITÁLNÍ MODEL TERÉNU</div>',
                             unsafe_allow_html=True)
@@ -2916,7 +2871,7 @@ def render_workspace():
                 else:
                     st.info("V sekci RADAR nastav stanoviště a zdroj terénu.")
             elif section=="EXPORT":
-                st.markdown('<div class="cd-nav-title">ZÁKAZNICKÉ VÝSTUPY</div>',
+                st.markdown('<div class="cd-nav-title">EXPORTNÍ CENTRUM</div>',
                             unsafe_allow_html=True)
                 if result is not None:
                     if st.button("⇩ PDF / PNG 600 DPI / ZIP",key="ws_export_studio",
@@ -3133,47 +3088,6 @@ def render_workspace():
                             st.rerun()
                         except Exception as exc:
                             st.error(f"Přepočet z uloženého DEM selhal; předchozí výsledek zůstal zachován: {exc}")
-                st.markdown('<div class="cd-nav-title">PROJEKT A DATA</div>',unsafe_allow_html=True)
-                if result is not None:
-                    if st.button("⇩ PŘIPRAVIT PRACOVNÍ PROJEKT · .cdproj",
-                                 use_container_width=True,key="ws_prepare_snapshot",
-                                 help="Snapshot DEM a výpočtu připravit až na vyžádání."):
-                        try:
-                            st.session_state["ws_snapshot_bytes"]=save_project(
-                                result,levels=st.session_state.get("ws_levels",[]),
-                                obstacles=st.session_state.get("obstacles",[]),
-                                source_ui=_airport_project_metadata(),
-                                display=_visual_project_state())
-                            st.session_state["ws_snapshot_key"]=(
-                                result.get("completed_at"),
-                                obstacle_signature(st.session_state.get("obstacles",[])),
-                                tuple(st.session_state.get("ws_levels",[])),
-                                st.session_state.get("ws_airport_code",""),
-                                tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
-                                st.session_state.get("ws_airspace_source_time",""),
-                                tuple(sorted(_par_model_metadata().items())),
-                                "AMSL",
-                            )
-                        except Exception as exc:
-                            st.error(f"Projekt nelze uložit: {exc}")
-                    snapshot_key=(
-                        result.get("completed_at"),
-                        obstacle_signature(st.session_state.get("obstacles",[])),
-                        tuple(st.session_state.get("ws_levels",[])),
-                        st.session_state.get("ws_airport_code",""),
-                        tuple(r["key"] for r in st.session_state.get("ws_airport_geometry") or []),
-                        st.session_state.get("ws_airspace_source_time",""),
-                        tuple(sorted(_par_model_metadata().items())),
-                        "AMSL",
-                    )
-                    if st.session_state.get("ws_snapshot_bytes") and st.session_state.get("ws_snapshot_key")==snapshot_key:
-                        st.download_button("STÁHNOUT PRACOVNÍ PROJEKT",
-                            data=st.session_state["ws_snapshot_bytes"],
-                            file_name="COVERAGEDIAGRAMS_working.cdproj",
-                            mime="application/octet-stream",use_container_width=True,
-                            key="ws_save_working_project",
-                            help="Přenosný snapshot včetně DEM, nezávislý na dočasné cache.")
- 
             elif section=="POZICE":
                 st.markdown('<div class="cd-nav-title">POZICE / AIRPORT & RANGE</div>',
                             unsafe_allow_html=True)
