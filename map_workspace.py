@@ -2295,6 +2295,24 @@ def _draw_map():
     # RWY context if available, otherwise a neutral world overview.
     initial_center=(site if site else
                     tuple(runways_for_view[0]["midpoint"]) if runways_for_view else (0.,0.))
+    # Optional antenna visualization, independent of actual coverage polygons.
+    antenna_az={"type":"FeatureCollection","features":[]}
+    antenna_el={"type":"FeatureCollection","features":[]}
+    if site is not None and (st.session_state.get("ws_antenna_map_az",False) or
+                             st.session_state.get("ws_antenna_map_el",False)):
+        from antenna_map_layers import build_layers
+        projection_level=st.session_state.get("ws_map_level")
+        if result is not None and projection_level is None:
+            levels=_chosen_levels(c.radar_mode)
+            projection_level=levels[0] if levels else None
+        antenna_az,antenna_el=build_layers(
+            configured,result=result,
+            width_deg=st.session_state.get("ws_antenna_map_width",30),
+            bearing_deg=st.session_state.get("ws_antenna_map_bearing",0.),
+            range_nm=st.session_state.get("ws_antenna_map_range",20),
+            level_ft=projection_level,
+            show_az=st.session_state.get("ws_antenna_map_az",False),
+            show_el=st.session_state.get("ws_antenna_map_el",False))
     payload={
         "center":list(initial_center),
         "zoom":8 if site else (10 if runways_for_view else 2),
@@ -2313,6 +2331,9 @@ def _draw_map():
                      "referenceEnd":(_par_helper_context() or {}).get("runway_end",0)},
         "live":False,
         "coverage":coverage,
+        "antennaAZ":antenna_az,
+        "antennaEL":antenna_el,
+        "antennaVersion":signature([antenna_az,antenna_el]),
         "airportGeometry":runway_geometry(st.session_state.get("ws_airport_geometry") or [])
            if st.session_state.get("ws_show_runways",True) else [],
         "airportCode":st.session_state.get("ws_airport_code",""),
@@ -2734,6 +2755,23 @@ def render_workspace():
             if section=="MAPA":
                 st.markdown('<div class="cd-nav-title">MAPOVÉ PODKLADY A VRSTVY</div>',
                             unsafe_allow_html=True)
+                st.markdown('<div class="cd-nav-title">ANTÉNNÍ DIAGRAM V MAPĚ</div>',unsafe_allow_html=True)
+                st.checkbox("AZ · horizontální sektor",key="ws_antenna_map_az",value=False,
+                    help="Geometrický azimutální sektor, nikoli měřený horizontální zisk.")
+                st.checkbox("EL · vertikální diagram / projekce",key="ws_antenna_map_el",value=False,
+                    help="Barvy relativního modelového zisku promítnuté na aktuální letovou hladinu.")
+                if st.session_state.get("ws_antenna_map_az") or st.session_state.get("ws_antenna_map_el"):
+                    st.slider("Šířka sektoru [°]",min_value=1,max_value=90,value=30,
+                              key="ws_antenna_map_width")
+                    st.number_input("Orientace sektoru · AZ TRUE [°]",min_value=0.,
+                        max_value=359.9,value=0.,step=1.,key="ws_antenna_map_bearing")
+                    st.slider("Grafický rozsah [NM]",min_value=1,max_value=260,
+                              value=20,key="ws_antenna_map_range")
+                    if st.session_state.get("ws_antenna_map_el"):
+                        if result is None or result["config"]!=config:
+                            st.info("EL projekce vyžaduje aktuální výpočet. Změny polohy/parametrů nejprve přepočítej.")
+                        else:
+                            st.caption("EL: modelový relativní zisk podle vzdálenosti a zvolené FL; není to krytí ani Pd.")
                 st.markdown('<div class="cd-nav-title">VRSTVY KRYTÍ</div>',unsafe_allow_html=True)
                 if result is None:
                     st.caption("Po výpočtu zde budeš přepínat jednotlivé letové hladiny.")
