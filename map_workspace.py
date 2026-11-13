@@ -928,10 +928,17 @@ def _radar_settings_body(ui_mode):
                    "Zde už jej nemusíš vybírat ze seznamu.")
         # The text fields begin empty; a factory-default location is never a
         # real radar site. Values persist outside dialog widget lifetimes.
-        if "ws_site_lat_input" not in st.session_state:
+        # Refresh dialog fields only when the authoritative site actually
+        # changed elsewhere (sidebar, map click, CDPROJ). Ordinary fragment
+        # reruns preserve partially typed coordinates without resetting them.
+        dialog_signature=tuple(site) if site else None
+        if st.session_state.get("_ws_dialog_site_signature")!=dialog_signature:
+            st.session_state["_ws_dialog_site_signature"]=dialog_signature
             st.session_state["ws_site_lat_input"]=f"{site[0]:.6f}" if site else ""
-        if "ws_site_lon_input" not in st.session_state:
             st.session_state["ws_site_lon_input"]=f"{site[1]:.6f}" if site else ""
+        else:
+            st.session_state.setdefault("ws_site_lat_input",f"{site[0]:.6f}" if site else "")
+            st.session_state.setdefault("ws_site_lon_input",f"{site[1]:.6f}" if site else "")
         a,b=st.columns(2,gap="small")
         with a:
             st.text_input("Latitude · WGS84",key="ws_site_lat_input",
