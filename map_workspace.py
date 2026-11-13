@@ -610,7 +610,7 @@ def _open_cdproj(data):
         st.session_state.pop(key,None)
     st.session_state["geometry"]={}
     st.session_state["obstacles"]=meta.get("obstacles",[])
-    st.session_state["ws_levels"]=list(core.STANDARD_LEVELS_FT)
+    st.session_state["ws_levels"]=list(core.flight_levels_for(cfg.radar_mode))
     st.session_state["_par_levels_initialized"]=cfg.radar_mode=="PAR-NG"
     st.session_state["_par_levels_active"]=cfg.radar_mode=="PAR-NG"
     if cfg.radar_mode=="PAR-NG":
@@ -1192,6 +1192,7 @@ def _radar_settings_body(ui_mode):
             st.caption("Výpočetní síť bude zkontrolována při spuštění výpočtu.")
 
     if step=="CÍL / FL":
+        mode=st.session_state.get("ws_radar","RL-2000")
         st.markdown('<div class="cd-radar-guide">Referenční výška cíle a letové '
                     'hladiny pro výsledné mapy jsou výhradně AMSL.</div>',
                     unsafe_allow_html=True)
@@ -2641,7 +2642,7 @@ def render_workspace():
     """Persistent ATM workstation map with contextual engineering tools."""
     _draft_begin()
     _restore_radar_form()
-    st.session_state["ws_levels"]=list(core.STANDARD_LEVELS_FT)
+    st.session_state["ws_levels"]=list(core.flight_levels_for(st.session_state.get("ws_radar","RL-2000")))
     st.session_state["_par_saved_levels"]=list(core.STANDARD_LEVELS_FT)
     st.session_state["ws_reference"]="AMSL"
     st.session_state["ws_par_level_reference"]="AMSL"
@@ -2660,7 +2661,7 @@ def render_workspace():
     previous=st.session_state.get("result")
     if previous is not None and "ws_radar" not in st.session_state:
         _config_state_from_project(previous["config"])
-        st.session_state["ws_levels"]=list(core.STANDARD_LEVELS_FT)
+        st.session_state["ws_levels"]=list(core.flight_levels_for(previous["config"].radar_mode))
 
     _restore_sidebar_preferences()
     st.session_state["ws_daynight"]="NIGHT"  # Fixed workstation palette.
