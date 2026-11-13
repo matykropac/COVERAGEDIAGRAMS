@@ -11,8 +11,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-MAX_FILE=10*1024*1024
-MAX_POINTS=20000
+MAX_FILE=200*1024*1024
+MAX_POINTS=1_000_000
+MAX_PLOT_POINTS=5000
 FUNCTIONS={
     "sin":np.sin,"cos":np.cos,"tan":np.tan,"exp":np.exp,
     "log10":np.log10,"sqrt":np.sqrt,"abs":np.abs,
@@ -57,19 +58,26 @@ def calculate_expression(expression,angle,gain):
     return value
 
 def read_pattern(raw):
-    if len(raw)>MAX_FILE:raise ValueError("Soubor překračuje 10 MB.")
-    try:source=raw.decode("utf-8-sig")
-    except UnicodeDecodeError:source=raw.decode("cp1250")
+    if len(raw)>MAX_FILE:raise ValueError("Soubor překračuje 200 MB.")
+    # Iterate over text lines instead of allocating source.splitlines() for
+    # every line in a potentially 200 MB upload. Large 2D/3D matrices need
+    # a different loader and are not silently truncated into this 1D format.
+    try:
+        raw.decode("utf-8-sig")
+        charset="utf-8-sig"
+    except UnicodeDecodeError:
+        charset="cp1250"
     rows=[]
-    for line in source.splitlines():
-        line=line.strip()
-        if not line or line.startswith(("#","//","%")):continue
-        # Comma-decimal is ambiguous with CSV. Accept dot decimals, comma/semicolon/tab separators.
-        parts=[v for v in re.split(r"[,;\s]+",line) if v]
-        if len(parts)<2:continue
-        try:rows.append((float(parts[0]),float(parts[1])))
-        except ValueError:continue  # header line
-        if len(rows)>MAX_POINTS:raise ValueError("Příliš mnoho vzorků (maximum 20 000).")
+    with io.TextIOWrapper(io.BytesIO(raw),encoding=charset) as source:
+        for line in source:
+            line=line.strip()
+            if not line or line.startswith(("#","//","%")):continue
+            parts=[v for v in re.split(r"[,;\\s]+",line) if v]
+            if len(parts)<2:continue
+            try:rows.append((float(parts[0]),float(parts[1])))
+            except ValueError:continue
+            if len(rows)>MAX_POINTS:
+                raise ValueError("1D LAB podporuje nejvýše 1 000 000 vzorků; 2D/3D matice vyžadují samostatný importér.")
     if len(rows)<3:raise ValueError("Jsou potřeba alespoň 3 řádky: angle_deg, gain_db.")
     data=np.asarray(rows,dtype=float)
     angle,gain=data[:,0],data[:,1]
@@ -82,6 +90,7 @@ def read_pattern(raw):
 
 def render_lab(original=None):
     st.caption("ANTENNA LAB · numerická experimentální laboratoř, oddělená od certifikovaného RF modelu.")
+    st.caption("Import do 200 MB na soubor; tento editor podporuje 1D charakteristiku, maximálně 1 000 000 úhlových vzorků.")
     uploaded=st.file_uploader("Import skutečné charakteristiky · CSV / TXT",
                               type=["csv","txt"],key="lab_pattern_upload")
     if uploaded is not None:
@@ -118,8 +127,9 @@ def render_lab(original=None):
     except (ValueError,TypeError,SyntaxError,OverflowError) as exc:
         st.error("Výraz: "+str(exc));return
     fig=go.Figure()
-    fig.add_scatter(x=angles,y=gains,name="Původní",mode="lines")
-    fig.add_scatter(x=angles,y=edited,name="Upravený · LAB",mode="lines")
+    plot_step=max(1,int(np.ceil(len(angles)/MAX_PLOT_POINTS)))
+    fig.add_scatter(x=angles[::plot_step],y=gains[::plot_step],name="Původní",mode="lines")
+    fig.add_scatter(x=angles[::plot_step],y=edited[::plot_step],name="Upravený · LAB",mode="lines")
     fig.update_layout(height=360,margin=dict(l=12,r=10,t=16,b=20),
                       xaxis_title="Elevace [°]",yaxis_title="Relativní zisk [dB]",
                       template="plotly_white")
