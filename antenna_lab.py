@@ -65,7 +65,7 @@ def read_pattern(raw):
         line=line.strip()
         if not line or line.startswith(("#","//","%")):continue
         # Comma-decimal is ambiguous with CSV. Accept dot decimals, comma/semicolon/tab separators.
-        parts=[v for v in re.split(r"[,;\\s]+",line) if v]
+        parts=[v for v in re.split(r"[,;\s]+",line) if v]
         if len(parts)<2:continue
         try:rows.append((float(parts[0]),float(parts[1])))
         except ValueError:continue  # header line
