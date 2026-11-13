@@ -350,7 +350,8 @@ def _airport_controls():
                  use_container_width=True):
         try:
             code=validate_icao(st.session_state.get("ws_airport_icao",""))
-            runways=airport_runways(code,_public_runways())
+            with busy_overlay("NAČÍTÁM LETIŠTĚ", "Dohledávám geometrii RWY a prahů…"):
+                runways=airport_runways(code,_public_runways())
             st.session_state["ws_airport_geometry"]=runways
             st.session_state.pop("ws_snapshot_bytes",None)
             st.session_state["ws_airport_code"]=code
@@ -637,7 +638,8 @@ def project_load_dialog():
     if st.button("NAČÍST PROJEKT",type="primary",use_container_width=True,
                  key="ws_project_load",disabled=uploaded is None):
         try:
-            _open_cdproj(uploaded.getvalue())
+            with busy_overlay("IMPORT PROJEKTU", "Otevírám CDPROJ, kontroluji DEM a mapové vrstvy…"):
+                _open_cdproj(uploaded.getvalue())
             st.rerun()
         except (ValueError,KeyError,TypeError,OSError) as exc:
             st.error(f"Projekt nelze načíst: {exc}")
@@ -2964,7 +2966,8 @@ def render_workspace():
                                          use_container_width=True):
                                 try:
                                     from par_diagnostics_export import make_diagnostics_zip
-                                    blob=make_diagnostics_zip(result,int(level),
+                                    with busy_overlay("PAR DIAGNOSTIKA", "Připravuji datové rastry a diagnostický ZIP…"):
+                        blob=make_diagnostics_zip(result,int(level),
                                                              reference=reference)
                                     st.session_state["ws_par_diag_zip"]={
                                         "key":(result.get("completed_at"),int(level),reference),
