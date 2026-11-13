@@ -146,9 +146,11 @@ def height_at_angle(distance, angle, antenna_amsl, k):
 FT_TO_M = 0.3048
 
 
-# The only permitted output heights, in feet. No custom values.
+# Mode-specific standard output heights, in feet (AMSL).
+# Preserve STANDARD_LEVELS_FT as the historical PAR catalog for compatibility.
 STANDARD_LEVELS_FT = tuple(range(100, 9001, 100))
-FLIGHT_LEVELS_LIST = STANDARD_LEVELS_FT
+PSR_SSR_LEVELS_FT = (2000,3000,4000,5000,6000,7000,9000,10000,12000,15000,20000,25000,30000,35000,40000,45000,50000,55000,60000,66000)
+FLIGHT_LEVELS_LIST = PSR_SSR_LEVELS_FT
 PAR_LOW_LEVELS_FT = tuple(range(100, 901, 100))
 PAR_DEFAULT_LEVELS_FT = STANDARD_LEVELS_FT
 PAR_CUSTOM_MIN_FT = 100
@@ -157,15 +159,15 @@ PAR_CUSTOM_MAX_COUNT = len(STANDARD_LEVELS_FT)
 
 
 def flight_levels_for(mode):
-    """One fixed output-height catalog for all radar modes."""
-    return STANDARD_LEVELS_FT
+    """PAR: 100–9000 ft/100; PSR and SSR: standard higher altitude catalog."""
+    return STANDARD_LEVELS_FT if mode == "PAR-NG" else PSR_SSR_LEVELS_FT
 
 
 def valid_flight_level(mode, ft):
-    """Only whole 100 ft increments in the fixed 100–9000 ft catalog."""
+    """Validate a flight-level value against its mode-specific catalog."""
     if isinstance(ft, (bool, np.bool_)) or not isinstance(ft, (int, np.integer)):
         return False
-    return int(ft) in STANDARD_LEVELS_FT
+    return int(ft) in flight_levels_for(mode)
 
 
 def parse_par_flight_levels(text):
