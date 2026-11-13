@@ -703,6 +703,7 @@ def render_viewer():
         uploads=st.file_uploader("Přidat KML / KMZ / GeoJSON",
             type=["kml","kmz","geojson","json"],accept_multiple_files=True,
             key="viewer_uploads")
+        st.caption("Maximální velikost jednoho souboru: 200 MB.")
         st.caption("CDVIEW ukládá vrstvy a vzhled; CDPROJ ukládá výpočet a DEM.")
     # uploader persists even when expander is closed
     uploads=st.session_state.get("viewer_uploads") or []
@@ -721,13 +722,7 @@ def render_viewer():
     with left:
         st.markdown('<div class="cd-panel-title">LAYER MANAGER</div>',unsafe_allow_html=True)
         visible,styles=_layer_grid(layers)
-        if layers:
-            data={"type":"FeatureCollection","features":[f for key,fs in layers.items()
-                  if key in visible for f in fs]}
-            st.download_button("⇩ VISIBLE DATA · GEOJSON",
-                json.dumps(data,ensure_ascii=False).encode(),
-                file_name="COVERAGEDIAGRAMS_viewer.geojson",mime="application/geo+json",
-                use_container_width=True)
+
     with right:
         with st.container(key="viewer_inspector"):
             basemap,title,show_legend,show_north=_layer_properties(
@@ -739,7 +734,4 @@ def render_viewer():
                       show_legend,show_north,center)
         st_folium(m,height=780,use_container_width=True,key="viewer_2d_map",
                   returned_objects=[])
-        st.download_button("⇩ MAPA · INTERAKTIVNÍ HTML",
-                _cached_map_html(m),
-                file_name="COVERAGEDIAGRAMS_map_viewer.html",mime="text/html",
-                use_container_width=True,key="viewer_map_html")
+
