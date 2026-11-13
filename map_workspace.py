@@ -417,13 +417,13 @@ def _par_standard_levels_info(context):
 
 
 def _available_levels(mode):
-    """Single, immutable 100–9000 ft catalog regardless of radar mode."""
-    return core.STANDARD_LEVELS_FT
+    """Return the standard altitude catalog for the selected radar mode."""
+    return core.flight_levels_for(mode)
 
 
 def _chosen_levels(mode):
-    """All 90 standard levels are always selected; no custom additions."""
-    return list(core.STANDARD_LEVELS_FT)
+    """Mode-dependent standard levels, without custom additions."""
+    return list(core.flight_levels_for(mode))
 
 
 def _current_radar_site():
@@ -558,7 +558,7 @@ def _config_state_from_project(config):
         "ws_step":int(config.step_m),"ws_azstep":float(config.az_step),
         "ws_k":config.k,"ws_min":config.min_elev,"ws_max":config.max_elev,
         "ws_tilt":config.antenna_tilt_deg,"ws_beam":config.beam_mode,
-        "ws_target_ft":min(core.STANDARD_LEVELS_FT,
+        "ws_target_ft":min(core.flight_levels_for(config.radar_mode),
             key=lambda ft:abs(ft-config.target_m/core.FT_TO_M)),
         "ws_reference":"AMSL",
     }
@@ -1197,8 +1197,8 @@ def _radar_settings_body(ui_mode):
                     unsafe_allow_html=True)
         a,b=st.columns(2,gap="small")
         with a:
-            st.selectbox("Výška cíle [ft AMSL]",core.STANDARD_LEVELS_FT,
-                         index=29,key="ws_target_ft",
+            st.selectbox("Výška cíle [ft AMSL]",core.flight_levels_for(mode),
+                         index=core.flight_levels_for(mode).index(3000),key="ws_target_ft",
                          format_func=core.level_label,
                          on_change=_remember_radar_form)
         with b:
@@ -1208,8 +1208,8 @@ def _radar_settings_body(ui_mode):
             st.markdown("**STANDARDNÍ VÝŠKY · PAR-NG · AMSL**")
             _par_standard_levels_info("radar")
         else:
-            st.caption("JEDINÝ POVOLENÝ SET: 100–9000 ft / 100 ft "
-                       "(90 standardních hladin, bez vlastních hodnot).")
+            st.markdown("**STANDARDNÍ HLADINY · PSR / SSR · AMSL**")
+            st.caption("2 000–66 000 ft · standardní předvolby (včetně FL660), bez vlastních hodnot.")
         if st.session_state.get("ws_radar")=="PAR-NG":
             st.markdown("**PAR-NG · ANTÉNA / DETEKCE**")
             st.selectbox("Model 3D antény",["TRACKING","FIXED_3D"],
