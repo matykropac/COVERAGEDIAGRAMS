@@ -821,6 +821,17 @@ def _render_frequency_inventory(mode,*,in_dialog=False):
         st.info(info["note"])
 
 
+@st.dialog("ANTENNA LAB · RF PATTERN WORKBENCH",width="large")
+def antenna_lab_dialog():
+    from antenna_lab import render_lab
+    try:
+        original=_pattern(_cfg())
+    except (ValueError,TypeError,OSError) as exc:
+        st.warning("Výchozí anténní model není dostupný: "+str(exc))
+        original=None
+    render_lab(original)
+
+
 def radar_dialog():
     """Open one of four dedicated radar engineering dialogs."""
     name=_radar_ui_mode()
@@ -2312,7 +2323,8 @@ def _draw_map():
             range_nm=st.session_state.get("ws_antenna_map_range",20),
             level_ft=projection_level,
             show_az=st.session_state.get("ws_antenna_map_az",False),
-            show_el=st.session_state.get("ws_antenna_map_el",False))
+            show_el=st.session_state.get("ws_antenna_map_el",False),
+            experimental=st.session_state.get("lab_preview"))
     payload={
         "center":list(initial_center),
         "zoom":8 if site else (10 if runways_for_view else 2),
@@ -2724,6 +2736,7 @@ def render_workspace():
                 for name,symbol,label,tip in (
                     ("MAPA","▧","MAPA","Mapa a krytí"),
                     ("RADAR","◉","RADAR","Radar / výpočet"),
+                    ("LAB","⌁","LAB","Anténní laboratoř"),
                     ("VALIDACE","✓","TEST","Matematická kontrola LOS"),
                     ("TERÉN","△","TERÉN","Terén / DEM"),
                     ("PŘEKÁŽKY","▤","VRSTVY","Vrstvy a překážky"),
@@ -2748,7 +2761,7 @@ def render_workspace():
                 {"MAPA":"MAPA / ANALÝZA","RADAR":"RADAR / ENGINE",
                  "VALIDACE":"VALIDACE / LOS",
                  "TERÉN":"TERÉN / 3D","PŘEKÁŽKY":"VRSTVY / OBSTACLES",
-                 "POZICE":"AVIATION / GEODATA","EXPORT":"EXPORT STUDIO"}.get(
+                 "POZICE":"AVIATION / GEODATA","EXPORT":"EXPORT STUDIO","LAB":"ANTENNA LAB"}.get(
                     st.session_state.get("ws_section","MAPA"),"MAPA")+
                 '</div>',unsafe_allow_html=True)
             section=st.session_state.get("ws_section","MAPA")
@@ -2890,6 +2903,20 @@ def render_workspace():
                 if not configured_key():
                     st.caption("OpenAIP: podklady se automaticky zapnou po "
                                "nastavení API klíče.")
+            elif section=="LAB":
+                st.markdown('<div class="cd-nav-title">ANTENNA LAB / RF WORKBENCH</div>',
+                            unsafe_allow_html=True)
+                st.caption("Import měřených dat, numerické transformace pomocí bezpečných Python/NumPy výrazů, porovnání původního a upraveného diagramu.")
+                if st.button("⌁ OTEVŘÍT ANTENNA LAB",type="primary",
+                             key="ws_open_antenna_lab",use_container_width=True):
+                    antenna_lab_dialog()
+                if st.session_state.get("lab_preview"):
+                    st.success("Experimentální diagram je připraven pro mapovou EL projekci.")
+                    if st.button("ZRUŠIT EXPERIMENTÁLNÍ DIAGRAM",
+                                 key="ws_lab_discard",use_container_width=True):
+                        st.session_state.pop("lab_preview",None)
+                        st.rerun()
+                st.caption("LAB neprovádí přímé změny certifikovaného RF solveru. Importovaná data jsou experimentální.")
             elif section=="TERÉN":
                 st.markdown('<div class="cd-nav-title">DIGITÁLNÍ MODEL TERÉNU</div>',
                             unsafe_allow_html=True)
