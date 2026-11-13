@@ -45,3 +45,18 @@ def test_amsl_is_the_only_editable_target_reference():
     assert 'reference="AMSL"' in viewer
     assert '"reference": "AMSL"' in fullscreen
     assert 'min="-1000" max="66000"' not in fullscreen
+
+
+def test_sidebar_and_dialog_coordinates_have_disjoint_streamlit_keys():
+    src=(ROOT/"map_workspace.py").read_text(encoding="utf-8")
+    assert 'st.text_input("Latitude · WGS84",key="ws_site_lat_input"' in src
+    assert 'st.text_input("Longitude · WGS84",key="ws_site_lon_input"' in src
+    assert 'st.text_input("LAT · WGS84",key="ws_sidebar_lat_input"' in src
+    assert 'st.text_input("LON · WGS84",key="ws_sidebar_lon_input"' in src
+    assert '_ws_sidebar_site_signature' in src
+    assert 'st.session_state["ws_radar_site"]=[lat,lon]' in src
+    assert 'st.session_state["ws_sidebar_lat_input"].replace(",",".")' in src
+    assert 'st.session_state["ws_sidebar_lon_input"].replace(",",".")' in src
+    # Never use a dialog widget key twice when a modal is open over the sidebar.
+    assert src.count('st.text_input("LAT · WGS84",key="ws_site_lat_input"')==0
+    assert src.count('st.text_input("LON · WGS84",key="ws_site_lon_input"')==0
