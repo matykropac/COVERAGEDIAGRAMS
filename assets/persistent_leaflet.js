@@ -77,6 +77,7 @@ function refreshControl(s) {
     "RANGE · NM":s.groups.range,
     "Překážky":s.groups.obstacles,
     "Radar":s.groups.radar,
+    "Sensor Registry · V2":s.groups.sensorRegistry,
     "Další geodata":s.groups.environment,
     "PAR · sektor ±15°":s.groups.parSector,
   };
@@ -308,6 +309,7 @@ function init(s) {
     range:L.featureGroup().addTo(s.map),
     obstacles:L.featureGroup().addTo(s.map),
     radar:L.featureGroup().addTo(s.map),
+    sensorRegistry:L.featureGroup().addTo(s.map),
     environment:L.featureGroup().addTo(s.map),
     aircraft:L.featureGroup().addTo(s.map),
     parSector:L.featureGroup().addTo(s.map),
@@ -561,6 +563,20 @@ function updateObstacles(s,data) {
       requestObstacleEdit(s,"manual",record.id);
     });
     poly.addTo(s.groups.obstacles);
+  }
+}
+function updateSensorRegistry(s,data){
+  const sig=data.sensorRegistryVersion||"none";
+  if(s.last.sensorRegistry===sig)return;
+  s.last.sensorRegistry=sig;
+  s.groups.sensorRegistry.clearLayers();
+  for(const item of (data.sensorRegistry||[]).slice(0,64)){
+    const lat=Number(item.lat),lon=Number(item.lon);
+    if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)continue;
+    const color=({"PSR":"#32b7f2","SSR":"#58dcab","PAR":"#e5ba57","ADS-B":"#bb8df4"})[item.kind]||"#849cba";
+    L.circleMarker([lat,lon],{radius:7,weight:2,color,fillColor:color,fillOpacity:.65})
+      .bindTooltip(String(item.id||"Senzor")+" · "+String(item.kind||"")+" · rev "+String(item.revision||1))
+      .addTo(s.groups.sensorRegistry);
   }
 }
 function updateRadar(s,data) {
@@ -898,6 +914,7 @@ function update(s){
   updateRange(s,data);
   updateObstacles(s,data);
   updateRadar(s,data);
+  updateSensorRegistry(s,data);
   updateParSector(s,data);
   updateProfile(s,data);
   updateEnvironment(s,data);
