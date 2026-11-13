@@ -584,7 +584,7 @@ async function loadFile(file){
   const zip=await JSZip.loadAsync(file);const names=Object.keys(zip.files).filter(n=>n.toLowerCase().endsWith(".kml"));
   if(!names.length)throw Error("KMZ neobsahuje KML");
   const member=zip.file(names.find(n=>n.toLowerCase().endsWith("/doc.kml"))||names[0]);
-  if(member._data?.uncompressedSize>30*1024*1024)throw Error("KML v KMZ je příliš velký");
+  if(member._data?.uncompressedSize>200*1024*1024)throw Error("Rozbalený KML v KMZ přesahuje 200 MB");
   xml=await member.async("string");
  }else if(lower.endsWith(".kml"))xml=await file.text();
  if(xml!==null){
