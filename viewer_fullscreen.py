@@ -309,6 +309,7 @@ function initialStyle(s,i){
   strokeOpacity:bounded(s?.strokeOpacity,1,0,1),
   width:bounded(s?.width,2,.5,12),
   radius:bounded(s?.radius,4,1,16),
+  smoothingNm:bounded(s?.smoothingNm,0,0,5),
   dash:["solid","dash","dot"].includes(s?.dash)?s.dash:"solid"
  };
 }
@@ -327,9 +328,49 @@ function styleOf(o){return {
  dashArray:o.style.dash==="dash"?"8 5":o.style.dash==="dot"?"2 5":null,
  radius:o.style.radius
 }}
+// Presentation-only smoothing: native features are never overwritten.
+function smoothRing(ring,radiusM){
+ if(!Array.isArray(ring)||ring.length<5||radiusM<=0)return ring;
+ const closed=ring[0][0]===ring[ring.length-1][0]&&ring[0][1]===ring[ring.length-1][1];
+ const pts=closed?ring.slice(0,-1):ring.slice();
+ const n=pts.length;
+ if(n<4)return ring;
+ const result=pts.map((p,i)=>{
+   const latRad=p[1]*Math.PI/180;
+   const mx=111320*Math.max(.01,Math.cos(latRad)),my=111132;
+   let x=p[0]*mx,y=p[1]*my,w=1;
+   for(const dir of [-1,1]){
+     let arc=0,last=p;
+     for(let step=1;step<=Math.min(24,Math.floor((n-1)/2));step++){
+       const q=pts[(i+dir*step+n*2)%n];
+       const dx=(q[0]-last[0])*mx,dy=(q[1]-last[1])*my;
+       arc+=Math.hypot(dx,dy);
+       if(arc>radiusM)break;
+       const weight=Math.exp(-2.0*(arc/radiusM)**2);
+       x+=q[0]*mx*weight;y+=q[1]*my*weight;w+=weight;
+       last=q;
+     }
+   }
+   return [x/w/mx,y/w/my,...p.slice(2)];
+ });
+ return [...result,result[0].slice()];
+}
+function smoothedGeometry(g,radiusM){
+ if(!g||radiusM<=0)return g;
+ if(g.type==="Polygon")return {...g,coordinates:g.coordinates.map(r=>smoothRing(r,radiusM))};
+ if(g.type==="MultiPolygon")return {...g,coordinates:g.coordinates.map(p=>p.map(r=>smoothRing(r,radiusM)))};
+ return g;
+}
+function displayFeatures(o){
+ const radiusM=o.style.smoothingNm*1852;
+ if(radiusM<=0)return o.features;
+ return o.features.map(f=>({...f,geometry:smoothedGeometry(f.geometry,radiusM)}));
+}
 function ensureGeo(o){
- if(o.geo)return;
- o.geo=L.geoJSON({type:"FeatureCollection",features:o.features},{
+ if(o.geo && o.renderSmoothing===o.style.smoothingNm)return;
+ if(o.geo){map.removeLayer(o.geo);o.geo=null;}
+ o.renderSmoothing=o.style.smoothingNm;
+ o.geo=L.geoJSON({type:"FeatureCollection",features:displayFeatures(o)},{
   renderer:vectorRenderer,
   style:()=>styleOf(o),
   pointToLayer:(f,ll)=>L.circleMarker(ll,styleOf(o)),
@@ -407,7 +448,7 @@ function openLayerProperties(name){
  const visual=section("VÝPLŇ A OBRAZ");
  const contour=section("OBRYS A BODY");
  const apply=()=>{
-   if(o.geo)o.geo.setStyle(styleOf(o));
+   syncOne(o);
    refreshLegend();
  };
  function control(parent,label,key,type,min,max,step,format){
@@ -427,7 +468,7 @@ function openLayerProperties(name){
    }
    const view=()=>type==="range"
      ?(format==="percent"?Math.round(Number(o.style[key])*100)+" %":
-       Number(o.style[key]).toFixed(key==="width"?1:0)+" px")
+       key==="smoothingNm"?Number(o.style[key]).toFixed(1)+" NM":Number(o.style[key]).toFixed(key==="width"?1:0)+" px")
      :String(o.style[key]);
    el.value=type==="range"&&format==="percent"
      ?Math.round(o.style[key]*100):o.style[key];
@@ -447,8 +488,9 @@ function openLayerProperties(name){
  control(contour,"Šířka obrysu","width","range",.5,12,.5,"px");
  control(contour,"Velikost bodu","radius","range",1,16,1,"px");
  control(contour,"Styl obrysu","dash","select");
+ control(contour,"Zaoblení hranice","smoothingNm","range",0,5,.1,"nm");
  const note=document.createElement("p");note.className="layer-props-note";
- note.textContent="Změny se promítnou do mapy ihned, bez jejího restartu. Uložením projektu CDVIEW se zachovají i tyto vlastnosti.";
+ note.textContent="Zaoblení (0–5 NM) upravuje pouze vzhled polygonů ve VIEWERU, nikoli výpočty nebo původní GeoJSON. Výchozí hodnota 0 NM = bez zaoblení. Styly se ukládají do CDVIEW.";
  body.append(note);
  const actions=document.createElement("div");actions.className="layer-props-actions";
  const reset=document.createElement("button");reset.type="button";reset.textContent="↺ VÝCHOZÍ STYL";
