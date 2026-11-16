@@ -205,7 +205,7 @@ font-size:11px;pointer-events:none;max-width:50vw}
   <button id="quick-open" class="ghost">＋ Soubor</button>
   <button id="fit" class="ghost">◎ Přiblížit data</button>
   <button id="inspect" class="ghost" aria-pressed="false">⌖ BOD / PROFIL</button>
-  <button id="print-studio" class="ghost" hidden>⇩ Export studio</button>
+  <button id="print-studio" class="ghost">▤ MAP COMPOSER / COMPARE</button>
 </div>
 <div class="panel" id="panel">
  <header><strong>MAP WORKSPACE</strong><span id="count" class="muted">0 vrstev</span><button id="close" aria-label="Zavřít panel">×</button></header>
