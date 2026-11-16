@@ -217,6 +217,9 @@ CARTOGRAPHY_CONTROLS = """
 <div class="field"><label for="studio-graticule">Mřížka LAT/LON</label><input type="checkbox" id="studio-graticule"></div>
 <div class="actions"><button id="studio-clear-measure">Vymazat měření</button><button id="studio-export-notes">⇩ Popisky GeoJSON</button></div>
 <div class="field"><label for="studio-vector-only">Bez online podkladu</label><input id="studio-vector-only" type="checkbox"></div>
+<div class="field"><label for="studio-offline-zip">Offline dlaždice ZIP</label><input id="studio-offline-zip" type="file" accept=".zip,application/zip"></div>
+<div class="actions"><button id="studio-offline-clear">Vypnout offline dlaždice</button></div>
+<div class="muted">Vlastní XYZ mapové dlaždice v ZIP: z/x/y.png nebo .jpg. Max. 180 MB. Data zůstávají v prohlížeči.</div>
 <h3>INSPECTOR · PŮVODNÍ POLYGONY</h3><div id="studio-hit-result" class="note">Klikni do mapy pro kontrolu příslušnosti k původním vrstvám.</div>
 <div class="muted">Režim bez dlaždic nevytváří kompletní offline aplikaci. Leaflet/JSZip se stále načítají z CDN, pokud nejsou v cache.</div>
 """
@@ -341,6 +344,61 @@ map.on("click",e=>{
   "Bod neleží uvnitř žádné viditelné polygonové vrstvy.")+
   "\\nJde pouze o prostorový test polygonů, nikoli potvrzení RF detekce.";
 });
+
+
+// Optional user-supplied XYZ tiles from ZIP. No tile server or upload.
+let cartoOfflineLayer=null,cartoOfflineZip=null,cartoBeforeOffline="hillshade";
+function cartoUnsetOffline(){
+ if(cartoOfflineLayer){map.removeLayer(cartoOfflineLayer);cartoOfflineLayer=null}
+ cartoOfflineZip=null;
+ $("studio-offline-zip").value="";
+}
+$("studio-offline-clear").onclick=()=>{
+ cartoUnsetOffline();
+ if($("studio-vector-only").checked){
+  if(base)map.removeLayer(base);base=null;setting.base="vector-only";
+ }else selectBase(BASES[cartoBeforeOffline]?cartoBeforeOffline:"hillshade");
+ notify("Lokální mapové dlaždice byly uvolněny z paměti.");
+};
+$("studio-offline-zip").onchange=async e=>{
+ const file=e.target.files?.[0];if(!file)return;
+ if(file.size>180*1024*1024){notify("Offline ZIP překračuje limit 180 MB.",true);e.target.value="";return}
+ if(!window.JSZip){notify("JSZip není dostupný.",true);return}
+ try{
+  const archive=await JSZip.loadAsync(file);
+  const keys=Object.keys(archive.files);
+  if(keys.length>90000)throw Error("Příliš mnoho dlaždic (max. 90 000).");
+  const count=keys.filter(n=>/^(?:\\d+\\/){2}\\d+\\.(?:png|jpe?g|webp)$/i.test(n)).length;
+  if(!count)throw Error("ZIP neobsahuje očekávané cesty z/x/y.png nebo .jpg.");
+  cartoUnsetOffline();cartoBeforeOffline=BASES[setting.base]?setting.base:"hillshade";
+  cartoOfflineZip=archive;
+  const OfflineTiles=L.GridLayer.extend({
+   createTile:function(coords,done){
+    const tile=document.createElement("img");tile.alt="";
+    tile.width=256;tile.height=256;
+    const prefix=coords.z+"/"+coords.x+"/"+coords.y;
+    let entry=null;
+    for(const ext of [".png",".jpg",".jpeg",".webp"]){
+     entry=cartoOfflineZip?.file(prefix+ext);if(entry)break;
+    }
+    if(!entry){tile.style.opacity="0";done(null,tile);return tile}
+    entry.async("blob").then(blob=>{
+     const url=URL.createObjectURL(blob);
+     tile.onload=()=>{URL.revokeObjectURL(url);done(null,tile)};
+     tile.onerror=()=>{URL.revokeObjectURL(url);done(null,tile)};
+     tile.src=url;
+    }).catch(error=>done(error,tile));
+    return tile;
+   }
+  });
+  if(base)map.removeLayer(base);base=null;
+  cartoOfflineLayer=new OfflineTiles({tileSize:256,maxZoom:19,noWrap:true,attribution:"User-provided offline tiles"}).addTo(map);
+  cartoOfflineLayer.bringToBack();
+  setting.base="offline-tiles";
+  $("studio-vector-only").checked=false;
+  notify("Lokální XYZ dlaždice připraveny: "+count+" položek. Mapa nepoužívá síťové tile URL.");
+ }catch(error){notify("Offline ZIP: "+error.message,true);cartoUnsetOffline()}
+};
 
 // No network tiles; this remains an online-app feature until Leaflet is packaged locally.
 $("studio-vector-only").onchange=e=>{
