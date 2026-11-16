@@ -1,0 +1,32 @@
+name: Viewer Studio 2 focused tests
+
+on:
+  push:
+    branches:
+      - feature/viewer-studio-2-analysis-composer
+  pull_request:
+    paths:
+      - 'viewer_coverage_analysis.py'
+      - 'viewer_analysis_studio.py'
+      - 'viewer_studio_extensions.py'
+      - 'viewer_fullscreen.py'
+      - 'tests/test_viewer_analysis_studio.py'
+      - 'tests/test_viewer_studio_extensions.py'
+      - '.github/workflows/viewer-studio-2.yml'
+  workflow_dispatch:
+
+jobs:
+  viewer-studio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Compile python modules
+        run: python -m py_compile viewer_coverage_analysis.py viewer_analysis_studio.py viewer_studio_extensions.py coverage_viewer.py viewer_fullscreen.py
+      - name: Test Viewer Studio contracts and analysis
+        run: pytest -q tests/test_viewer_analysis_studio.py tests/test_viewer_studio_extensions.py
