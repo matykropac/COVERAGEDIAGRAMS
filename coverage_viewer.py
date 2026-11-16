@@ -551,6 +551,32 @@ def _viewer_export_panel(layers,styles,title,mode,basemap,show_legend,show_north
         st.caption("Tisk obsahuje data a legendu. Online mapové dlaždice "
                    "se do tohoto vektorového výstupu nepřebírají.")
         st.divider()
+        with st.expander("MAP COMPOSER · ZÁKAZNICKÝ ATLAS",expanded=False):
+            paper=st.selectbox("Formát papíru",["A4","A3","A2","A1","A0"],
+                               index=1,key="viewer_atlas_paper")
+            orientation=st.radio("Orientace",["landscape","portrait"],
+                                 horizontal=True,key="viewer_atlas_orientation")
+            project=st.text_input("Projekt / zákazník",key="viewer_atlas_project")
+            radar_label=st.text_input("Radar / umístění",key="viewer_atlas_radar")
+            reference=st.text_input("Technická reference",key="viewer_atlas_reference")
+            if st.button("GENEROVAT PDF ATLAS",type="primary",
+                         key="viewer_atlas_generate",use_container_width=True):
+                try:
+                    from viewer_analysis_studio import render_atlas_pdf
+                    blob=render_atlas_pdf(layers,styles,title,paper=paper,
+                                          orientation=orientation,theme=print_theme,
+                                          metadata={"project":project,"radar":radar_label,
+                                                    "reference":reference})
+                    st.session_state["viewer_atlas_blob"]=blob
+                except Exception as exc:
+                    st.error("Atlas nelze sestavit: "+str(exc))
+            if st.session_state.get("viewer_atlas_blob"):
+                st.download_button("⇩ STÁHNOUT ATLAS PDF",
+                    st.session_state["viewer_atlas_blob"],
+                    file_name="COVERAGEDIAGRAMS_Customer_Atlas.pdf",
+                    mime="application/pdf",key="viewer_atlas_download",
+                    use_container_width=True)
+            st.caption("Podklady online nejsou součástí PDF; jsou použita zdrojová vektorová data.")
         if st.button("ULOŽIT ROZLOŽENÍ · CDVIEW",
                      key="viewer_workspace_save",use_container_width=True):
             try:
@@ -725,6 +751,8 @@ def render_viewer():
         visible,styles=_layer_grid(layers)
 
     with right:
+        from viewer_analysis_studio import render_analysis_panel
+        render_analysis_panel(layers,styles,radar_site=center if editor_result is not None else None)
         with st.container(key="viewer_inspector"):
             basemap,title,show_legend,show_north=_layer_properties(
                 layers,styles,visible)
