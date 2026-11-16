@@ -139,6 +139,31 @@ def render_analysis_panel(layers, styles, *, radar_site=None):
                 z.metric("Ztracené [km²]",f"{metrics['lost']:,.2f}")
                 st.caption("Přesná topologie GEOS; elipsoidické plochy WGS84. "
                            "Pouze geometrické srovnání, nikoliv validační měření.")
+                with st.expander("MAPA ROZDÍLŮ · ZÍSKANÉ / ZTRACENÉ",expanded=True):
+                    import folium
+                    from streamlit_folium import st_folium
+                    colors=result["style_colors"]
+                    fmap=folium.Map(location=[50,15],zoom_start=6,tiles=None,
+                                    prefer_canvas=True,control_scale=True)
+                    folium.TileLayer("OpenStreetMap",name="OSM").add_to(fmap)
+                    extent=[]
+                    for feature in result["features"]:
+                        name=feature["properties"]["name"].lower()
+                        folium.GeoJson(feature,name=name.upper(),style_function=lambda x,c=colors[name]:{
+                            "color":c,"weight":1.5,"fillColor":c,"fillOpacity":.55}).add_to(fmap)
+                        def walk(p):
+                            if isinstance(p,list):
+                                if len(p)>=2 and isinstance(p[0],(int,float)) and isinstance(p[1],(int,float)):
+                                    extent.append([p[1],p[0]])
+                                else:
+                                    for child in p:walk(child)
+                        walk(feature["geometry"].get("coordinates",[]))
+                    if extent:
+                        fmap.fit_bounds([[min(p[0] for p in extent),min(p[1] for p in extent)],
+                                         [max(p[0] for p in extent),max(p[1] for p in extent)]])
+                    folium.LayerControl(collapsed=True).add_to(fmap)
+                    st_folium(fmap,height=390,use_container_width=True,
+                              returned_objects=[],key="studio_comparison_map")
                 st.download_button("⇩ POROVNÁNÍ · GEOJSON",
                     data=json.dumps({"type":"FeatureCollection",
                                       "features":result["features"]},ensure_ascii=False),
