@@ -368,7 +368,7 @@ $("studio-offline-zip").onchange=async e=>{
   const archive=await JSZip.loadAsync(file);
   const keys=Object.keys(archive.files);
   if(keys.length>90000)throw Error("Příliš mnoho dlaždic (max. 90 000).");
-  const count=keys.filter(n=>/^(?:\\d+\\/){2}\\d+\\.(?:png|jpe?g|webp)$/i.test(n)).length;
+  const count=keys.filter(n=>/^(?:\d+\/){2}\d+\.(?:png|jpe?g|webp)$/i.test(n)).length;
   if(!count)throw Error("ZIP neobsahuje očekávané cesty z/x/y.png nebo .jpg.");
   cartoUnsetOffline();cartoBeforeOffline=BASES[setting.base]?setting.base:"hillshade";
   cartoOfflineZip=archive;
