@@ -202,13 +202,11 @@ def enhance_page(page: str) -> str:
                         '<button id="fit" class="ghost">◎ Přiblížit data</button>'
                         '<button id="studio-fl-button" class="ghost">▶ FL</button>',1)
     page = page.replace('setup();\n</script></body></html>',
-                        'setup();\n' + SCRIPT + '\n</script></body></html>',1)
+                        'setup();\n' + SCRIPT + '\n' + CARTOGRAPHY_SCRIPT + '\n</script></body></html>',1)
     page = page.replace('grid-template-columns:19px 1fr 31px',
                         'grid-template-columns:19px minmax(0,1fr) 25px 25px 31px',1)
     page = page.replace('<div class="muted" id="range-center">Střed: radar</div>',
                         '<div class="muted" id="range-center">Střed: radar</div>'+CARTOGRAPHY_CONTROLS,1)
-    page = page.replace('setup();\\n</script></body></html>',
-                        'setup();\\n'+CARTOGRAPHY_SCRIPT+'\\n</script></body></html>',1)
     return page
 
 
