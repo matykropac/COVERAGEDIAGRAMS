@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, A3, A2, A1, A0, landscape, portrait
-from reportlab.lib.utils import ImageReader
 
 
 def render_atlas_pdf(layers, styles, title, *, paper="A3",
@@ -18,7 +17,6 @@ def render_atlas_pdf(layers, styles, title, *, paper="A3",
     Raster map content is produced by the existing trusted vector-only renderer.
     The atlas pages provide notes and traceable layer names.
     """
-    from viewer_export import render_print
     from viewer_coverage_analysis import coverage_stats
     pages={"A4":A4,"A3":A3,"A2":A2,"A1":A1,"A0":A0}
     if paper not in pages:
@@ -63,13 +61,9 @@ def render_atlas_pdf(layers, styles, title, *, paper="A3",
     txt("This atlas does not validate RF detection, obstacles, or measured performance.",margin,max(y-78,margin+60),10)
     footer(1);c.showPage()
     header("VECTOR COVERAGE MAP")
-    # Render at a bounded resolution; avoid huge untrusted raster allocations on A0.
-    png=render_print(layers,styles,title,fmt="png",dpi=300,night=theme=="NIGHT")
-    img=ImageReader(io.BytesIO(png));iw,ih=img.getSize()
-    maxw=w-2*margin;maxh=h-135-margin
-    ratio=min(maxw/iw,maxh/ih)
-    rw,rh=iw*ratio,ih*ratio
-    c.drawImage(img,(w-rw)/2,margin+35,width=rw,height=rh,mask="auto")
+    from viewer_vector_composer import draw_vector_map
+    draw_vector_map(c,layers,styles,(margin,margin+35,w-2*margin,h-130-margin),
+                    dark=theme=="NIGHT",north=True,graticule=True,scale=True)
     footer(2);c.showPage()
     if include_statistics:
         header("LAYER STATISTICS & PROVENANCE")
