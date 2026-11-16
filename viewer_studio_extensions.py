@@ -20,6 +20,7 @@ SCRIPT = r"""
 // VIEWER Studio enhancements. Executed after the original setup() call.
 // This module never writes to source feature geometries.
 const studioSnapshotsKey="cdviewer:views:v2";
+const studioAreaCache=new WeakMap();
 let studioFLTimer=null,studioSavedVisibility=null,studioFLIndex=-1;
 function studioApplyPreset(name){
  const preset={
@@ -84,7 +85,8 @@ function studioGeometryAreaKm2(g){
 function studioUpdateArea(){
  let total=0;const lines=[];
  for(const o of layers.values())if(o.style.show){
-  const a=o.features.reduce((n,f)=>n+studioGeometryAreaKm2(f.geometry),0);
+  let a=studioAreaCache.get(o);
+  if(a===undefined){a=o.features.reduce((n,f)=>n+studioGeometryAreaKm2(f.geometry),0);studioAreaCache.set(o,a)}
   if(a>0){total+=a;lines.push(o.name+": "+a.toFixed(1)+" km²")}
  }
  $("studio-area").textContent="Součet ploch polygonů: "+total.toFixed(1)+" km²\n"+
