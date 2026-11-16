@@ -360,6 +360,10 @@ $("studio-offline-clear").onclick=()=>{
  }else selectBase(BASES[cartoBeforeOffline]?cartoBeforeOffline:"hillshade");
  notify("Lokální mapové dlaždice byly uvolněny z paměti.");
 };
+$("base").addEventListener("change",()=>{
+ if(cartoOfflineLayer)cartoUnsetOffline();
+ $("studio-vector-only").checked=false;
+});
 $("studio-offline-zip").onchange=async e=>{
  const file=e.target.files?.[0];if(!file)return;
  if(file.size>180*1024*1024){notify("Offline ZIP překračuje limit 180 MB.",true);e.target.value="";return}
@@ -402,6 +406,7 @@ $("studio-offline-zip").onchange=async e=>{
 
 // No network tiles; this remains an online-app feature until Leaflet is packaged locally.
 $("studio-vector-only").onchange=e=>{
+ if(cartoOfflineLayer)cartoUnsetOffline();
  if(e.target.checked){
   cartoOldBase=setting.base;
   if(base)map.removeLayer(base);
