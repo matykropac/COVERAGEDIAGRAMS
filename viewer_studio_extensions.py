@@ -205,4 +205,117 @@ def enhance_page(page: str) -> str:
                         'setup();\n' + SCRIPT + '\n</script></body></html>',1)
     page = page.replace('grid-template-columns:19px 1fr 31px',
                         'grid-template-columns:19px minmax(0,1fr) 25px 25px 31px',1)
+    page = page.replace('<div class="muted" id="range-center">Střed: radar</div>',
+                        '<div class="muted" id="range-center">Střed: radar</div>'+CARTOGRAPHY_CONTROLS,1)
+    page = page.replace('setup();\\n</script></body></html>',
+                        'setup();\\n'+CARTOGRAPHY_SCRIPT+'\\n</script></body></html>',1)
     return page
+
+
+CARTOGRAPHY_CONTROLS = """
+<h3>KARTOGRAFICKÉ NÁSTROJE</h3>
+<div class="actions"><button id="studio-measure">⌖ MĚŘIT</button><button id="studio-annotate">✎ POPISEK</button></div>
+<div id="studio-measure-result" class="note">Klikni MĚŘIT a pak na dva body v mapě.</div>
+<div class="field"><label for="studio-graticule">Mřížka LAT/LON</label><input type="checkbox" id="studio-graticule"></div>
+<div class="actions"><button id="studio-clear-measure">Vymazat měření</button><button id="studio-export-notes">⇩ Popisky GeoJSON</button></div>
+<div class="field"><label for="studio-vector-only">Bez online podkladu</label><input id="studio-vector-only" type="checkbox"></div>
+<div class="muted">Režim bez dlaždic nevytváří kompletní offline aplikaci. Leaflet/JSZip se stále načítají z CDN, pokud nejsou v cache.</div>
+"""
+
+CARTOGRAPHY_SCRIPT = r"""
+// Cartography overlays are never incorporated into source radar coverage layers.
+let cartoMode=null,cartoPoints=[],cartoMeasureShape=null,cartoLabels=[],cartoGrid=null;
+let cartoOldBase="hillshade";
+const cartoToRad=d=>d*Math.PI/180;
+function cartoInverse(a,b){
+ const p1=cartoToRad(a.lat),p2=cartoToRad(b.lat);
+ const dl=cartoToRad(b.lng-a.lng),dp=p2-p1;
+ const h=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+ const distance=2*6371008.8*Math.asin(Math.min(1,Math.sqrt(h)));
+ const y=Math.sin(dl)*Math.cos(p2);
+ const x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
+ return {km:distance/1000,nm:distance/1852,az:(Math.atan2(y,x)*180/Math.PI+360)%360};
+}
+function cartoStop(){
+ cartoMode=null;$("studio-measure").classList.remove("primary");
+ $("studio-annotate").classList.remove("primary");map.getContainer().style.cursor="";
+}
+function cartoChoose(mode){
+ if(cartoMode===mode){cartoStop();return}
+ inspectEnabled=false;$("inspect").classList.remove("primary");
+ $("inspect").setAttribute("aria-pressed","false");
+ cartoMode=mode;cartoPoints=[];
+ $("studio-measure").classList.toggle("primary",mode==="measure");
+ $("studio-annotate").classList.toggle("primary",mode==="annotate");
+ map.getContainer().style.cursor="crosshair";
+ $("studio-measure-result").textContent=mode==="measure"?"Vyber první a druhý bod na mapě.":
+  "Klikni na místo, kam chceš umístit popisek.";
+}
+function cartoOnClick(e){
+ if(!cartoMode)return;
+ if(cartoMode==="annotate"){
+  const label=prompt("Text popisku (max 140 znaků)","");
+  if(label){
+   const text=label.trim().slice(0,140);
+   if(text){
+    const f={type:"Feature",geometry:{type:"Point",coordinates:[e.latlng.lng,e.latlng.lat]},
+      properties:{name:text,annotation:true}};
+    const m=L.marker(e.latlng,{draggable:true}).addTo(map);
+    m.bindTooltip(escapeHTML(text),{permanent:true,direction:"top"}).openTooltip();
+    cartoLabels.push({marker:m,feature:f});
+   }
+  }
+  cartoStop();return;
+ }
+ cartoPoints.push(e.latlng);
+ if(cartoPoints.length===2){
+  if(cartoMeasureShape)map.removeLayer(cartoMeasureShape);
+  cartoMeasureShape=L.polyline(cartoPoints,{color:"#f6b95f",weight:3,dashArray:"5 5"}).addTo(map);
+  const data=cartoInverse(cartoPoints[0],cartoPoints[1]);
+  $("studio-measure-result").textContent=data.km.toFixed(3)+" km / "+data.nm.toFixed(3)+
+    " NM · azimut "+data.az.toFixed(2)+"° (sférická aproximace)";
+  cartoStop();
+ }
+}
+function cartoGridUpdate(){
+ if(cartoGrid){map.removeLayer(cartoGrid);cartoGrid=null}
+ if(!$("studio-graticule").checked)return;
+ const b=map.getBounds(),sw=b.getSouthWest(),ne=b.getNorthEast();
+ const latMin=Math.max(-85,sw.lat),latMax=Math.min(85,ne.lat);
+ const lonMin=Math.max(-180,sw.lng),lonMax=Math.min(180,ne.lng);
+ if(latMax<=latMin||lonMax<=lonMin)return;
+ const span=Math.max(latMax-latMin,lonMax-lonMin);
+ const inc=span>50?10:span>10?2:span>2?.5:span>.5?.1:span>.1?.02:.005;
+ const lines=[];
+ for(let lat=Math.ceil(latMin/inc)*inc;lat<=latMax&&lines.length<45;lat+=inc)
+  lines.push([[lat,lonMin],[lat,lonMax]]);
+ for(let lon=Math.ceil(lonMin/inc)*inc;lon<=lonMax&&lines.length<90;lon+=inc)
+  lines.push([[latMin,lon],[latMax,lon]]);
+ cartoGrid=L.layerGroup(lines.map(coords=>L.polyline(coords,
+  {color:"#9cbbcd",opacity:.42,weight:.7,interactive:false}))).addTo(map);
+}
+$("studio-measure").onclick=()=>cartoChoose("measure");
+$("studio-annotate").onclick=()=>cartoChoose("annotate");
+map.on("click",cartoOnClick);
+$("studio-clear-measure").onclick=()=>{
+ cartoPoints=[];if(cartoMeasureShape){map.removeLayer(cartoMeasureShape);cartoMeasureShape=null}
+ $("studio-measure-result").textContent="Měření odstraněno.";cartoStop();
+};
+$("studio-graticule").onchange=cartoGridUpdate;
+map.on("moveend",cartoGridUpdate);
+$("studio-export-notes").onclick=()=>{
+ const features=cartoLabels.map(x=>({...x.feature,
+   geometry:{type:"Point",coordinates:[x.marker.getLatLng().lng,x.marker.getLatLng().lat]}}));
+ download("VIEWER_Annotations.geojson",new Blob([JSON.stringify(
+  {type:"FeatureCollection",features})],{type:"application/geo+json"}));
+};
+// No network tiles; this remains an online-app feature until Leaflet is packaged locally.
+$("studio-vector-only").onchange=e=>{
+ if(e.target.checked){
+  cartoOldBase=setting.base;
+  if(base)map.removeLayer(base);
+  base=null;setting.base="vector-only";
+  notify("Pouze vektory · podkladové dlaždice vypnuty.");
+ }else selectBase(BASES[cartoOldBase]?cartoOldBase:"hillshade");
+};
+"""
