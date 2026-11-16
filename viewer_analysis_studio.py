@@ -62,8 +62,25 @@ def render_atlas_pdf(layers, styles, title, *, paper="A3",
     footer(1);c.showPage()
     header("VECTOR COVERAGE MAP")
     from viewer_vector_composer import draw_vector_map
-    draw_vector_map(c,layers,styles,(margin,margin+35,w-2*margin,h-130-margin),
+    from reportlab.lib.colors import HexColor
+    legend_width=max(105,min(200,w*.24))
+    frame_width=w-2*margin-legend_width-13
+    draw_vector_map(c,layers,styles,(margin,margin+35,frame_width,h-130-margin),
                     dark=theme=="NIGHT",north=True,graticule=True,scale=True)
+    legend_x=margin+frame_width+18
+    c.setFillColor(HexColor("#183a52"));c.setFont("Helvetica-Bold",11)
+    c.drawString(legend_x,h-111,"MAP LEGEND")
+    legend_y=h-135
+    for layer_name,_ in visible[:25]:
+        cfg=styles.get(layer_name,{})
+        try:color=HexColor(cfg.get("color","#58badc"))
+        except (ValueError,TypeError):color=HexColor("#58badc")
+        c.setFillColor(color)
+        c.rect(legend_x,legend_y-3,11,8,fill=1,stroke=0)
+        c.setFont("Helvetica",8);c.setFillColor(HexColor("#1b324b"))
+        c.drawString(legend_x+16,legend_y,str(layer_name)[:27])
+        legend_y-=18
+        if legend_y<margin+65:break
     footer(2);c.showPage()
     if include_statistics:
         header("LAYER STATISTICS & PROVENANCE")
