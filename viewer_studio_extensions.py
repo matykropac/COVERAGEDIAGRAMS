@@ -6,7 +6,7 @@ GeoJSON, radar calculations and existing viewer handlers unchanged.
 from __future__ import annotations
 
 CONTROLS = """
-<div class="field"><label for="studio-preset">Preset vrstev</label><select id="studio-preset"><option value="">Vyber…</option><option value="technical">Technical</option><option value="presentation">Presentation</option><option value="monochrome">Monochrome</option></select></div>
+<div class="field"><label for="studio-preset">Preset vrstev</label><select id="studio-preset"><option value="">Vyber…</option><option value="technical">Technical</option><option value="presentation">Presentation</option><option value="monochrome">Monochrome</option><option value="altitude">FL Spectrum</option></select></div>
 <div class="field"><label for="studio-fl-speed">FL animace</label><select id="studio-fl-speed"><option value="1500">Pomalá</option><option value="800" selected>Normální</option><option value="350">Rychlá</option></select></div>
 <div class="muted" id="studio-fl-state">Animace vypnutá</div>
 <div class="note" id="studio-area">Plocha polygonů</div>
@@ -22,7 +22,29 @@ SCRIPT = r"""
 const studioSnapshotsKey="cdviewer:views:v2";
 const studioAreaCache=new WeakMap();
 let studioFLTimer=null,studioSavedVisibility=null,studioFLIndex=-1;
+function hslToHex(h,s,l){
+ s/=100;l/=100;
+ const a=s*Math.min(l,1-l);
+ const f=n=>{const k=(n+h/30)%12;
+  return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1))))};
+ return "#"+[f(0),f(8),f(4)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
 function studioApplyPreset(name){
+ if(name==="altitude"){
+  studioStopFL();
+  const sorted=[...layers.values()].map(o=>({o,ft:selectedCoverageLevel(o.name)}))
+   .filter(x=>x.ft!==null).sort((a,b)=>a.ft-b.ft);
+  if(!sorted.length){notify("Nenalezeny hladiny RADAR / ... ft",true);return}
+  const low=sorted[0].ft,span=Math.max(1,sorted[sorted.length-1].ft-low);
+  for(const item of sorted){
+   const ratio=(item.ft-low)/span;
+   const hue=210-190*ratio;
+   const rgb=hslToHex(hue,90,52);
+   item.o.style.color=rgb;item.o.style.opacity=.38;syncOne(item.o);
+  }
+  refreshList();refreshLegend();notify("Použita barevná škála podle FL; data nezměněna");
+  return;
+ }
  const preset={
   technical:{opacity:.22,strokeOpacity:1,width:1.5,dash:"solid"},
   presentation:{opacity:.46,strokeOpacity:1,width:2.5,dash:"solid"},
