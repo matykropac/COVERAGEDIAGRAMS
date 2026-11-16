@@ -111,9 +111,20 @@ def render_analysis_panel(layers, styles, *, radar_site=None):
             b=st.selectbox("Nový diagram",candidates,index=1,key="studio_compare_b")
             st.caption("Porovnávej stejnou letovou hladinu a referenci AMSL. "
                        "Nekompatibilní podklady mohou dát zavádějící výsledek.")
-            if st.button("VYPOČÍTAT PŘEKRYV",key="studio_compare_run"):
+            confirm=st.checkbox(
+                "Potvrzuji stejnou výškovou referenci, FL a kompatibilní geometrii",
+                key="studio_compare_confirm")
+            if st.button("VYPOČÍTAT PŘEKRYV",key="studio_compare_run",
+                         disabled=not confirm):
                 try:
                     if a==b:raise ValueError("Zvol dvě různé vrstvy.")
+                    import re
+                    def fl(name):
+                        match=re.search(r"([0-9][0-9\\s]*)\\s*ft\\b",str(name),re.I)
+                        return int(match.group(1).replace(" ","")) if match else None
+                    fa,fb=fl(a),fl(b)
+                    if fa is not None and fb is not None and fa!=fb:
+                        raise ValueError("Nelze porovnat rozdílné letové hladiny.")
                     data=compare_coverage(layers[a],layers[b],baseline_name=a,candidate_name=b)
                     st.session_state["studio_compare_result"]=data
                     st.session_state["studio_compare_sources"]=(a,b)
