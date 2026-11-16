@@ -18,12 +18,12 @@ Select a polygon layer and optionally set radar LAT/LON, RANGE and azimuth secto
 In studio's EXPORT controls, select MAP COMPOSER, paper format A4–A0, page orientation and metadata. Generate a customer-oriented PDF with cover, vector map composition and per-layer statistics. Online basemap tiles are not embedded; full color print uses the existing deterministic map renderer. Atlas map is composed directly as PDF vector paths, preserving line and polygon sharpness on A0–A4. Background tiles are deliberately not embedded.
 
 ### Cartographic tools
-Fullscreen VIEWER / MAPA offers two-point approximate distance and initial bearing, a WGS84 graticule and draggable annotations exported in GeoJSON. These annotations are deliberately **not** appended to imported radar data or CDVIEW input. The optional "without online basemap" display suppresses tile fetches, but the app and its Leaflet/JSZip libraries still require initial online loading; this is **not** a portable offline basemap package.
+Fullscreen VIEWER / MAPA offers two-point approximate distance and initial bearing, a WGS84 graticule and draggable annotations exported in GeoJSON. These annotations are deliberately **not** appended to imported radar data or CDVIEW input. The "without online basemap" display suppresses tile fetches. The user can additionally import an **XYZ ZIP** with z/x/y.png, jpg, or webp tiles (max 180 MB compressed, 90,000 members), which are read in-browser with JSZip and rendered with Leaflet without a tile server. Leaflet/JSZip still require initial availability from CDN; this is **not** yet a self-contained offline executable.
 
 ## Compatibility / outstanding work
 - The browser's locally imported layers are not automatically transferred to Streamlit studio; use KML/KMZ/GeoJSON import on the studio page.
 - Print studio currently reuses the existing separate page rather than editing a page within persistent Leaflet iframe.
-- Full disconnected offline tile caching and package-local JS/CSS assets require a separate packaging change and appropriate map-data licensing.
+- Complete disconnected operation still requires package-local Leaflet/JSZip assets, offline hosting/bootstrap, basemap licensing and packaging of user tile sets. Browser-imported ZIP tiles live only in the current page session.
 - Print map is true PDF vector geometry; advanced print typography, source-watermarking, page template design and browser end-to-end QA still require refinement.
 - Large files and browser drag/drop need end-to-end QA. Existing repo-wide tests have unrelated baseline failures.
 
