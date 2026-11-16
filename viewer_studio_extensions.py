@@ -217,6 +217,7 @@ CARTOGRAPHY_CONTROLS = """
 <div class="field"><label for="studio-graticule">Mřížka LAT/LON</label><input type="checkbox" id="studio-graticule"></div>
 <div class="actions"><button id="studio-clear-measure">Vymazat měření</button><button id="studio-export-notes">⇩ Popisky GeoJSON</button></div>
 <div class="field"><label for="studio-vector-only">Bez online podkladu</label><input id="studio-vector-only" type="checkbox"></div>
+<h3>INSPECTOR · PŮVODNÍ POLYGONY</h3><div id="studio-hit-result" class="note">Klikni do mapy pro kontrolu příslušnosti k původním vrstvám.</div>
 <div class="muted">Režim bez dlaždic nevytváří kompletní offline aplikaci. Leaflet/JSZip se stále načítají z CDN, pokud nejsou v cache.</div>
 """
 
@@ -307,6 +308,40 @@ $("studio-export-notes").onclick=()=>{
  download("VIEWER_Annotations.geojson",new Blob([JSON.stringify(
   {type:"FeatureCollection",features})],{type:"application/geo+json"}));
 };
+
+// Native polygon membership inspector: presentation smoothing is ignored.
+function cartoPointInRing(lon,lat,ring){
+ let inside=false;
+ if(!Array.isArray(ring))return false;
+ for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+  const a=ring[i],b=ring[j];if(!a||!b)continue;
+  const crosses=(a[1]>lat)!==(b[1]>lat);
+  const x=(b[0]-a[0])*(lat-a[1])/((b[1]-a[1])||1e-30)+a[0];
+  if(crosses&&lon<x)inside=!inside;
+ }
+ return inside;
+}
+function cartoPointInGeometry(lon,lat,g){
+ if(!g)return false;
+ const poly=p=>Array.isArray(p)&&p.length&&cartoPointInRing(lon,lat,p[0])&&
+  !p.slice(1).some(r=>cartoPointInRing(lon,lat,r));
+ if(g.type==="Polygon")return poly(g.coordinates);
+ if(g.type==="MultiPolygon")return (g.coordinates||[]).some(poly);
+ if(g.type==="GeometryCollection")return (g.geometries||[]).some(x=>cartoPointInGeometry(lon,lat,x));
+ return false;
+}
+map.on("click",e=>{
+ const hits=[];
+ for(const o of layers.values()){
+  if(!o.style.show)continue;
+  if(o.features.some(f=>cartoPointInGeometry(e.latlng.lng,e.latlng.lat,f.geometry)))hits.push(o.name);
+ }
+ $("studio-hit-result").textContent="Původní polygon v místě "+e.latlng.lat.toFixed(5)+"°, "+
+  e.latlng.lng.toFixed(5)+"°:\\n"+(hits.length?hits.slice(0,15).join("\\n"):
+  "Bod neleží uvnitř žádné viditelné polygonové vrstvy.")+
+  "\\nJde pouze o prostorový test polygonů, nikoli potvrzení RF detekce.";
+});
+
 // No network tiles; this remains an online-app feature until Leaflet is packaged locally.
 $("studio-vector-only").onchange=e=>{
  if(e.target.checked){
