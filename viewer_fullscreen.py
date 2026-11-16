@@ -65,7 +65,8 @@ def render_fullscreen_viewer(layers, styles, center, *, diagnostic_result=None,
         "studioUrl":str(studio_url),
         "diagnostics":diagnostics,
     },ensure_ascii=False,allow_nan=False).encode("utf-8")).decode("ascii")
-    page=_HTML.replace("__VIEWER_PAYLOAD__",encoded)
+    from viewer_studio_extensions import enhance_page
+    page=enhance_page(_HTML.replace("__VIEWER_PAYLOAD__",encoded))
     st.markdown("""<style>
     header[data-testid="stHeader"],[data-testid="stToolbar"],
     [data-testid="stDecoration"],footer,[data-testid="stSidebar"]{display:none!important}
