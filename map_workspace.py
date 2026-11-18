@@ -1049,7 +1049,7 @@ def _radar_settings_body(ui_mode):
                        "V každém výpočetním bodě se vyhodnotí odchylka od "
                        "nejbližší polohy, úhlový zisk a steering loss.")
 
-            if True:
+            if mode=="PAR-NG":
                 st.warning("EL anténa používá provizorní úzký "
                            "elektronicky vychylovaný svazek (Gaussian ≤0,65° HPBW), "
                            "nikoli změřenou charakteristiku. Výstup je "
@@ -1270,8 +1270,7 @@ def _radar_settings_body(ui_mode):
                              index=3,on_change=_remember_radar_form,key="ws_par_pfa",format_func=lambda n:f"{n:.0e}")
                 st.number_input("Počet ne-koherentních pulzů",min_value=1,
                                 max_value=1000,value=1,step=1,on_change=_remember_radar_form,key="ws_par_pulses")
-            if (st.session_state.get("ws_par_scan_mode","TRACKING")=="FIXED_3D"
-                    ):
+            if st.session_state.get("ws_par_scan_mode","TRACKING")=="FIXED_3D":
                 st.warning("FIXED_3D umí jen statický dostupný diagram. "
                            "Pro elektronický sken EL či OBĚ přepni na TRACKING.")
             st.caption("Parametry PAR skenu a SNR jsou modelové, nikoliv změřená specifikace.")
