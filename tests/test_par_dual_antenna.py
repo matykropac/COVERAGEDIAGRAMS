@@ -59,9 +59,9 @@ class DualParCoverageTests(unittest.TestCase):
         from pathlib import Path
         src=Path(__file__).resolve().parents[1].joinpath("map_workspace.py").read_text(
             encoding="utf-8")
-        self.assertIn('key="ws_par_channels"',src)
+        self.assertNotIn('st.radio("Anténa použitá pro výpočet krytí"',src)
         self.assertIn('"channel_mode":"ws_par_channels"',src)
-        self.assertIn('"channel_mode":st.session_state.get("ws_par_channels","BOTH")',src)
+        self.assertIn('"channel_mode":"BOTH"',src)
         self.assertIn('values["channel_mode"]="AZ"',src)
         self.assertIn('_par_model_metadata()!=_par_pattern_metadata(',src)
 

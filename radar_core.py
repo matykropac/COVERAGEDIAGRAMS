@@ -425,22 +425,39 @@ class ParScanPattern(AntennaPattern):
             # independent EL channel has no measured source grid yet.
             az_gain=self._sample_3d_gain(elevation-tilt_deg,azimuth)
         else:
-            az_offset,az_command=self._steering_residual(
+            # A target is illuminated by *all* neighboring commanded beams,
+            # not only the nearest one. Select the strongest received response
+            # from the nearest command and its immediate neighbors. This is a
+            # max over real sampled beam positions, NOT geometric smoothing or
+            # interpolation of the binary coverage mask. It also accounts for
+            # command-dependent steering loss before selecting the best beam.
+            _,az_command=self._steering_residual(
                 azimuth,-15.,15.,self.az_beam_step_deg)
-            # Shift the narrow AZ main lobe, but retain elevation dependence
-            # of the source AZ diagram (including its vertical shape).
-            az_gain=self._sample_3d_gain(elevation-tilt_deg,az_offset)
-            az_gain-=self.steering_loss_db_per_deg*np.abs(az_command)
+            az_spacing=30./int(np.ceil(30./self.az_beam_step_deg))
+            az_gain=np.full(elevation.shape,-200.,dtype=float)
+            for offset in (-1,0,1):
+                command=np.clip(az_command+offset*az_spacing,-15.,15.)
+                candidate=self._sample_3d_gain(elevation-tilt_deg,
+                                                azimuth-command)
+                candidate-=self.steering_loss_db_per_deg*np.abs(command)
+                az_gain=np.maximum(az_gain,candidate)
         az_gain=np.where(az_inside,az_gain,-200.)
 
         # EL electronically steers the narrow elevation beam. Its measured
         # 3D gain array is NOT provided, so an analytic HPBW upper-limit model
         # is shown distinctly as provisional.
-        el_offset,el_command=self._steering_residual(
+        _,el_command=self._steering_residual(
             elevation,-1.,14.,self.el_beam_step_deg)
-        # -3 dB at ± HPBW/2. Broad-plane EL gain is assumed flat across AZ.
-        el_gain=-12.*(el_offset/0.65)**2
-        el_gain-=self.steering_loss_db_per_deg*np.abs(el_command)
+        el_spacing=15./int(np.ceil(15./self.el_beam_step_deg))
+        el_gain=np.full(elevation.shape,-200.,dtype=float)
+        for offset in (-1,0,1):
+            command=np.clip(el_command+offset*el_spacing,-1.,14.)
+            residual=elevation-command
+            # Evaluate each actual command, then choose its strongest echo.
+            # Never average RF power or fill holes in exported polygons.
+            candidate=-12.*(residual/0.65)**2
+            candidate-=self.steering_loss_db_per_deg*np.abs(command)
+            el_gain=np.maximum(el_gain,candidate)
         el_gain=np.where(el_inside&az_inside,el_gain,-200.)
         az_factor=np.power(10.,np.clip(az_gain/20+margin,-12,3))
         el_factor=np.power(10.,np.clip(el_gain/20+margin,-12,3))

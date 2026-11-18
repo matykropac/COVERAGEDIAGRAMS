@@ -487,7 +487,7 @@ def _par_model_metadata():
         "pd":float(st.session_state.get("ws_par_pd",0.8)),
         "pfa":float(st.session_state.get("ws_par_pfa",1e-6)),
         "pulses":int(st.session_state.get("ws_par_pulses",1)),
-        "channel_mode":st.session_state.get("ws_par_channels","BOTH"),
+        "channel_mode":"BOTH",
         "az_beam_step_deg":float(st.session_state.get("ws_par_az_beam_step",0.3)),
         "el_beam_step_deg":float(st.session_state.get("ws_par_el_beam_step",0.2)),
         "coverage_mode":st.session_state.get("ws_par_quality","FAST"),
@@ -1030,17 +1030,9 @@ def _radar_settings_body(ui_mode):
             st.number_input("Tilt antény [°]",-15.,15.,-1.,on_change=_remember_radar_form,key="ws_tilt")
         if mode=="PAR-NG":
             st.markdown("**VÝPOČETNÍ ANTÉNY PAR-NG**")
-            st.radio("Anténa použitá pro výpočet krytí",
-                options=["AZ","EL","BOTH"],horizontal=True,
-                format_func=lambda mode:{
-                    "AZ":"HORIZONTAL · AZ",
-                    "EL":"VERTICAL · EL",
-                    "BOTH":"OBĚ · AZ + EL",
-                }[mode],on_change=_remember_radar_form,key="ws_par_channels")
-            st.caption("AZ: úzký svazek skenuje zleva doprava (±15°). "
-                       "EL: úzký svazek skenuje zdola nahoru (−1 až +14°). "
-                       "OBĚ: průnik dosažitelného krytí obou kanálů. "
-                       "Zisky ani SNR se nesčítají.")
+            st.caption("JEDEN VÝPOČET KRYTÍ · PAR-NG. Interně se ověří "
+                       "dostupnost obou fyzických antén; výsledkem je jediná "
+                       "společná maska krytí. Žádné samostatné AZ/EL výstupy.")
             az_step_col,el_step_col=st.columns(2,gap="small")
             with az_step_col:
                 st.number_input("Krok poloh AZ svazku [°]",min_value=.05,
@@ -1057,7 +1049,7 @@ def _radar_settings_body(ui_mode):
                        "V každém výpočetním bodě se vyhodnotí odchylka od "
                        "nejbližší polohy, úhlový zisk a steering loss.")
 
-            if st.session_state.get("ws_par_channels","BOTH") in ("EL","BOTH"):
+            if mode=="PAR-NG":
                 st.warning("EL anténa používá provizorní úzký "
                            "elektronicky vychylovaný svazek (Gaussian ≤0,65° HPBW), "
                            "nikoli změřenou charakteristiku. Výstup je "
@@ -1278,8 +1270,7 @@ def _radar_settings_body(ui_mode):
                              index=3,on_change=_remember_radar_form,key="ws_par_pfa",format_func=lambda n:f"{n:.0e}")
                 st.number_input("Počet ne-koherentních pulzů",min_value=1,
                                 max_value=1000,value=1,step=1,on_change=_remember_radar_form,key="ws_par_pulses")
-            if (st.session_state.get("ws_par_scan_mode","TRACKING")=="FIXED_3D"
-                    and st.session_state.get("ws_par_channels","BOTH")!="AZ"):
+            if st.session_state.get("ws_par_scan_mode","TRACKING")=="FIXED_3D":
                 st.warning("FIXED_3D umí jen statický dostupný diagram. "
                            "Pro elektronický sken EL či OBĚ přepni na TRACKING.")
             st.caption("Parametry PAR skenu a SNR jsou modelové, nikoliv změřená specifikace.")
