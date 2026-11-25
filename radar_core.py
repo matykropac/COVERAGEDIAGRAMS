@@ -150,6 +150,7 @@ FT_TO_M = 0.3048
 # Preserve STANDARD_LEVELS_FT as the historical PAR catalog for compatibility.
 STANDARD_LEVELS_FT = tuple(range(100, 9001, 100))
 PSR_SSR_LEVELS_FT = (2000,3000,4000,5000,6000,7000,9000,10000,12000,15000,20000,25000,30000,35000,40000,45000,50000,55000,60000,66000)
+PSR_LEVELS_FT = (500,) + tuple(range(1000, 36001, 1000))
 FLIGHT_LEVELS_LIST = PSR_SSR_LEVELS_FT
 PAR_LOW_LEVELS_FT = tuple(range(100, 901, 100))
 PAR_DEFAULT_LEVELS_FT = STANDARD_LEVELS_FT
@@ -159,7 +160,9 @@ PAR_CUSTOM_MAX_COUNT = len(STANDARD_LEVELS_FT)
 
 
 def flight_levels_for(mode):
-    """PAR: 100–9000 ft/100; PSR and SSR: standard higher altitude catalog."""
+    """Return the mode-specific standard output heights in feet AMSL."""
+    if mode == "RL-2000":
+        return PSR_LEVELS_FT
     return STANDARD_LEVELS_FT if mode == "PAR-NG" else PSR_SSR_LEVELS_FT
 
 
