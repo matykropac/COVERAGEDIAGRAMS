@@ -14,7 +14,7 @@ WIDTH = round(297 / 25.4 * DPI)
 HEIGHT = round(210 / 25.4 * DPI)
 _PROVIDER_LOCK = RLock()
 
-def _load_print_tiles(config, viewport, provider, progress=None):
+def _load_print_tiles(config, viewport, provider, progress=None, *, max_zoom=None, max_tiles=512):
     """Disk-backed tile mosaic; warp one channel at a time into print pixels."""
     import tempfile
     from pathlib import Path
@@ -25,8 +25,8 @@ def _load_print_tiles(config, viewport, provider, progress=None):
 
     spec = core.BASEMAP_PROVIDERS[provider]
     z, xmin, xmax, ymin, ymax = core.tile_plan(
-        config, viewport, WIDTH, spec["max_zoom"],
-        max_tiles=512, prefer_detail=True)
+        config, viewport, WIDTH, min(spec["max_zoom"], max_zoom) if max_zoom is not None else spec["max_zoom"],
+        max_tiles=max_tiles, prefer_detail=True)
     nx, ny = xmax-xmin+1, ymax-ymin+1
     half = np.pi * 6378137.0
     span = 2 * half / 2**z
@@ -49,7 +49,12 @@ def _load_print_tiles(config, viewport, provider, progress=None):
                 done = 0
                 for y in range(ymin, ymax+1):
                     for x in range(xmin, xmax+1):
-                        tile = core.fetch_map_tile(z, x, y, provider)
+                        try:
+                            tile = core.fetch_map_tile(z, x, y, provider)
+                        except RuntimeError as exc:
+                            # Preserve actual failed zoom for whole-layer retry.
+                            exc.tile_zoom = z
+                            raise
                         dst.write(np.moveaxis(tile, -1, 0),
                                   window=Window((x-xmin)*256, (y-ymin)*256, 256, 256))
                         done += 1
@@ -90,7 +95,16 @@ def load_a4_basemap(config, progress=None):
             "attribution": "Aeronautical data © OpenAIP",
         }
         try:
-            aviation = _load_print_tiles(config, viewport, provider, progress)
+            try:
+                aviation = _load_print_tiles(config, viewport, provider, progress)
+            except RuntimeError as exc:
+                failed_zoom = getattr(exc, "tile_zoom", None)
+                if failed_zoom is None or failed_zoom <= 1:
+                    raise
+                if progress:
+                    progress(f"OpenAIP temporarily unavailable at zoom {failed_zoom}; retrying complete overlay at zoom {failed_zoom-1}")
+                aviation = _load_print_tiles(config, viewport, provider, progress,
+                                             max_zoom=failed_zoom-1, max_tiles=256)
         finally:
             core.BASEMAP_PROVIDERS.pop(provider, None)
     if aviation is None or aviation.get("image") is None or not np.any(aviation["image"][..., 3]):
@@ -103,6 +117,7 @@ def load_a4_basemap(config, progress=None):
         chart = Image.fromarray(aviation["image"][y:y+256], "RGBA")
         chart.putalpha(chart.getchannel("A").point(lambda v: int(v * .88)))
         base["image"][y:y+256] = np.asarray(Image.alpha_composite(background, chart))
+    base["aviation_zoom"] = aviation["zoom"]
     del aviation
     base["attribution"] = "Tiles © Esri and its data providers · Aeronautical data © OpenAIP"
     base["provider"] = "Esri Streets + OpenAIP"
@@ -127,6 +142,9 @@ def render_a4_fl(path, result, level, basemap, alpha=.43):
         if ax.get_legend() is not None:
             ax.get_legend().remove()
         core.style_export_theme(fig, "light")
+        ax.text(.99, .035, f"Esri z{basemap['zoom']} · OpenAIP z{basemap['aviation_zoom']}",
+                transform=ax.transAxes, ha="right", color="#17354f", fontsize=7,
+                bbox=dict(facecolor="white", edgecolor="none", alpha=.85), zorder=30)
         # Compact overlays, with no sidebar or white page margins.
         box = dict(boxstyle="round,pad=.5", facecolor="white", edgecolor="#526779", alpha=.93)
         ax.text(.018, .98, f"RADAR COVERAGE\\n{int(level):,} ft AMSL",

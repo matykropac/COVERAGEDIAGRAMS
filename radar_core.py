@@ -1727,7 +1727,7 @@ def fetch_map_tile(z, x, y, provider):
     if headers.get('modified'):
         req_headers['If-Modified-Since'] = headers['modified']
     request = urllib.request.Request(spec['url'].format(z=z, x=x, y=y), headers=req_headers)
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
                 data = response.read(2_000_001)
@@ -1753,19 +1753,24 @@ def fetch_map_tile(z, x, y, provider):
                 os.utime(path, None)
                 with Image.open(path) as image:
                     return np.array(image.convert('RGBA'))
-            if exc.code == 429 and attempt < 2:
+            if exc.code in (408, 429, 500, 502, 503, 504) and attempt < 3:
                 # Respect Retry-After when it is a small numeric delay; otherwise
                 # use a conservative exponential backoff. Tile requests stay serial.
                 try:
                     retry_after = float(exc.headers.get('Retry-After', '')) if exc.headers else 0.0
                 except ValueError:
                     retry_after = 0.0
-                delay = min(10.0, max(1.0, retry_after or 2.0**attempt))
+                delay = min(30.0, max(1.0, retry_after or 2.0**attempt))
                 time.sleep(delay)
                 continue
+            if exc.code in (408, 429, 500, 502, 503, 504):
+                raise RuntimeError(f'{provider} HTTP {exc.code}; temporary tile service failure.') from None
             raise ValueError(f'{provider} HTTP {exc.code}; mapa není dostupná.') from None
         except (urllib.error.URLError, TimeoutError, OSError):
-            raise ValueError('Mapový podklad se nepodařilo načíst. Zkontroluj internet.') from None
+            if attempt < 3:
+                time.sleep(2.0**attempt)
+                continue
+            raise RuntimeError(f'{provider}: temporary tile connection failure.') from None
 
 
 def load_basemap(c, progress=lambda *args: None, viewport=None, out_size=(1000, 1000),
