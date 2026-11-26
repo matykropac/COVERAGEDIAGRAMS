@@ -680,7 +680,7 @@ else:
             st.checkbox('Interaktivní mapa · HTML', key='zip_html', value=False)
             st.checkbox('Analytické mapové vrstvy', key='zip_layers', value=False)
         with images_col:
-            st.markdown('**OBRÁZKY · 600 DPI**')
+            st.markdown('**OBRÁZKY · 500 DPI**')
             st.checkbox('Mapa terénu', key='zip_terrain', value=False)
             st.checkbox('Diagram antény', key='zip_antenna', value=False)
             st.checkbox('Jednotlivé letové hladiny', key='zip_fl_png', value=True)
@@ -690,7 +690,7 @@ else:
             st.markdown('**GEODATA / DATA**')
             for key, (label, _, _) in FORMATS.items():
                 st.checkbox(label, key='zip_' + key, value=False)
-            st.checkbox('QuickReport · ZIP 600 DPI', key='zip_quickreport', value=False)
+            st.checkbox('QuickReport · ZIP 500 DPI', key='zip_quickreport', value=False)
 
         # Single multiselect replaces one checkbox per flight level.
         selected_levels = st.multiselect(

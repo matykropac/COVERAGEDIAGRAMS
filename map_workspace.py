@@ -1922,7 +1922,7 @@ def exports_dialog():
         st.info("Export je dostupný po výpočtu.")
         return
     opts=_available_levels(result["config"].radar_mode)
-    st.caption("Původní exportní nástroje: PDF report 600 DPI, PNG, QuickReport, zákaznické balíčky a datové formáty. Vyber požadované výstupy.")
+    st.caption("Původní exportní nástroje: PDF report 500 DPI, PNG, QuickReport, zákaznické balíčky a datové formáty. Vyber požadované výstupy.")
     groups=st.columns(3)
     names={
       "project":"Projekt CDPROJ","html":"Interaktivní mapa HTML",
@@ -1947,12 +1947,12 @@ def exports_dialog():
     with customer_options[0]:
         st.checkbox("PDF + Coverage Scorecard + metadata",value=True,
                     key="ws_zip_customer_pack")
-        st.checkbox("Mapový atlas PNG · 300 DPI · LIGHT",value=False,
+        st.checkbox("Mapový atlas PNG · 500 DPI · LIGHT",value=False,
                     key="ws_zip_customer_maps")
     with customer_options[1]:
-        st.checkbox("Terénní mapa · 300 DPI · LIGHT",value=False,
+        st.checkbox("Terénní mapa · 500 DPI · LIGHT",value=False,
                     key="ws_zip_customer_terrain")
-        st.checkbox("Anténní diagram · 300 DPI · LIGHT",value=False,
+        st.checkbox("Anténní diagram · 500 DPI · LIGHT",value=False,
                     key="ws_zip_customer_antenna")
     selected.update({
         key:bool(st.session_state.get("ws_zip_"+key))
@@ -1984,7 +1984,7 @@ def exports_dialog():
 
     # Independent English customer PDF atlas, not part of the ZIP preset.
     st.divider()
-    st.markdown("#### COVERAGE REPORT · PDF · 600 DPI")
+    st.markdown("#### COVERAGE REPORT · PDF · 500 DPI")
     st.caption("English ELDIS report with optional authentic COVERAGE MAPS title page, "
                "terrain model, technical settings and flight-level diagrams.")
     cover_docx = st.file_uploader(
@@ -2009,12 +2009,21 @@ def exports_dialog():
                 project_name=report_name,
                 flight_levels_ft=report_levels,
                 basemap=report_basemap,
-                dpi=600,
+                dpi=500,
                 cover_docx=cover_docx.getvalue() if cover_docx is not None else None)
-            with busy_overlay("GENERUJI PDF REPORT", "Připravuji mapové vrstvy a stránky v 600 DPI…"):
-                st.session_state["ws_report_pdf"]=generate_coverage_report_pdf(
-                    result,report_options)
-                st.session_state["ws_report_filename"]="Coverage_Report_600dpi.pdf"
+            import time
+            started = time.monotonic()
+            bar = st.progress(0, text="Preparing PDF report")
+            details = st.empty()
+            def report_progress(done, total, message):
+                elapsed = time.monotonic() - started
+                bar.progress(min(1.0, done / total), text=message)
+                eta = f"{elapsed * (total-done) / done:.0f} s" if done else "—"
+                details.caption(f"{done}/{total} · Elapsed: {elapsed:.0f} s · Estimated remaining: {eta} · 500 DPI")
+            st.session_state.pop("ws_report_pdf", None)
+            st.session_state["ws_report_pdf"]=generate_coverage_report_pdf(
+                result,report_options,progress=report_progress)
+            st.session_state["ws_report_filename"]="Coverage_Report_500dpi.pdf"
         except Exception as exc:
             st.session_state.pop("ws_report_pdf",None)
             st.error(f"Coverage report generation failed: {exc}")
@@ -2959,7 +2968,7 @@ def render_workspace():
                 st.markdown('<div class="cd-nav-title">EXPORTNÍ CENTRUM</div>',
                             unsafe_allow_html=True)
                 if result is not None:
-                    if st.button("⇩ PDF / PNG 600 DPI / ZIP",key="ws_export_studio",
+                    if st.button("⇩ PDF / PNG 500 DPI / ZIP",key="ws_export_studio",
                                  type="primary",use_container_width=True):
                         exports_dialog()
                     st.caption("Letové hladiny, zákaznické PDF a původní ZIP presety.")

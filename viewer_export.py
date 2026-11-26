@@ -40,9 +40,9 @@ def _shapes(geom):
                 yield ("polygon" if i==0 else "hole"),ring
 
 
-def render_print(layers,styles,title,*,fmt="png",dpi=300,night=True):
+def render_print(layers,styles,title,*,fmt="png",dpi=500,night=True):
     """Compose 2D WGS84 features on a metric web-Mercator design canvas."""
-    if fmt not in ("png","pdf") or dpi not in (300,600):
+    if fmt not in ("png","pdf") or dpi not in (500,):
         raise ValueError("Nepodporovaný typ nebo rozlišení exportu.")
     selected=[(key,features,styles[key]) for key,features in layers.items()
               if styles.get(key,{}).get("show",False)]

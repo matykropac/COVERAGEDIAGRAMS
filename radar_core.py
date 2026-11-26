@@ -2057,13 +2057,13 @@ def style_export_theme(fig, theme='dark'):
 
 
 def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
-                     level_alphas=None, limits=None, dpi=300, english=False, theme='dark',
+                     level_alphas=None, limits=None, dpi=500, english=False, theme='dark',
                      environment_items=None, report_layout=False):
     """Render a fresh print-size figure, not a screen capture."""
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.lines import Line2D
-    if dpi not in (300, 600):
-        raise ValueError('Export podporuje 300 nebo 600 DPI.')
+    if dpi not in (500,):
+        raise ValueError('Export podporuje 500 DPI.')
     fig = Figure(figsize=(13, 9), dpi=dpi, facecolor=PLOT_BG)
     FigureCanvasAgg(fig)
     try:
@@ -2215,7 +2215,7 @@ def export_map_image(path, result, mode, basemap=None, levels_ft=(), alpha=0.42,
                 panel_text(0.075, swatch_y, handle.get_label(), size=8.5)
             if len(handles) > 4:
                 panel_text(0.075, 0.075, f'+ {len(handles)-4} additional layers', size=7.5)
-            panel_text(0.035, 0.111, 'AMSL · 600 DPI' if english else 'AMSL · 600 DPI',
+            panel_text(0.035, 0.111, 'AMSL · 500 DPI' if english else 'AMSL · 500 DPI',
                        size=7.5, color='#597185')
         else:
             fig.text(0.075, 0.105, footer, color=UI_TEXT, fontsize=9, linespacing=1.6)

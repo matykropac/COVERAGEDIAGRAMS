@@ -78,7 +78,7 @@ class CoverageReportOptions:
     project_name: str = "Radar Coverage Study"
     flight_levels_ft: Sequence[int] = ()
     basemap: str = "Satelitní · Esri"
-    dpi: int = 600
+    dpi: int = 500
     cover_docx: bytes | None = None
 
 
@@ -427,7 +427,7 @@ def _report_basemap(config, options, viewport):
     return base
 
 
-def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -> bytes:
+def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions, *, progress=None) -> bytes:
     """Build one PDF independently of ZIP, KML and raster exports."""
     if result is None or "config" not in result:
         raise ValueError("Compute radar coverage before generating the report.")
@@ -436,10 +436,16 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
         raise ValueError("Select at least one valid flight altitude.")
     if options.basemap not in REPORT_BASEMAP_OPTIONS:
         raise ValueError("Unsupported report basemap selection.")
-    if options.dpi not in (300, 600):
-        raise ValueError("DPI must be 300 or 600.")
+    if options.dpi not in (500,):
+        raise ValueError("DPI must be 500.")
     project = (options.project_name or "Radar Coverage Study").strip()[:95]
+    total = len(levels) + 5
+    def notify(done, message):
+        if progress is not None:
+            progress(done, total, message)
+    notify(0, "Preparing coverage statistics")
     metrics = customer_metrics(result, levels)
+    notify(1, "Loading basemap")
     # Match the basemap viewport to the full exported plot, including the
     # outer reference range ring. Otherwise a 60 NM radar produces a 60 NM
     # square of tiles inside a plot expanded to the 100 NM reference ring.
@@ -456,6 +462,7 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
     basemap = _report_basemap(config, options, viewport)
     if basemap is None or basemap.get("image") is None:
         raise ValueError("Selected basemap is unavailable. Report not generated.")
+    notify(2, "Preparing report pages")
     buffer = BytesIO()
     pdf = Canvas(buffer, pagesize=(PAGE_W, PAGE_H), pageCompression=1)
     pdf.setTitle(f"Coverage Maps - {project}")
@@ -464,8 +471,10 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
     has_cover = _cover_page(pdf, options.cover_docx)
     _intro_page(pdf, project, page_number=2 if has_cover else 1)
     next_page = _technical_pages(pdf, result, project, start_page=3 if has_cover else 2)
-    _summary_page(pdf, result, metrics, project, page_number=next_page)
-    next_page += 1
+    for start in range(0, len(metrics), 30):
+        _summary_page(pdf, result, metrics[start:start+30], project, page_number=next_page)
+        next_page += 1
+    notify(3, "Rendering terrain map")
     with TemporaryDirectory(prefix="cd_coverage_report_") as temp:
         png = Path(temp) / "figure.png"
         core.export_map_image(png, result, "Terén", dpi=options.dpi,
@@ -473,8 +482,10 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
         _image_page(pdf, "Terrain Model Used for Coverage Calculation",
                     project, next_page, png,
                     f"Terrain sampled by the radar model. DEM: {str(result.get('source', 'not recorded'))[:90]}. Elevation in metres AMSL.")
+        notify(4, "Terrain map completed")
         for n, item in enumerate(metrics, start=next_page + 1):
             level = item["flight_level_ft_amsl"]
+            notify(4 + n - next_page - 1, f"Rendering FL {n-next_page}/{len(metrics)}: {level:,} ft AMSL")
             core.export_map_image(png, result, "Vybrané výšky",
                                   basemap=basemap, levels_ft=(level,),
                                   alpha=0.43, dpi=options.dpi,
@@ -485,5 +496,8 @@ def generate_coverage_report_pdf(result: dict, options: CoverageReportOptions) -
                        + f"  |  Map: {options.basemap}  |  " + str(basemap.get("attribution", "Esri")))
             _image_page(pdf, f"Coverage Diagram - {level:,} ft AMSL",
                         project, n, png, caption)
+    notify(total-1, "Finalizing PDF")
     pdf.save()
-    return buffer.getvalue()
+    data = buffer.getvalue()
+    notify(total, "PDF ready")
+    return data

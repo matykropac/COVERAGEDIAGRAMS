@@ -527,8 +527,8 @@ def _viewer_export_panel(layers,styles,title,mode,basemap,show_legend,show_north
     with st.expander("EXPORT STUDIO · PNG / PDF / CDVIEW",expanded=False):
         fmt=st.segmented_control("Typ výstupu",["PNG","PDF"],default="PNG",
                                  key="viewer_print_format",width="stretch")
-        dpi=st.select_slider("Kvalita [DPI]",options=[300,600],
-                             value=300,key="viewer_print_dpi")
+        dpi=500
+        st.caption("Print resolution: 500 DPI")
         print_theme=st.radio("Tisková paleta",["NIGHT","LIGHT"],horizontal=True,
                              key="viewer_print_theme")
         if st.button("GENEROVAT MAPOVÝ ATLAS",type="primary",

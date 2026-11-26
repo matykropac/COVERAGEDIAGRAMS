@@ -13,11 +13,11 @@ import web_support
 
 
 @pytest.mark.parametrize('radar_mode', ['RL-2000', 'PAR-NG', 'SSR'])
-def test_quickreport_exports_every_available_flight_level_at_600dpi(monkeypatch, radar_mode):
+def test_quickreport_exports_every_available_flight_level_at_500dpi(monkeypatch, radar_mode):
     calls = []
 
     def fake_export_map(path, result, mode, *, dpi, levels_ft=(), **kwargs):
-        assert dpi == 600
+        assert dpi == 500
         calls.append((mode, tuple(levels_ft)))
         Path(path).write_bytes(b'fake-png-' + str(len(calls)).encode())
 
@@ -33,14 +33,14 @@ def test_quickreport_exports_every_available_flight_level_at_600dpi(monkeypatch,
         levels = core.flight_levels_for(radar_mode)
         images = sorted(x for x in names if x.endswith('.png'))
         assert len(images) == len(levels) + 2
-        assert '01_Teren/terrain_600dpi.png' in names
-        assert '02_Vyzarovaci_diagram/antenna_diagram_600dpi.png' in names
+        assert '01_Teren/terrain_500dpi.png' in names
+        assert '02_Vyzarovaci_diagram/antenna_diagram_500dpi.png' in names
         assert 'README.txt' in names
         manifest = json.loads(archive.read('report_manifest.json'))
         assert manifest['flight_levels_ft_amsl'] == list(levels)
-        assert manifest['image_dpi'] == 600
+        assert manifest['image_dpi'] == 500
         for level in levels:
-            name = f'03_Letove_hladiny/{level:05d}ft_AMSL_600dpi.png'
+            name = f'03_Letove_hladiny/{level:05d}ft_AMSL_500dpi.png'
             assert name in names
 
         assert calls[0] == ('Terén', ())

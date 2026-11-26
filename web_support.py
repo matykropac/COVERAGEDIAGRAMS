@@ -17,7 +17,7 @@ from branca.element import MacroElement, Template
 import radar_core as core
 from obstacles import obstacle_polygon
 
-EXPORTS = ('QuickReport · ZIP (600 DPI)', 'KML · všechny vrstvy (polygony)', 'GeoPackage · vektory', 'GeoTIFF · rastr', 'RAW · NPZ',
+EXPORTS = ('QuickReport · ZIP (500 DPI)', 'KML · všechny vrstvy (polygony)', 'GeoPackage · vektory', 'GeoTIFF · rastr', 'RAW · NPZ',
            'Profil · CSV', 'Metadata · JSON', 'Obrázek · PNG', 'Obrázek · PNG (Light)')
 
 
@@ -475,7 +475,7 @@ def export_kml(result, levels, environment_items=None, *, helper_features=None):
 
 
 def export_quickreport(result, *, flight_levels=None, environment_items=None):
-    """Create a single ZIP containing the antenna plot, terrain and every flight level at 600 DPI.
+    """Create a single ZIP containing the antenna plot, terrain and every flight level at 500 DPI.
 
     All images use the application's print renderer. Images are rendered one at a time;
     the raw matrices are not recalculated and the archive has one directory per section.
@@ -491,12 +491,12 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
         'radar': c.radar_mode,
         'source': result.get('source'),
         'completed_at': result.get('completed_at'),
-        'image_dpi': 600,
+        'image_dpi': 500,
         'themes': ['dark', 'light'],
         'light_suffix': '_LIGHT',
         'flight_levels_ft_amsl': list(requested),
-        'terrain': '01_Terrain/terrain_600dpi.png',
-        'antenna_diagram': '02_Antenna_Pattern/antenna_diagram_600dpi.png',
+        'terrain': '01_Terrain/terrain_500dpi.png',
+        'antenna_diagram': '02_Antenna_Pattern/antenna_diagram_500dpi.png',
         'flight_level_directory': '03_Flight_Levels/',
         'coverage_kml': '04_KML/coverage_all_layers.kml',
         'range_rings_kml': '04_KML/radar_range_rings_20NM.kml',
@@ -513,31 +513,31 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
         with ZipFile(archive_bytes, 'w', compression=ZIP_STORED, allowZip64=True) as archive:
             for theme in ('dark', 'light'):
                 suffix = '' if theme == 'dark' else '_LIGHT'
-                core.export_map_image(png, result, 'Terén', dpi=600,
+                core.export_map_image(png, result, 'Terén', dpi=500,
                                       alpha=1.0, english=True, theme=theme,
                                       environment_items=environment_items)
                 archive.write(png, manifest['terrain'] if theme == 'dark'
-                              else '01_Terrain/terrain_LIGHT_600dpi.png')
+                              else '01_Terrain/terrain_LIGHT_500dpi.png')
 
-                fig = Figure(figsize=(13, 9), dpi=600, facecolor=core.PLOT_BG)
+                fig = Figure(figsize=(13, 9), dpi=500, facecolor=core.PLOT_BG)
                 FigureCanvasAgg(fig)
                 try:
                     core.technical_plot(fig, result=result, english=True)
                     fig.text(.07, .975, 'ELDIS · ANTENNA DIAGRAM',
                              color=core.UI_TEXT, fontsize=18, weight='bold', va='top')
                     core.style_export_theme(fig, theme)
-                    fig.savefig(png, dpi=600, format='png', facecolor=fig.get_facecolor())
+                    fig.savefig(png, dpi=500, format='png', facecolor=fig.get_facecolor())
                 finally:
                     fig.clear()
                 archive.write(png, manifest['antenna_diagram'] if theme == 'dark'
-                              else '02_Antenna_Pattern/antenna_diagram_LIGHT_600dpi.png')
+                              else '02_Antenna_Pattern/antenna_diagram_LIGHT_500dpi.png')
 
                 for level in requested:
                     core.export_map_image(png, result, 'Vybrané výšky',
                                           levels_ft=(level,), alpha=0.74,
-                                          dpi=600, english=True, theme=theme,
+                                          dpi=500, english=True, theme=theme,
                                            environment_items=environment_items)
-                    archive.write(png, f'03_Flight_Levels/{int(level):05d}ft_AMSL{suffix}_600dpi.png')
+                    archive.write(png, f'03_Flight_Levels/{int(level):05d}ft_AMSL{suffix}_500dpi.png')
 
             # Optional third-party imagery: never let a tile outage invalidate
             # the core engineering report.
@@ -555,9 +555,9 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                         suffix = '' if theme == 'dark' else '_LIGHT'
                         core.export_map_image(png, result, 'Vybrané výšky',
                                               basemap=esri, levels_ft=(level,),
-                                              alpha=0.52, dpi=600, english=True, theme=theme,
+                                              alpha=0.52, dpi=500, english=True, theme=theme,
                                               environment_items=environment_items)
-                        archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI{suffix}_600dpi.png")
+                        archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI{suffix}_500dpi.png")
 
             # Include toggleable polygons for the same altitude slices as the PNG report.
             archive.writestr(manifest['coverage_kml'], export_kml(result, requested, environment_items))
@@ -581,19 +581,20 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                 '02_Antenna_Pattern: antenna pattern and coverage envelope\\n'
                 f'03_Flight_Levels: {len(requested)} individual altitude slices in ft AMSL\\n'
                 '04_KML: coverage, obstacles, and 20 NM range rings up to 260 NM\\n'
-                '05_ESRI_Maps: one map per altitude, Esri Topographic, radar at (0, 0), 600 DPI\\n'
+                '05_ESRI_Maps: one map per altitude, Esri Topographic, radar at (0, 0), 500 DPI\\n'
                 'Basemap tiles are downloaded during export; Esri service availability is required.\\n'
-                'All images are 600 DPI; they are not map orthophotos.\\n'
+                'All images are 500 DPI; they are not map orthophotos.\\n'
                 'Higher print DPI does not improve the accuracy of source DEM data.\\n'
             )
         return archive_bytes.getvalue()
 
 
 def export_bytes(kind, result, levels, index, dpi, alpha, level_alphas=None, environment_items=None):
+    dpi = 500
     with tempfile.TemporaryDirectory(prefix='radar_export_') as directory:
         root = Path(directory)
-        if kind == 'QuickReport · ZIP (600 DPI)':
-            return export_quickreport(result, environment_items=environment_items), 'COVERAGEDIAGRAMS_QuickReport_600dpi.zip', 'application/zip'
+        if kind == 'QuickReport · ZIP (500 DPI)':
+            return export_quickreport(result, environment_items=environment_items), 'COVERAGEDIAGRAMS_QuickReport_500dpi.zip', 'application/zip'
         if kind == 'KML · všechny vrstvy (polygony)':
             return export_kml(result, levels, environment_items), 'coverage_all_layers.kml', 'application/vnd.google-earth.kml+xml'
         if kind == 'GeoPackage · vektory':

@@ -62,34 +62,34 @@ def build_selected_zip(result, *, selected, flight_levels, index, alpha,
                 image_path = Path(work) / "image.png"
                 if selected.get("terrain"):
                     core.export_map_image(
-                        image_path, result, "Terén", dpi=600,
+                        image_path, result, "Terén", dpi=500,
                         alpha=1.0, english=True, theme="light",
                         environment_items=environment_items)
-                    archive.write(image_path, "03_Images/terrain_600dpi.png")
+                    archive.write(image_path, "03_Images/terrain_500dpi.png")
 
                 if selected.get("antenna"):
-                    fig = Figure(figsize=(13, 9), dpi=600, facecolor="white")
+                    fig = Figure(figsize=(13, 9), dpi=500, facecolor="white")
                     FigureCanvasAgg(fig)
                     try:
                         core.technical_plot(fig, result=result, english=True)
                         fig.text(.07, .975, "ELDIS · ANTENNA DIAGRAM",
                                  color="#17324c", fontsize=18, weight="bold", va="top")
                         core.style_export_theme(fig, "light")
-                        fig.savefig(image_path, dpi=600, format="png",
+                        fig.savefig(image_path, dpi=500, format="png",
                                     facecolor=fig.get_facecolor())
                     finally:
                         fig.clear()
-                    archive.write(image_path, "03_Images/antenna_diagram_600dpi.png")
+                    archive.write(image_path, "03_Images/antenna_diagram_500dpi.png")
 
                 if selected.get("fl_png"):
                     for level in flight_levels:
                         core.export_map_image(
                             image_path, result, "Vybrané výšky",
-                            levels_ft=(level,), alpha=0.74, dpi=600,
+                            levels_ft=(level,), alpha=0.74, dpi=500,
                             english=True, theme="light",
                             environment_items=environment_items)
                         archive.write(
-                            image_path, f"03_Images/Flight_Levels/{int(level):05d}ft_AMSL_600dpi.png")
+                            image_path, f"03_Images/Flight_Levels/{int(level):05d}ft_AMSL_500dpi.png")
 
         # Optional light-only handover products; never alter existing presets.
         if selected.get("customer_pack"):
@@ -107,27 +107,27 @@ def build_selected_zip(result, *, selected, flight_levels, index, alpha,
                     for level in flight_levels:
                         core.export_map_image(
                             img,result,"Vybrané výšky",levels_ft=(level,),
-                            alpha=.75,dpi=300,english=True,theme="light",
+                            alpha=.75,dpi=500,english=True,theme="light",
                             environment_items=environment_items)
                         archive.write(img,f"07_Customer_Delivery/Customer_Pack/Maps_Light/"
-                                      f"Coverage_{int(level):05d}ft_AMSL_300dpi.png")
+                                      f"Coverage_{int(level):05d}ft_AMSL_500dpi.png")
                 if selected.get("customer_terrain"):
-                    core.export_map_image(img,result,"Terén",alpha=1.,dpi=300,
+                    core.export_map_image(img,result,"Terén",alpha=1.,dpi=500,
                                           english=True,theme="light",
                                           environment_items=environment_items)
                     archive.write(img,"07_Customer_Delivery/Customer_Pack/Maps_Light/"
-                                  "Terrain_300dpi.png")
+                                  "Terrain_500dpi.png")
                 if selected.get("customer_antenna"):
-                    fig=Figure(figsize=(12,8),dpi=300,facecolor="white")
+                    fig=Figure(figsize=(12,8),dpi=500,facecolor="white")
                     FigureCanvasAgg(fig)
                     try:
                         core.technical_plot(fig,result=result,english=True)
                         core.style_export_theme(fig,"light")
-                        fig.savefig(img,dpi=300,format="png",facecolor="white")
+                        fig.savefig(img,dpi=500,format="png",facecolor="white")
                     finally:
                         fig.clear()
                     archive.write(img,"07_Customer_Delivery/Customer_Pack/Maps_Light/"
-                                  "Antenna_Pattern_300dpi.png")
+                                  "Antenna_Pattern_500dpi.png")
 
         if selected.get("quickreport"):
             report = export_quickreport(

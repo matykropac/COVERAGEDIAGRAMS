@@ -17,11 +17,11 @@ class WorkstationTests(unittest.TestCase):
 
     def test_print_requires_visible_data(self):
         with self.assertRaisesRegex(ValueError,"viditelnou vrstvu"):
-            render_print({},{},"Empty",fmt="png",dpi=300)
+            render_print({},{},"Empty",fmt="png",dpi=500)
 
     def test_print_rejects_bad_format(self):
         with self.assertRaises(ValueError):
-            render_print({},{},"Empty",fmt="svg",dpi=300)
+            render_print({},{},"Empty",fmt="svg",dpi=500)
 
     def test_editor_workstation_navigation_and_radar_fields(self):
         from pathlib import Path
@@ -115,7 +115,7 @@ class WorkstationTests(unittest.TestCase):
             "properties":{"name":"Test runway"},
             "geometry":{"type":"LineString","coordinates":[[15.,50.],[15.02,50.01]]}}]}
         style={"Test / RWY":{"show":True,"color":"#63c9ef","opacity":.8,"width":2.}}
-        blob=render_print(features,style,"Airport test",fmt="pdf",dpi=300,night=True)
+        blob=render_print(features,style,"Airport test",fmt="pdf",dpi=500,night=True)
         self.assertTrue(blob.startswith(b"%PDF"))
         self.assertGreater(len(blob),4000)
 
