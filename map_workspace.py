@@ -1932,7 +1932,7 @@ def exports_dialog():
     groups=(
         ("PROJEKT / MAPY", (
             ("project","CDPROJ","Editovatelný projekt včetně výpočtu."),
-            ("html","HTML mapa","Interaktivní mapa aktuálního pohledu."),
+            ("html","HTML mapa","Interaktivní mapa vybraných FL; online podklady vyžadují internet."),
             ("terrain","Terén PNG","Výškový model použitý pro výpočet."),
             ("antenna","Anténní diagram PNG","Vyzařovací diagram a technický profil."),
             ("fl_png","PNG po hladinách","Samostatná světlá mapa pro každou vybranou FL."),
@@ -1954,18 +1954,17 @@ def exports_dialog():
             ("quickreport","QuickReport","Kompletní atlas: Dark + Light, Esri, KML; náročný na čas a RAM."))),
     )
     selected={}
-    html=st.session_state.get("ws_map_html")
     from aviation_basemap import configured_key
     aip_available=bool(configured_key())
     for col,(heading,items) in zip(st.columns(3),groups):
         with col:
             st.markdown("**"+heading+"**")
             for key,label,description in items:
-                available=(key!="html" or bool(html)) and (key!="a4_esri_aip" or aip_available)
+                available=(key!="a4_esri_aip" or aip_available)
                 selected[key]=st.checkbox(label,key="ws_zip_"+key,
                     value=key=="fl_png",disabled=not available,help=description) and available
                 st.caption(description if available else ("Chybí OpenAIP API klíč." if key=="a4_esri_aip" else "Nejprve otevři mapu."))
-    needs_fl=any(selected[k] for k in ("fl_png","png_dark","png_light","quickreport",
+    needs_fl=any(selected[k] for k in ("html","fl_png","png_dark","png_light","quickreport",
                                       "customer_pack","customer_maps","a4_esri_aip","kml","gpkg","tiff"))
     count=sum(selected.values())
     render_count=(len(chosen)*(int(selected["fl_png"])+int(selected["customer_maps"])+int(selected["a4_esri_aip"]))
@@ -1993,6 +1992,7 @@ def exports_dialog():
                                   obstacles=st.session_state.get("obstacles",[]),
                                   source_ui=_airport_project_metadata(),
                                   display=_visual_project_state())
+            html=_draw_map_folium(export_only=True, export_levels=chosen) if selected["html"] else None
             blob=build_selected_zip(
                 result, selected=selected, flight_levels=chosen,
                 index=st.session_state.get("ws_profile_index",0),
@@ -2087,12 +2087,12 @@ def exports_dialog():
             key="ws_report_download")
 
 
-def _draw_map_folium():
+def _draw_map_folium(*, export_only=False, export_levels=()):
     result=st.session_state.get("result")
     # Editing an uncalculated site must not be confused with the old result's location.
-    configured=_cfg()
+    configured=result["config"] if export_only and result is not None else _cfg()
     c=result["config"] if result is not None else configured
-    site=_current_radar_site()
+    site=(c.lat,c.lon) if export_only else _current_radar_site()
     view=st.session_state.get("ws_viewport")
     center=[view["lat"],view["lng"]] if view else list(site if site else (0.,0.))
     zoom=view["zoom"] if view else (9 if site else 2)
@@ -2103,15 +2103,16 @@ def _draw_map_folium():
         folium.TileLayer(provider["url"],name=name,attr=provider["attribution"],
                          max_zoom=provider["max_zoom"],overlay=False,
                          show=name=="OpenStreetMap").add_to(m)
-    if st.session_state.get("ws_openaip",True):
+    if not export_only and st.session_state.get("ws_openaip",True):
         add_openaip_map(m)
-    if result is not None and st.session_state.get("ws_show_coverage",True):
+    if result is not None and (export_only or st.session_state.get("ws_show_coverage",True)):
         mode=st.session_state.get("ws_display_mode","Jedna hladina")
         levels=_chosen_levels(c.radar_mode)
         if mode=="Cíl":active=[None]
         elif mode=="Porovnání":active=st.session_state.get("ws_comparison",levels[:3])
         elif levels:active=[st.session_state.get("ws_map_level",levels[0])]
         else:active=[]
+        if export_only:active=list(export_levels)
         for level in active:
             if level is not None and not core.valid_flight_level(c.radar_mode,level):
                 continue
@@ -2162,7 +2163,7 @@ def _draw_map_folium():
         site=st.session_state.get("ws_traffic_site")
         if site==(round(configured.lat,5),round(configured.lon,5)):
             add_traffic_layer(m,records)
-    tool=_map_tool()
+    tool="None" if export_only else _map_tool()
     if tool=="Polygon":
         Draw(export=False,
              draw_options={"polyline":False,"rectangle":False,"circle":False,
@@ -2172,6 +2173,8 @@ def _draw_map_folium():
     folium.LayerControl(collapsed=True).add_to(m)
     Fullscreen().add_to(m)
     MeasureControl(primary_length_unit="kilometers").add_to(m)
+    if export_only:
+        return m.get_root().render().encode("utf-8")
     event=st_folium(m,height=730,use_container_width=True,
               key=f"ws_map_{st.session_state.get('ws_map_revision',0)}",
               returned_objects=["last_clicked","last_active_drawing","center","zoom"])
