@@ -1922,61 +1922,86 @@ def exports_dialog():
         st.info("Export je dostupný po výpočtu.")
         return
     opts=_available_levels(result["config"].radar_mode)
-    st.caption("Původní exportní nástroje: PDF report 500 DPI, PNG, QuickReport, zákaznické balíčky a datové formáty. Vyber požadované výstupy.")
-    groups=st.columns(3)
-    names={
-      "project":"Projekt CDPROJ","html":"Interaktivní mapa HTML",
-      "terrain":"Mapa terénu","antenna":"Anténní diagram",
-      "fl_png":"PNG po hladinách","png_dark":"PNG Dark","png_light":"PNG Light",
-      "quickreport":"QuickReport",
-      "kml":"KML","gpkg":"GeoPackage","tiff":"GeoTIFF",
-      "npz":"RAW NPZ","csv":"Profil CSV","json":"Metadata JSON",
-    }
-    for n,(key,label) in enumerate(names.items()):
-        with groups[n%3]: st.checkbox(label,key="ws_zip_"+key,value=key=="fl_png")
+    st.caption("Jeden ZIP · společný výběr hladin · tisk 500 DPI")
+    customer_name=st.text_input("Název projektu / zákazníka",value="Radar Coverage Study",
+                                key="ws_customer_title")
     chosen=st.multiselect("Letové hladiny [ft AMSL]",opts,
                           default=[x for x in st.session_state.get("ws_levels",[]) if x in opts],
-                          format_func=core.level_label,key="ws_zip_levels")
-    selected={key:bool(st.session_state.get("ws_zip_"+key)) for key in names}
-    st.markdown("#### CUSTOMER DELIVERY · LIGHT EDITION")
-    st.caption("Profesionální světlé podklady pro zákazníka. Původní ZIP preset výše zůstává beze změny.")
-    customer_name=st.text_input(
-        "Název projektu / zákazníka",value="Radar Coverage Study",
-        key="ws_customer_title")
-    customer_options=st.columns(2,gap="small")
-    with customer_options[0]:
-        st.checkbox("PDF + Coverage Scorecard + metadata",value=True,
-                    key="ws_zip_customer_pack")
-        st.checkbox("Mapový atlas PNG · 500 DPI · LIGHT",value=False,
-                    key="ws_zip_customer_maps")
-    with customer_options[1]:
-        st.checkbox("Terénní mapa · 500 DPI · LIGHT",value=False,
-                    key="ws_zip_customer_terrain")
-        st.checkbox("Anténní diagram · 500 DPI · LIGHT",value=False,
-                    key="ws_zip_customer_antenna")
-    selected.update({
-        key:bool(st.session_state.get("ws_zip_"+key))
-        for key in ("customer_pack","customer_maps","customer_terrain","customer_antenna")
-    })
-    if st.button("PŘIPRAVIT ZIP",type="primary",use_container_width=True,key="ws_export_build"):
+                          format_func=core.level_label,key="ws_zip_levels",
+                          help="Společný výběr pro mapy, geodata a zákaznické výstupy.")
+    groups=(
+        ("PROJEKT / MAPY", (
+            ("project","CDPROJ","Editovatelný projekt včetně výpočtu."),
+            ("html","HTML mapa","Interaktivní mapa aktuálního pohledu."),
+            ("terrain","Terén PNG","Výškový model použitý pro výpočet."),
+            ("antenna","Anténní diagram PNG","Vyzařovací diagram a technický profil."),
+            ("fl_png","PNG po hladinách","Samostatná světlá mapa pro každou vybranou FL."),
+            ("png_dark","Souhrnná mapa · Dark","Všechny vybrané FL v jednom obrázku."),
+            ("png_light","Souhrnná mapa · Light","Všechny vybrané FL v jednom světlém obrázku."))),
+        ("GEODATA / RAW", (
+            ("kml","KML","Vektorové polygony krytí a překážek."),
+            ("gpkg","GeoPackage","Vektorová data pro GIS."),
+            ("tiff","GeoTIFF","Georeferencovaný výpočetní rastr."),
+            ("npz","RAW NPZ","Úplné výpočetní matice, nezávislé na DPI."),
+            ("csv","Profil CSV","Vzorky aktuálního radiálního profilu."),
+            ("json","Metadata JSON","Parametry a původ výpočtu."))),
+        ("CUSTOMER / REPORTS", (
+            ("customer_pack","Technické PDF + scorecard","Zákaznický souhrn, statistiky a metadata."),
+            ("customer_maps","Zákaznické mapy PNG","Světlé FL mapy v zákaznickém adresáři."),
+            ("customer_terrain","Zákaznický terén PNG","Světlá terénní mapa."),
+            ("customer_antenna","Zákaznická anténa PNG","Světlý anténní diagram."),
+            ("quickreport","QuickReport","Kompletní atlas: Dark + Light, Esri, KML; náročný na čas a RAM."))),
+    )
+    selected={}
+    html=st.session_state.get("ws_map_html")
+    for col,(heading,items) in zip(st.columns(3),groups):
+        with col:
+            st.markdown("**"+heading+"**")
+            for key,label,description in items:
+                available=key!="html" or bool(html)
+                selected[key]=st.checkbox(label,key="ws_zip_"+key,
+                    value=key=="fl_png",disabled=not available,help=description) and available
+                st.caption(description if available else "Nejprve otevři mapu.")
+    needs_fl=any(selected[k] for k in ("fl_png","png_dark","png_light","quickreport",
+                                      "customer_pack","customer_maps","kml","gpkg","tiff"))
+    count=sum(selected.values())
+    render_count=(len(chosen)*(int(selected["fl_png"])+int(selected["customer_maps"]))
+                  +sum(int(selected[k]) for k in ("terrain","antenna","png_dark","png_light",
+                                                  "customer_terrain","customer_antenna"))
+                  +(4+4*len(chosen) if selected["quickreport"] else 0))
+    st.caption(f"Vybráno: {count} typů výstupů · {len(chosen)} FL · až {render_count} rastrových map")
+    if needs_fl and not chosen:
+        st.warning("Vyber alespoň jednu letovou hladinu.")
+    if selected["quickreport"] and any(selected[k] for k in ("fl_png","terrain","antenna","customer_maps","customer_terrain","customer_antenna")):
+        st.warning("QuickReport už obsahuje terén, anténu a mapy FL. Samostatné volby vytvářejí další kopie.")
+    fingerprint=(id(result),tuple(sorted(selected.items())),tuple(chosen),customer_name,
+                 st.session_state.get("ws_profile_index",0),st.session_state.get("ws_map_opacity",.42))
+    if st.session_state.get("ws_zip_fingerprint")!=fingerprint:
+        st.session_state.pop("ws_zip_ready",None)
+    if st.button("PŘIPRAVIT ZIP",type="primary",use_container_width=True,key="ws_export_build",
+                 disabled=not count or (needs_fl and not chosen)):
+        st.session_state.pop("ws_zip_ready",None)
         try:
-            with busy_overlay("EXPORTNÍ CENTRUM", "Sestavuji a komprimuji vybrané soubory…"):
-                proj=None
-                if selected["project"]:
-                    proj=save_project(result,levels=st.session_state.get("ws_levels",[]),
-                                      obstacles=st.session_state.get("obstacles",[]),
-                                      source_ui=_airport_project_metadata(),
-                                      display=_visual_project_state())
-                html=st.session_state.get("ws_map_html")
-                blob=build_selected_zip(
-                    result, selected=selected, flight_levels=chosen,
-                    index=st.session_state.get("ws_profile_index",0),
-                    alpha=st.session_state.get("ws_map_opacity",.42),
-                    level_alphas={x:st.session_state.get("ws_map_opacity",.42) for x in chosen},
-                    environment_items=[],project_bytes=proj,map_html=html,
-                    customer_name=customer_name.strip() or "Radar Coverage Study")
-                st.session_state["ws_zip_ready"]=blob
-        except Exception as exc:st.error(f"Export selhal: {exc}")
+            from export_progress import export_monitor
+            monitor=export_monitor(st,"Preparing ZIP")
+            proj=None
+            if selected["project"]:
+                proj=save_project(result,levels=st.session_state.get("ws_levels",[]),
+                                  obstacles=st.session_state.get("obstacles",[]),
+                                  source_ui=_airport_project_metadata(),
+                                  display=_visual_project_state())
+            blob=build_selected_zip(
+                result, selected=selected, flight_levels=chosen,
+                index=st.session_state.get("ws_profile_index",0),
+                alpha=st.session_state.get("ws_map_opacity",.42),
+                level_alphas={x:st.session_state.get("ws_map_opacity",.42) for x in chosen},
+                environment_items=st.session_state.get("ws_environment",[]),
+                project_bytes=proj,map_html=html,
+                customer_name=customer_name.strip() or "Radar Coverage Study",progress=monitor)
+            st.session_state["ws_zip_ready"]=blob
+            st.session_state["ws_zip_fingerprint"]=fingerprint
+        except Exception as exc:
+            st.error(f"Export selhal: {exc}")
     if st.session_state.get("ws_zip_ready"):
         st.download_button("STÁHNOUT ZIP",st.session_state["ws_zip_ready"],
                            file_name="COVERAGEDIAGRAMS_export.zip",mime="application/zip",
@@ -2002,7 +2027,7 @@ def exports_dialog():
         ("Satelitní · Esri","Esri · Topographic (legacy)",
          "OpenStreetMap","OpenStreetMap + OpenAIP"),key="ws_report_basemap")
     if st.button("GENERATE COVERAGE REPORT · PDF",type="primary",
-                 use_container_width=True,key="ws_report_generate"):
+                 use_container_width=True,key="ws_report_generate",disabled=not report_levels):
         try:
             from coverage_report import CoverageReportOptions, generate_coverage_report_pdf
             report_options=CoverageReportOptions(

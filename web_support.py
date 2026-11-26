@@ -474,7 +474,7 @@ def export_kml(result, levels, environment_items=None, *, helper_features=None):
     return ET.tostring(root, encoding='utf-8', xml_declaration=True)
 
 
-def export_quickreport(result, *, flight_levels=None, environment_items=None):
+def export_quickreport(result, *, flight_levels=None, environment_items=None, progress=None):
     """Create a single ZIP containing the antenna plot, terrain and every flight level at 500 DPI.
 
     All images use the application's print renderer. Images are rendered one at a time;
@@ -509,8 +509,7 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
         root = Path(directory)
         png = root / 'page.png'
         # PNG files are already compressed. Store entries directly without further CPU-heavy ZIP deflation.
-        archive_bytes = BytesIO()
-        with ZipFile(archive_bytes, 'w', compression=ZIP_STORED, allowZip64=True) as archive:
+        with tempfile.TemporaryFile(mode='w+b') as archive_bytes, ZipFile(archive_bytes, 'w', compression=ZIP_STORED, allowZip64=True) as archive:
             for theme in ('dark', 'light'):
                 suffix = '' if theme == 'dark' else '_LIGHT'
                 core.export_map_image(png, result, 'Terén', dpi=500,
@@ -518,6 +517,7 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                                       environment_items=environment_items)
                 archive.write(png, manifest['terrain'] if theme == 'dark'
                               else '01_Terrain/terrain_LIGHT_500dpi.png')
+                if progress: progress(f'QuickReport terrain {theme}', 1)
 
                 fig = Figure(figsize=(13, 9), dpi=500, facecolor=core.PLOT_BG)
                 FigureCanvasAgg(fig)
@@ -531,6 +531,7 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                     fig.clear()
                 archive.write(png, manifest['antenna_diagram'] if theme == 'dark'
                               else '02_Antenna_Pattern/antenna_diagram_LIGHT_500dpi.png')
+                if progress: progress(f'QuickReport antenna {theme}', 1)
 
                 for level in requested:
                     core.export_map_image(png, result, 'Vybrané výšky',
@@ -538,6 +539,7 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                                           dpi=500, english=True, theme=theme,
                                            environment_items=environment_items)
                     archive.write(png, f'03_Flight_Levels/{int(level):05d}ft_AMSL{suffix}_500dpi.png')
+                    if progress: progress(f'QuickReport FL {level} {theme}', 1)
 
             # Optional third-party imagery: never let a tile outage invalidate
             # the core engineering report.
@@ -558,9 +560,13 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                                               alpha=0.52, dpi=500, english=True, theme=theme,
                                               environment_items=environment_items)
                         archive.write(png, f"05_ESRI_Maps/{int(level):05d}ft_AMSL_ESRI{suffix}_500dpi.png")
+                        if progress: progress(f"QuickReport Esri FL {level} {theme}", 1)
+            elif progress:
+                progress("QuickReport Esri unavailable", 2 * len(requested))
 
             # Include toggleable polygons for the same altitude slices as the PNG report.
             archive.writestr(manifest['coverage_kml'], export_kml(result, requested, environment_items))
+            if progress: progress('QuickReport KML', 1)
             if environment_items:
                 import environment_layers as env
                 archive.writestr('06_Environmental_Layers/objects.geojson', env.geojson_bytes(environment_items))
@@ -586,7 +592,10 @@ def export_quickreport(result, *, flight_levels=None, environment_items=None):
                 'All images are 500 DPI; they are not map orthophotos.\\n'
                 'Higher print DPI does not improve the accuracy of source DEM data.\\n'
             )
-        return archive_bytes.getvalue()
+            if progress: progress('QuickReport metadata', 1)
+            archive.close()
+            archive_bytes.seek(0)
+            return archive_bytes.read()
 
 
 def export_bytes(kind, result, levels, index, dpi, alpha, level_alphas=None, environment_items=None):

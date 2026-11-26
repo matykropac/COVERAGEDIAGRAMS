@@ -531,9 +531,11 @@ def _viewer_export_panel(layers,styles,title,mode,basemap,show_legend,show_north
         st.caption("Print resolution: 500 DPI")
         print_theme=st.radio("Tisková paleta",["NIGHT","LIGHT"],horizontal=True,
                              key="viewer_print_theme")
-        if st.button("GENEROVAT MAPOVÝ ATLAS",type="primary",
+        visible=any(features and styles.get(key,{}).get("show",False) for key,features in layers.items())
+        if st.button("GENEROVAT MAPOVÝ ATLAS",type="primary",disabled=not visible,
                      use_container_width=True,key="viewer_export_render"):
             try:
+                st.session_state.pop("viewer_print_ready",None)
                 from viewer_export import render_print
                 blob=render_print(layers,styles,title,fmt=fmt.lower(),
                                   dpi=dpi,
@@ -559,9 +561,10 @@ def _viewer_export_panel(layers,styles,title,mode,basemap,show_legend,show_north
             project=st.text_input("Projekt / zákazník",key="viewer_atlas_project")
             radar_label=st.text_input("Radar / umístění",key="viewer_atlas_radar")
             reference=st.text_input("Technická reference",key="viewer_atlas_reference")
-            if st.button("GENEROVAT PDF ATLAS",type="primary",
+            if st.button("GENEROVAT PDF ATLAS",type="primary",disabled=not visible,
                          key="viewer_atlas_generate",use_container_width=True):
                 try:
+                    st.session_state.pop("viewer_atlas_blob",None)
                     from viewer_analysis_studio import render_atlas_pdf
                     blob=render_atlas_pdf(layers,styles,title,paper=paper,
                                           orientation=orientation,theme=print_theme,
@@ -580,6 +583,7 @@ def _viewer_export_panel(layers,styles,title,mode,basemap,show_legend,show_north
         if st.button("ULOŽIT ROZLOŽENÍ · CDVIEW",
                      key="viewer_workspace_save",use_container_width=True):
             try:
+                st.session_state.pop("viewer_workspace_bytes",None)
                 from viewer_workspace_file import make_workspace
                 st.session_state["viewer_workspace_bytes"]=make_workspace(
                     layers,styles,{"viewer_mode":mode,
