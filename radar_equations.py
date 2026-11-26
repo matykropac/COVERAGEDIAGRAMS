@@ -45,11 +45,20 @@ def friis_max_range_m(tx_dbm, tx_gain_dbi, rx_gain_dbi, rx_threshold_dbm,
                       frequency_hz, loss_db=0.0):
     """Analytic one-way free-space reach at specified receiver threshold."""
     f = _positive("Frekvence", frequency_hz)
-    numerator = (_finite("Pt", tx_dbm) + _finite("Gtx", tx_gain_dbi)
-                 + _finite("Grx", rx_gain_dbi)
-                 - _finite("Prahový výkon", rx_threshold_dbm)
-                 - _finite("Ztráty", loss_db))
-    return C_M_S / (4.0 * math.pi * f) * 10.0 ** (numerator / 20.0)
+    import numpy as np
+
+    def finite_input(name, value):
+        array = np.asarray(value, dtype=float)
+        if not np.all(np.isfinite(array)):
+            raise ValueError(f"{name} musí být konečné číslo nebo pole.")
+        return array
+
+    numerator = (finite_input("Pt", tx_dbm) + finite_input("Gtx", tx_gain_dbi)
+                 + finite_input("Grx", rx_gain_dbi)
+                 - finite_input("Prahový výkon", rx_threshold_dbm)
+                 - finite_input("Ztráty", loss_db))
+    distance = C_M_S / (4.0 * math.pi * f) * np.power(10.0, numerator / 20.0)
+    return float(distance) if np.ndim(distance) == 0 else distance
 
 
 @dataclass(frozen=True)

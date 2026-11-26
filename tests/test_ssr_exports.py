@@ -20,6 +20,20 @@ class SSRExports(unittest.TestCase):
                     if isinstance(n,(ast.ClassDef,ast.FunctionDef)) and n.name in names}
         self.assertEqual(definitions(root/'radar_core.py'),definitions(root/'COVERAGEDIAGRAMS.py'))
 
+    def test_friis_vectorized_matches_scalar_and_broadcasts(self):
+        from radar_equations import friis_max_range_m
+        gains = np.array([[10., 20., 30.], [15., 25., 35.]])
+        losses = np.array([0., 2., 4.])
+        result = friis_max_range_m(60., gains, 0., -80., 1030e6, losses)
+        expected = np.array([
+            [friis_max_range_m(60., float(g), 0., -80., 1030e6, float(l))
+             for g, l in zip(row, losses)] for row in gains])
+        self.assertEqual(result.shape, gains.shape)
+        np.testing.assert_allclose(result, expected, rtol=1e-12)
+        self.assertIsInstance(friis_max_range_m(60., 10., 0., -80., 1030e6), float)
+        with self.assertRaises(ValueError):
+            friis_max_range_m(60., np.array([10., np.nan]), 0., -80., 1030e6)
+
     def test_exported_assumptions_and_blake_plot(self):
         c=core.Config(radar_mode='SSR',range_km=256*1.852,csc_range_km=256*1.852,
                       step_m=2000,az_step=5,csc_enabled=True,target_m=12000)
