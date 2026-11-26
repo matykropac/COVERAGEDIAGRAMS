@@ -2015,11 +2015,35 @@ def exports_dialog():
             started = time.monotonic()
             bar = st.progress(0, text="Preparing PDF report")
             details = st.empty()
+            memory_details = st.empty()
+            try:
+                import psutil
+                process = psutil.Process()
+                baseline_rss = process.memory_info().rss
+            except Exception:
+                process = None
+                baseline_rss = 0
+            peak_rss = baseline_rss
+
             def report_progress(done, total, message):
+                nonlocal peak_rss
                 elapsed = time.monotonic() - started
                 bar.progress(min(1.0, done / total), text=message)
                 eta = f"{elapsed * (total-done) / done:.0f} s" if done else "—"
                 details.caption(f"{done}/{total} · Elapsed: {elapsed:.0f} s · Estimated remaining: {eta} · 500 DPI")
+                if process is not None:
+                    try:
+                        rss = process.memory_info().rss
+                        peak_rss = max(peak_rss, rss)
+                        mib = 1024 ** 2
+                        memory_details.caption(
+                            f"RAM (process RSS): {rss/mib:,.0f} MiB · "
+                            f"Sampled peak: {peak_rss/mib:,.0f} MiB · "
+                            f"Change since start: {(rss-baseline_rss)/mib:+,.0f} MiB")
+                    except Exception:
+                        memory_details.caption("RAM measurement unavailable")
+                else:
+                    memory_details.caption("RAM measurement unavailable")
             st.session_state.pop("ws_report_pdf", None)
             st.session_state["ws_report_pdf"]=generate_coverage_report_pdf(
                 result,report_options,progress=report_progress)
