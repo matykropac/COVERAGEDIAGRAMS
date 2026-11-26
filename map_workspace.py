@@ -2102,9 +2102,10 @@ def _draw_map_folium(*, export_only=False, export_levels=()):
     for name,provider in _workspace_basemaps().items():
         folium.TileLayer(provider["url"],name=name,attr=provider["attribution"],
                          max_zoom=provider["max_zoom"],overlay=False,
-                         show=name=="OpenStreetMap").add_to(m)
+                         show=name==("OpenTopoMap" if export_only else "OpenStreetMap")).add_to(m)
     if not export_only and st.session_state.get("ws_openaip",True):
         add_openaip_map(m)
+    export_legend=[]
     if result is not None and (export_only or st.session_state.get("ws_show_coverage",True)):
         mode=st.session_state.get("ws_display_mode","Jedna hladina")
         levels=_chosen_levels(c.radar_mode)
@@ -2118,14 +2119,17 @@ def _draw_map_folium(*, export_only=False, export_levels=()):
                 continue
             geo=coverage_geojson(result,level,
                 reference="AMSL")
-            if geo.get("features"):
+            if geo.get("features") or export_only:
                 color="#247ad3" if level is None else to_hex(core.level_color(level))
-                layer=folium.FeatureGroup(name="Krytí cíle" if level is None else core.level_label(level))
+                layer=folium.FeatureGroup(name="Krytí cíle" if level is None else core.level_label(level),
+                                          show=not export_only,control=not export_only)
                 opacity=st.session_state.get("ws_map_opacity",.42)
                 folium.GeoJson(geo,style_function=lambda feature,color=color,opacity=opacity:
                                {"color":color,"weight":1.5,"fillColor":color,
                                 "fillOpacity":opacity}).add_to(layer)
                 layer.add_to(m)
+                if export_only:
+                    export_legend.append((core.level_label(level),color,layer,bool(geo.get("features"))))
     # Draw editable site configuration and obstacles independently from the
     # last calculated result. Otherwise the map appears stale before rerun.
     folium.Marker([configured.lat,configured.lon],
@@ -2135,7 +2139,7 @@ def _draw_map_folium(*, export_only=False, export_levels=()):
         folium.CircleMarker([c.lat,c.lon],radius=5,color="#24a69e",
                             tooltip="Stanoviště posledního výpočtu").add_to(m)
     obstacle_layer=folium.FeatureGroup(
-        name=f"Překážky · {len(st.session_state.get('obstacles',[]))}",show=True)
+        name=f"Překážky · {len(st.session_state.get('obstacles',[]))}",show=not export_only)
     for item in st.session_state.get("obstacles",[]):
         folium.Polygon(obstacle_polygon(item,configured.lat,configured.lon),
                        color="#e87848",weight=2,fill=True,fill_opacity=.32,
@@ -2144,7 +2148,7 @@ def _draw_map_folium(*, export_only=False, export_levels=()):
     obstacle_layer.add_to(m)
     catalog=st.session_state.get("ws_imported_catalog")
     if catalog is not None:
-        geodata_layer=folium.FeatureGroup(name="Načtená geodata",show=True)
+        geodata_layer=folium.FeatureGroup(name="Načtená geodata",show=not export_only)
         colors={**env.COLORS,"Wind":"#0d9cb0"}
         for item in catalog[:6000]:
             folium.Polygon(item["coordinates"],color=colors.get(item["category"],"#859db0"),
@@ -2170,6 +2174,13 @@ def _draw_map_folium(*, export_only=False, export_levels=()):
                            "circlemarker":False,"marker":False,
                            "polygon":{"allowIntersection":False,"showArea":True}},
              edit_options={"edit":False,"remove":False}).add_to(m)
+    if export_only:
+        from portable_map_legend import add_export_legend
+        # Keep all optional overlays inactive at startup, including imported layers.
+        for child in m._children.values():
+            if isinstance(child, folium.map.Layer) and getattr(child,"overlay",False):
+                child.show=False
+        add_export_legend(m,export_legend,st.session_state.get("ws_map_opacity",.42))
     folium.LayerControl(collapsed=True).add_to(m)
     Fullscreen().add_to(m)
     MeasureControl(primary_length_unit="kilometers").add_to(m)
