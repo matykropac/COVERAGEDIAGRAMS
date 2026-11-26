@@ -14,7 +14,60 @@ WIDTH = round(297 / 25.4 * DPI)
 HEIGHT = round(210 / 25.4 * DPI)
 _PROVIDER_LOCK = RLock()
 
-def load_a4_basemap(config):
+def _load_print_tiles(config, viewport, provider, progress=None):
+    """Disk-backed tile mosaic; warp one channel at a time into print pixels."""
+    import tempfile
+    from pathlib import Path
+    import rasterio
+    from rasterio.transform import from_bounds
+    from rasterio.warp import reproject, Resampling
+    from rasterio.windows import Window
+
+    spec = core.BASEMAP_PROVIDERS[provider]
+    z, xmin, xmax, ymin, ymax = core.tile_plan(
+        config, viewport, WIDTH, spec["max_zoom"],
+        max_tiles=512, prefer_detail=True)
+    nx, ny = xmax-xmin+1, ymax-ymin+1
+    half = np.pi * 6378137.0
+    span = 2 * half / 2**z
+    src_transform = from_bounds(-half+xmin*span, half-(ymax+1)*span,
+                                -half+(xmax+1)*span, half-ymin*span,
+                                nx*256, ny*256)
+    dst_transform = from_bounds(viewport[0]*1000, viewport[2]*1000,
+                                viewport[1]*1000, viewport[3]*1000,
+                                WIDTH, HEIGHT)
+    if progress:
+        progress(f"{provider}: zoom {z}, {nx*ny} tiles")
+    with tempfile.TemporaryDirectory(prefix="cd_print_tiles_") as work:
+        mosaic = Path(work) / "tiles.tif"
+        with rasterio.Env(GDAL_CACHEMAX=32*1024*1024):
+            with rasterio.open(mosaic, "w", driver="GTiff", width=nx*256,
+                               height=ny*256, count=4, dtype="uint8",
+                               crs="EPSG:3857", transform=src_transform,
+                               tiled=True, blockxsize=256, blockysize=256,
+                               compress="deflate") as dst:
+                done = 0
+                for y in range(ymin, ymax+1):
+                    for x in range(xmin, xmax+1):
+                        tile = core.fetch_map_tile(z, x, y, provider)
+                        dst.write(np.moveaxis(tile, -1, 0),
+                                  window=Window((x-xmin)*256, (y-ymin)*256, 256, 256))
+                        done += 1
+                        if progress and (done % 8 == 0 or done == nx*ny):
+                            progress(f"{provider}: tiles {done}/{nx*ny}")
+            bands = np.zeros((4, HEIGHT, WIDTH), dtype=np.uint8)
+            with rasterio.open(mosaic) as src:
+                for band in range(4):
+                    reproject(rasterio.band(src, band+1), bands[band],
+                              dst_transform=dst_transform, dst_crs=core.local_crs(config),
+                              resampling=Resampling.bilinear, num_threads=1,
+                              warp_mem_limit=32)
+    return dict(image=np.moveaxis(bands, 0, -1), extent=viewport,
+                signature=(config.lat, config.lon, config.range_km),
+                zoom=z, provider=provider, attribution=spec["attribution"])
+
+
+def load_a4_basemap(config, progress=None):
     key = configured_key()
     if not key:
         raise ValueError("Esri + OpenAIP export requires OPENAIP_API_KEY.")
@@ -25,9 +78,7 @@ def load_a4_basemap(config):
     radius *= 1.055
     half_width = radius * WIDTH / HEIGHT
     viewport = (-half_width, half_width, -radius, radius)
-    size = (1600, round(1600 * HEIGHT / WIDTH))
-    base = core.load_basemap(config, viewport=viewport, out_size=size,
-                             provider="Esri · Streets (legacy)")
+    base = _load_print_tiles(config, viewport, "Esri · Streets (legacy)", progress)
     if base is None or base.get("image") is None or not np.any(base["image"][..., 3]):
         raise ValueError("Esri Street Map is unavailable.")
     provider = "_a4_openaip_overlay"
@@ -39,16 +90,20 @@ def load_a4_basemap(config):
             "attribution": "Aeronautical data © OpenAIP",
         }
         try:
-            aviation = core.load_basemap(config, viewport=viewport,
-                                         out_size=size, provider=provider)
+            aviation = _load_print_tiles(config, viewport, provider, progress)
         finally:
             core.BASEMAP_PROVIDERS.pop(provider, None)
     if aviation is None or aviation.get("image") is None or not np.any(aviation["image"][..., 3]):
         raise ValueError("OpenAIP returned no visible aviation tiles.")
-    background = Image.fromarray(base["image"], "RGBA")
-    chart = Image.fromarray(aviation["image"], "RGBA")
-    chart.putalpha(chart.getchannel("A").point(lambda v: int(v * .88)))
-    base["image"] = np.asarray(Image.alpha_composite(background, chart))
+    # Blend in strips to avoid several additional full-page RGBA allocations.
+    if progress:
+        progress("Compositing Esri + OpenAIP at A4 print resolution")
+    for y in range(0, HEIGHT, 256):
+        background = Image.fromarray(base["image"][y:y+256], "RGBA")
+        chart = Image.fromarray(aviation["image"][y:y+256], "RGBA")
+        chart.putalpha(chart.getchannel("A").point(lambda v: int(v * .88)))
+        base["image"][y:y+256] = np.asarray(Image.alpha_composite(background, chart))
+    del aviation
     base["attribution"] = "Tiles © Esri and its data providers · Aeronautical data © OpenAIP"
     base["provider"] = "Esri Streets + OpenAIP"
     return base

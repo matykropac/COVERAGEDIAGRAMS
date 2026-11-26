@@ -172,7 +172,7 @@ def build_selected_zip(result, *, selected, flight_levels, index, alpha,
         if selected.get("a4_esri_aip"):
             from a4_aviation_export import load_a4_basemap, render_a4_fl
             notify("Loading Esri Street Map + OpenAIP")
-            basemap = load_a4_basemap(result["config"])
+            basemap = load_a4_basemap(result["config"], progress=notify)
             with tempfile.TemporaryDirectory(prefix="cd_a4_aviation_") as work:
                 img = Path(work) / "page.png"
                 for level in flight_levels:

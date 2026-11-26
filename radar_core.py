@@ -1666,7 +1666,7 @@ def basemap_attribution(layer):
     return layer.get('attribution', BASEMAP_PROVIDERS['OpenStreetMap']['attribution'])
 
 
-def tile_plan(c, viewport=None, pixel_width=1000, max_zoom=18):
+def tile_plan(c, viewport=None, pixel_width=1000, max_zoom=18, *, max_tiles=36, prefer_detail=False):
     """Choose only OSM tiles currently visible in the requested AEQD viewport."""
     from pyproj import Transformer
     if viewport is None:
@@ -1685,7 +1685,8 @@ def tile_plan(c, viewport=None, pixel_width=1000, max_zoom=18):
     # Around 1000 horizontal pixels at the latitude of the radar, bounded requests.
     visible_width_m = max(1.0, (xmax - xmin) * 1000)
     pixel_width = max(256, int(pixel_width))
-    zoom = int(np.clip(np.floor(np.log2(156543.0339 * np.cos(np.deg2rad(c.lat)) /
+    round_zoom = np.ceil if prefer_detail else np.floor
+    zoom = int(np.clip(round_zoom(np.log2(156543.0339 * np.cos(np.deg2rad(c.lat)) /
                                        (visible_width_m / pixel_width))), 1, max_zoom))
     while True:
         n = 2**zoom
@@ -1693,7 +1694,7 @@ def tile_plan(c, viewport=None, pixel_width=1000, max_zoom=18):
         yy = (1 - np.arcsinh(np.tan(np.deg2rad(lat))) / np.pi) / 2 * n
         xmin, xmax = np.clip(np.floor([xx.min(), xx.max()]).astype(int), 0, n - 1)
         ymin, ymax = np.clip(np.floor([yy.min(), yy.max()]).astype(int), 0, n - 1)
-        if (xmax-xmin+1)*(ymax-ymin+1) <= 36 or zoom == 1:
+        if (xmax-xmin+1)*(ymax-ymin+1) <= max_tiles or zoom == 1:
             return zoom, int(xmin), int(xmax), int(ymin), int(ymax)
         zoom -= 1
 
