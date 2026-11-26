@@ -27,19 +27,19 @@ def build_selected_zip(result, *, selected, flight_levels, index, alpha,
     from matplotlib.backends.backend_agg import FigureCanvasAgg
 
     valid = {"project", "html", "layers", "terrain", "antenna", "fl_png",
-             "png_dark", "png_light", "quickreport", "customer_pack",
+             "png_dark", "png_light", "quickreport", "customer_pack", "a4_esri_aip",
              "customer_maps", "customer_terrain", "customer_antenna", *FORMATS}
     active = {key for key, value in selected.items() if value}
     if not active or active - valid:
         raise ValueError("Select valid export products.")
     flight_levels = tuple(dict.fromkeys(flight_levels))
     if active & {"fl_png", "png_dark", "png_light", "quickreport", "customer_pack",
-                 "customer_maps", "kml", "gpkg", "tiff"} and not flight_levels:
+                 "customer_maps", "a4_esri_aip", "kml", "gpkg", "tiff"} and not flight_levels:
         raise ValueError("Select at least one flight altitude.")
     for key, payload in (("project", project_bytes), ("html", map_html), ("layers", map_bundle)):
         if key in active and not payload:
             raise ValueError(f"Selected product is unavailable: {key}")
-    total = sum(len(flight_levels) if key in {"fl_png", "customer_maps"}
+    total = sum(len(flight_levels) if key in {"fl_png", "customer_maps", "a4_esri_aip"}
                 else 4 + 4 * len(flight_levels) + 2 if key == "quickreport"
                 else 1 for key in active) + 1
     done = 0
@@ -168,6 +168,19 @@ def build_selected_zip(result, *, selected, flight_levels, index, alpha,
                     archive.write(img,"07_Customer_Delivery/Customer_Pack/Maps_Light/"
                                   "Antenna_Pattern_500dpi.png")
                     notify("Customer antenna completed", 1)
+
+        if selected.get("a4_esri_aip"):
+            from a4_aviation_export import load_a4_basemap, render_a4_fl
+            notify("Loading Esri Street Map + OpenAIP")
+            basemap = load_a4_basemap(result["config"])
+            with tempfile.TemporaryDirectory(prefix="cd_a4_aviation_") as work:
+                img = Path(work) / "page.png"
+                for level in flight_levels:
+                    notify(f"Rendering A4 FL {level} ft AMSL")
+                    render_a4_fl(img, result, level, basemap,
+                                 alpha=(level_alphas or {}).get(level, alpha))
+                    archive.write(img, f"08_A4_Esri_OpenAIP/{int(level):05d}ft_AMSL_A4_500dpi.png")
+                    notify(f"A4 FL {level} ft completed", 1)
 
         if selected.get("quickreport"):
             notify("Preparing QuickReport")

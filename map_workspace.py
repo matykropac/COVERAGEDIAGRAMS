@@ -1948,24 +1948,27 @@ def exports_dialog():
         ("CUSTOMER / REPORTS", (
             ("customer_pack","Technické PDF + scorecard","Zákaznický souhrn, statistiky a metadata."),
             ("customer_maps","Zákaznické mapy PNG","Světlé FL mapy v zákaznickém adresáři."),
+            ("a4_esri_aip","A4 Fullscreen · Esri + OpenAIP","Každá FL zvlášť, A4 na šířku, 500 DPI, bez okrajů."),
             ("customer_terrain","Zákaznický terén PNG","Světlá terénní mapa."),
             ("customer_antenna","Zákaznická anténa PNG","Světlý anténní diagram."),
             ("quickreport","QuickReport","Kompletní atlas: Dark + Light, Esri, KML; náročný na čas a RAM."))),
     )
     selected={}
     html=st.session_state.get("ws_map_html")
+    from aviation_basemap import configured_key
+    aip_available=bool(configured_key())
     for col,(heading,items) in zip(st.columns(3),groups):
         with col:
             st.markdown("**"+heading+"**")
             for key,label,description in items:
-                available=key!="html" or bool(html)
+                available=(key!="html" or bool(html)) and (key!="a4_esri_aip" or aip_available)
                 selected[key]=st.checkbox(label,key="ws_zip_"+key,
                     value=key=="fl_png",disabled=not available,help=description) and available
-                st.caption(description if available else "Nejprve otevři mapu.")
+                st.caption(description if available else ("Chybí OpenAIP API klíč." if key=="a4_esri_aip" else "Nejprve otevři mapu."))
     needs_fl=any(selected[k] for k in ("fl_png","png_dark","png_light","quickreport",
-                                      "customer_pack","customer_maps","kml","gpkg","tiff"))
+                                      "customer_pack","customer_maps","a4_esri_aip","kml","gpkg","tiff"))
     count=sum(selected.values())
-    render_count=(len(chosen)*(int(selected["fl_png"])+int(selected["customer_maps"]))
+    render_count=(len(chosen)*(int(selected["fl_png"])+int(selected["customer_maps"])+int(selected["a4_esri_aip"]))
                   +sum(int(selected[k]) for k in ("terrain","antenna","png_dark","png_light",
                                                   "customer_terrain","customer_antenna"))
                   +(4+4*len(chosen) if selected["quickreport"] else 0))
